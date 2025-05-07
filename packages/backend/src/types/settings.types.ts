@@ -60,14 +60,6 @@ export interface UpdateCaptchaSettingsDto {
 }
 
 /**
- * Cloudflare Access 自动登录设置
- */
-export interface AutoLoginCloudflareSettings {
-    enabled: boolean;
-    trustedIPs: string[]; // 将从逗号分隔的字符串解析而来
-}
-
-/**
  * IP 白名单自动登录设置
  */
 export interface AutoLoginIpWhitelistSettings {
@@ -79,7 +71,6 @@ export interface AutoLoginIpWhitelistSettings {
  * 自动登录总设置
  */
 export interface AutoLoginSettings {
-    cloudflare?: AutoLoginCloudflareSettings;
     ipWhitelist?: AutoLoginIpWhitelistSettings;
 }
 

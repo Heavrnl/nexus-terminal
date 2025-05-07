@@ -13,16 +13,11 @@ import {
     CaptchaSettings,
     UpdateCaptchaSettingsDto,
     CaptchaProvider,
-    AutoLoginSettings, // <-- 新增导入
-    AutoLoginCloudflareSettings, // <-- 新增导入
-    AutoLoginIpWhitelistSettings, // <-- 新增导入
+    AutoLoginSettings,
+    AutoLoginIpWhitelistSettings,
 } from '../types/settings.types';
 
-// 环境变量键名定义
-const AUTOLOGIN_CLOUDFLARE_ENABLED_KEY = 'AUTOLOGIN_CLOUDFLARE_ENABLED';
-const AUTOLOGIN_CLOUDFLARE_TRUSTED_IPS_KEY = 'AUTOLOGIN_CLOUDFLARE_TRUSTED_IPS';
-const AUTOLOGIN_IP_WHITELIST_ENABLED_KEY = 'AUTOLOGIN_IP_WHITELIST_ENABLED';
-const AUTOLOGIN_IP_WHITELIST_IPS_KEY = 'AUTOLOGIN_IP_WHITELIST_IPS';
+
 
 
 // +++ 定义焦点切换完整配置接口 (与前端 store 保持一致) +++
@@ -550,25 +545,6 @@ export const settingsService = {
  // --- Auto Login Settings ---
 
  /**
-  * 获取 Cloudflare Access 自动登录设置
-  * @returns Promise<AutoLoginCloudflareSettings>
-  */
- async getAutoLoginCloudflareSettings(): Promise<AutoLoginCloudflareSettings> {
-   // 仅从数据库读取
-   const dbEnabledStr = await settingsRepository.getSetting('autoLoginCloudflareEnabled');
-   const dbTrustedIPsStr = await settingsRepository.getSetting('autoLoginCloudflareTrustedIPs');
-
-   // 如果数据库中没有设置，则默认为禁用和空列表
-   const enabled = dbEnabledStr === 'true'; // 如果 dbEnabledStr 为 null 或 'false'，则为 false
-   const trustedIPsString = dbTrustedIPsStr || ''; // 如果 dbTrustedIPsStr 为 null，则为空字符串
-   
-   const trustedIPs = trustedIPsString ? trustedIPsString.split(',').map(ip => ip.trim()).filter(ip => ip) : [];
-   
-   console.log(`[SettingsService] Cloudflare AutoLogin (DB Only) Enabled: ${enabled} (DB value: ${dbEnabledStr}), Trusted IPs: ${trustedIPs.join(', ')} (DB value: ${dbTrustedIPsStr})`);
-   return { enabled, trustedIPs };
- },
-
- /**
   * 获取 IP 白名单自动登录设置
   * @returns Promise<AutoLoginIpWhitelistSettings>
   */
@@ -592,10 +568,8 @@ export const settingsService = {
   * @returns Promise<AutoLoginSettings>
   */
  async getAutoLoginSettings(): Promise<AutoLoginSettings> {
-   const cloudflare = await this.getAutoLoginCloudflareSettings();
    const ipWhitelist = await this.getAutoLoginIpWhitelistSettings();
    return {
-     cloudflare,
      ipWhitelist,
    };
  },

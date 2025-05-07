@@ -176,21 +176,6 @@
              <div class="settings-section-content">
                <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.autoLogin.title', '自动登录') }}</h3>
                <form @submit.prevent="handleUpdateAutoLoginSettings" class="space-y-6">
-                 <!-- Cloudflare Auto Login -->
-                 <div class="space-y-3 p-3 border border-border/30 rounded-md">
-                   <div class="flex items-center">
-                     <input type="checkbox" id="cloudflareAutoLoginEnabled" v-model="autoLoginSettingsForm.cloudflareEnabled"
-                            class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                     <label for="cloudflareAutoLoginEnabled" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoLogin.cloudflareEnableLabel', '启用 Cloudflare Access 自动登录') }}</label>
-                   </div>
-                   <div v-if="autoLoginSettingsForm.cloudflareEnabled">
-                     <label for="cloudflareTrustedIPs" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.autoLogin.cloudflareTrustedIPsLabel', 'Cloudflare 受信任 IP 列表 (逗号分隔)') }}</label>
-                     <textarea id="cloudflareTrustedIPs" v-model="autoLoginSettingsForm.cloudflareTrustedIPs" rows="2"
-                               class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-sm"></textarea>
-                     <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.autoLogin.cloudflareTrustedIPsHint', '通过 Cloudflare Access 认证后，来自这些 IP 的请求将自动登录。') }}</small>
-                   </div>
-                 </div>
-
                  <!-- App IP Whitelist Auto Login -->
                  <div class="space-y-3 p-3 border border-border/30 rounded-md">
                    <div class="flex items-center">
@@ -850,10 +835,8 @@ const captchaSuccess = ref(false);
 
 // --- Auto Login Settings State ---
 const autoLoginSettingsForm = reactive({
- cloudflareEnabled: false,
- cloudflareTrustedIPs: '',
- ipWhitelistEnabled: false,
- ipWhitelistAllowedIPs: '',
+  ipWhitelistEnabled: false,
+  ipWhitelistAllowedIPs: '',
 });
 const autoLoginSettingsLoading = ref(false);
 const autoLoginSettingsMessage = ref('');
@@ -912,8 +895,6 @@ watch(settings, (newSettings, oldSettings) => {
       return false; // Default to false if undefined or other types
     };
 
-    autoLoginSettingsForm.cloudflareEnabled = toBoolean(newSettings.autoLoginCloudflareEnabled);
-    autoLoginSettingsForm.cloudflareTrustedIPs = newSettings.autoLoginCloudflareTrustedIPs || '';
     autoLoginSettingsForm.ipWhitelistEnabled = toBoolean(newSettings.autoLoginIpWhitelistEnabled);
     autoLoginSettingsForm.ipWhitelistAllowedIPs = newSettings.autoLoginIpWhitelistAllowedIPs || '';
   }
@@ -1483,8 +1464,6 @@ const handleUpdateAutoLoginSettings = async () => {
  autoLoginSettingsSuccess.value = false;
  try {
    const settingsToSave = {
-     autoLoginCloudflareEnabled: autoLoginSettingsForm.cloudflareEnabled ? 'true' : 'false',
-     autoLoginCloudflareTrustedIPs: autoLoginSettingsForm.cloudflareTrustedIPs.trim(),
      autoLoginIpWhitelistEnabled: autoLoginSettingsForm.ipWhitelistEnabled ? 'true' : 'false',
      autoLoginIpWhitelistAllowedIPs: autoLoginSettingsForm.ipWhitelistAllowedIPs.trim(),
    };

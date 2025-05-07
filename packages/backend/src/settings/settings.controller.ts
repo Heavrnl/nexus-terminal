@@ -4,7 +4,7 @@ import { AuditLogService } from '../services/audit.service';
 import { NotificationService } from '../services/notification.service'; // 添加导入
 import { ipBlacklistService } from '../services/ip-blacklist.service';
 import { UpdateSidebarConfigDto, UpdateCaptchaSettingsDto, CaptchaSettings } from '../types/settings.types'; // <-- Import CAPTCHA types
-import i18next from '../i18n'; // +++ Import i18next +++
+import i18next from '../i18n'; //  Import i18next 
 
 const auditLogService = new AuditLogService();
 const notificationService = new NotificationService(); // 添加实例
@@ -38,25 +38,21 @@ export const settingsController = {
           'language', 'ipWhitelist', 'maxLoginAttempts', 'loginBanDuration',
           'showPopupFileEditor', 'shareFileEditorTabs', 'ipWhitelistEnabled',
           'autoCopyOnSelect', 'dockerStatusIntervalSeconds', 'dockerDefaultExpand',
-          'statusMonitorIntervalSeconds', // +++ 添加状态监控间隔键 +++
-          'workspaceSidebarPersistent', // +++ 添加侧边栏固定键 +++
-          'sidebarPaneWidths', // +++ 添加侧边栏宽度对象键 +++
-          'fileManagerRowSizeMultiplier', // +++ 添加文件管理器行大小键 +++
-          'fileManagerColWidths', // +++ 添加文件管理器列宽键 +++
-          'commandInputSyncTarget', // +++ 添加命令输入同步目标键 +++
-          'timezone', // NEW: 添加时区键
-          'rdpModalWidth', // NEW: 添加 RDP 模态框宽度键
-          'rdpModalHeight', // NEW: 添加 RDP 模态框高度键
-          'ipBlacklistEnabled', // <-- 添加 IP 黑名单启用键
-          'layoutLocked', // +++ 添加布局锁定键 +++
-          'terminalScrollbackLimit', // NEW: 添加终端回滚行数键
-          'fileManagerShowDeleteConfirmation', // NEW: 添加文件管理器删除确认键
-          // --- Auto Login Keys ---
-          'autoLoginCloudflareEnabled',
-          'autoLoginCloudflareTrustedIPs',
+          'statusMonitorIntervalSeconds', //  添加状态监控间隔键 
+          'workspaceSidebarPersistent', //  添加侧边栏固定键 
+          'sidebarPaneWidths', //  添加侧边栏宽度对象键 
+          'fileManagerRowSizeMultiplier', //  添加文件管理器行大小键 
+          'fileManagerColWidths', //  添加文件管理器列宽键 
+          'commandInputSyncTarget', //  添加命令输入同步目标键 
+          'timezone', // 添加时区键
+          'rdpModalWidth', // 添加 RDP 模态框宽度键
+          'rdpModalHeight', // 添加 RDP 模态框高度键
+          'ipBlacklistEnabled', // 添加 IP 黑名单启用键
+          'layoutLocked', // 添加布局锁定键
+          'terminalScrollbackLimit', // 添加终端回滚行数键
+          'fileManagerShowDeleteConfirmation', // 添加文件管理器删除确认键
           'autoLoginIpWhitelistEnabled',
           'autoLoginIpWhitelistAllowedIPs'
-          // --- End Auto Login Keys ---
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {
@@ -106,11 +102,11 @@ export const settingsController = {
   async setFocusSwitcherSequence(req: Request, res: Response): Promise<void> {
     console.log('[控制器] 收到设置焦点切换顺序的请求。');
     try {
-      // +++ 修改：获取请求体并验证其是否符合 FocusSwitcherFullConfig 结构 +++
+      //  修改：获取请求体并验证其是否符合 FocusSwitcherFullConfig 结构 
       const fullConfig = req.body;
       console.log('[控制器] 请求体 fullConfig:', JSON.stringify(fullConfig));
 
-      // +++ 验证 FocusSwitcherFullConfig 结构 +++
+      //  验证 FocusSwitcherFullConfig 结构 
       if (
           !(typeof fullConfig === 'object' && fullConfig !== null &&
           Array.isArray(fullConfig.sequence) && fullConfig.sequence.every((item: any) => typeof item === 'string') &&
@@ -123,7 +119,7 @@ export const settingsController = {
       }
 
       console.log('[控制器] 使用验证后的完整配置调用 settingsService.setFocusSwitcherSequence...');
-      // +++ 传递验证后的 fullConfig 给服务层 +++
+      //  传递验证后的 fullConfig 给服务层 
       await settingsService.setFocusSwitcherSequence(fullConfig);
       console.log('[控制器] settingsService.setFocusSwitcherSequence 成功完成。');
 
