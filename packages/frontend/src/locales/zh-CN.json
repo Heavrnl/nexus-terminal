@@ -770,9 +770,22 @@
         "noReleases": "未找到发布版本",
         "rateLimit": "GitHub API 速率限制，请稍后再试"
       }
+    },
+    "autoLogin": {
+      "title": "自动登录设置",
+      "ipWhitelistEnableLabel": "启用应用 IP 白名单自动登录",
+      "ipWhitelistAllowedIPsLabel": "应用 IP 白名单 (逗号分隔)",
+      "ipWhitelistAllowedIPsHint": "来自这些 IP 的请求将自动登录。",
+      "saveButton": "保存自动登录设置",
+      "success": {
+        "saved": "自动登录设置已成功保存。"
+      },
+      "error": {
+        "saveFailed": "保存自动登录设置失败。"
+      }
     }
-},
-"notificationController": {
+  },
+  "notificationController": {
       "errorFetchSettings": "获取通知设置失败",
       "errorMissingFields": "缺少必要的通知设置字段 (channel_type, name, config)",
       "errorCreateSetting": "创建通知设置失败",

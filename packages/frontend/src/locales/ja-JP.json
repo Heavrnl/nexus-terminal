@@ -946,6 +946,19 @@
                 "noReleases": "リリースバージョンが見つかりません",
                 "rateLimit": "GitHub API レート制限。後でもう一度お試しください"
             }
+        },
+        "autoLogin": {
+          "title": "自動ログイン設定",
+          "ipWhitelistEnableLabel": "アプリ IP ホワイトリスト自動ログインを有効にする",
+          "ipWhitelistAllowedIPsLabel": "アプリ IP ホワイトリスト (カンマ区切り)",
+          "ipWhitelistAllowedIPsHint": "これらの IP からのリクエストは自動的にログインされます。",
+          "saveButton": "自動ログイン設定を保存",
+          "success": {
+            "saved": "自動ログイン設定が正常に保存されました。"
+          },
+          "error": {
+            "saveFailed": "自動ログイン設定の保存に失敗しました。"
+          }
         }
     },
     "setup": {

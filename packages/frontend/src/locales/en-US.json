@@ -769,9 +769,22 @@
         "noReleases": "No releases found",
         "rateLimit": "GitHub API rate limit exceeded, please try again later"
       }
+    },
+    "autoLogin": {
+      "title": "Auto Login Settings",
+      "ipWhitelistEnableLabel": "Enable App IP Whitelist Auto Login",
+      "ipWhitelistAllowedIPsLabel": "App IP Whitelist (comma-separated)",
+      "ipWhitelistAllowedIPsHint": "Requests from these IPs will be automatically logged in.",
+      "saveButton": "Save Auto Login Settings",
+      "success": {
+        "saved": "Auto login settings saved successfully."
+      },
+      "error": {
+        "saveFailed": "Failed to save auto login settings."
+      }
     }
   },
-"notificationController": {
+  "notificationController": {
       "errorFetchSettings": "Failed to fetch notification settings",
       "errorMissingFields": "Missing required notification setting fields (channel_type, name, config)",
       "errorCreateSetting": "Failed to create notification setting",

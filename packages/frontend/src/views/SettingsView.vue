@@ -174,27 +174,27 @@
               <hr class="border-border/50"> <!-- Separator -->
              <!-- Auto Login Settings Section -->
              <div class="settings-section-content">
-               <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.autoLogin.title', '自动登录') }}</h3>
+               <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.autoLogin.title') }}</h3>
                <form @submit.prevent="handleUpdateAutoLoginSettings" class="space-y-6">
                  <!-- App IP Whitelist Auto Login -->
                  <div class="space-y-3 p-3 border border-border/30 rounded-md">
                    <div class="flex items-center">
                      <input type="checkbox" id="ipWhitelistAutoLoginEnabled" v-model="autoLoginSettingsForm.ipWhitelistEnabled"
                             class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                     <label for="ipWhitelistAutoLoginEnabled" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoLogin.ipWhitelistEnableLabel', '启用应用 IP 白名单自动登录') }}</label>
+                     <label for="ipWhitelistAutoLoginEnabled" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoLogin.ipWhitelistEnableLabel') }}</label>
                    </div>
                    <div v-if="autoLoginSettingsForm.ipWhitelistEnabled">
-                     <label for="ipWhitelistAllowedIPs" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsLabel', '应用 IP 白名单 (逗号分隔)') }}</label>
+                     <label for="ipWhitelistAllowedIPs" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsLabel') }}</label>
                      <textarea id="ipWhitelistAllowedIPs" v-model="autoLoginSettingsForm.ipWhitelistAllowedIPs" rows="2"
                                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-sm"></textarea>
-                     <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsHint', '来自这些 IP 的请求将自动登录（如果 Cloudflare 自动登录未触发）。') }}</small>
+                     <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsHint') }}</small>
                    </div>
                  </div>
 
                  <div class="flex items-center justify-between pt-2">
-                    <button type="submit" :disabled="autoLoginSettingsLoading"
+                    <button type="submit"
                             class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                      {{ autoLoginSettingsLoading ? $t('common.loading') : $t('settings.autoLogin.saveButton', '保存自动登录设置') }}
+                      {{ $t('settings.autoLogin.saveButton') }}
                     </button>
                     <p v-if="autoLoginSettingsMessage" :class="['text-sm', autoLoginSettingsSuccess ? 'text-success' : 'text-error']">{{ autoLoginSettingsMessage }}</p>
                  </div>
