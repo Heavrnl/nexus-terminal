@@ -60,12 +60,37 @@ export interface UpdateCaptchaSettingsDto {
 }
 
 /**
+ * Cloudflare Access 自动登录设置
+ */
+export interface AutoLoginCloudflareSettings {
+    enabled: boolean;
+    trustedIPs: string[]; // 将从逗号分隔的字符串解析而来
+}
+
+/**
+ * IP 白名单自动登录设置
+ */
+export interface AutoLoginIpWhitelistSettings {
+    enabled: boolean;
+    allowedIPs: string[]; // 将从逗号分隔的字符串解析而来
+}
+
+/**
+ * 自动登录总设置
+ */
+export interface AutoLoginSettings {
+    cloudflare?: AutoLoginCloudflareSettings;
+    ipWhitelist?: AutoLoginIpWhitelistSettings;
+}
+
+/**
  * 完整的应用设置接口 (聚合所有设置类型)
  * 注意：这只是一个示例结构，实际可能需要根据 SettingsRepository 的实现调整
  */
 export interface AppSettings {
     sidebar?: SidebarConfig;
     captcha?: CaptchaSettings;
+    autoLogin?: AutoLoginSettings;
     // 可以添加其他设置模块，例如：
     // security?: SecuritySettings;
     // general?: GeneralSettings;

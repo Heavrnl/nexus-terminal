@@ -11,10 +11,12 @@ import {
   needsSetup,
   setupAdmin,
   logout,
-  getPublicCaptchaConfig
+  getPublicCaptchaConfig,
+  enableAutoLoginForCurrentIp // <-- 导入新的控制器方法
 } from './auth.controller';
 import { isAuthenticated } from './auth.middleware';
 import { ipBlacklistCheckMiddleware } from './ipBlacklistCheck.middleware';
+import { autoLoginMiddleware } from './autoLogin.middleware'; // <-- 导入新的自动登录中间件
 
 const router = Router();
 
@@ -29,8 +31,9 @@ router.get('/needs-setup', needsSetup);
 // POST /api/v1/auth/setup - 执行初始管理员设置 (公开访问，控制器内部检查)
 router.post('/setup', setupAdmin);
 
-// POST /api/v1/auth/login - 用户登录接口 (添加黑名单检查)
-router.post('/login', ipBlacklistCheckMiddleware, login);
+// POST /api/v1/auth/login - 用户登录接口 (添加自动登录和黑名单检查)
+// autoLoginMiddleware 应该在 ipBlacklistCheckMiddleware 之前，因为它可能直接完成登录并返回响应
+router.post('/login', autoLoginMiddleware, ipBlacklistCheckMiddleware, login);
 
 // PUT /api/v1/auth/password - 修改密码接口 (需要认证)
 router.put('/password', isAuthenticated, changePassword);
@@ -56,6 +59,9 @@ router.get('/status', isAuthenticated, getAuthStatus);
 
 // POST /api/v1/auth/logout - 用户登出接口 (公开访问)
 router.post('/logout', logout);
+
+// POST /api/v1/auth/settings/enable-auto-login-ip - 为当前IP启用自动登录白名单 (需要认证)
+router.post('/settings/enable-auto-login-ip', isAuthenticated, enableAutoLoginForCurrentIp);
 
 
 export default router;

@@ -16,6 +16,7 @@ interface LoginPayload {
     username: string;
     password: string;
     rememberMe?: boolean; // 可选的“记住我”标志
+    enableAutoLoginForIp?: boolean; // 新增：为此IP启用自动登录
 }
 
 // Public CAPTCHA Config Interface (mirrors backend public config)
@@ -82,8 +83,40 @@ export const useAuthStore = defineStore('auth', {
             this.error = errorMessage;
         },
 
-        // 登录 Action - 更新为接受 LoginPayload + optional captchaToken
-        async login(payload: LoginPayload & { captchaToken?: string }) { // Add captchaToken to payload
+        // 新增：尝试自动登录 Action
+        async attemptAutoLogin() {
+            // 这个 action 不应该设置 isLoading，因为它应该在后台静默尝试
+            // 也不应该在失败时设置全局 error，因为它不是用户直接操作的失败
+            console.log('[AuthStore] Attempting auto login...');
+            try {
+                // 向 /auth/login 发送一个 POST 请求，后端 autoLoginMiddleware 会处理
+                // 可以发送一个空对象作为 payload，或者根据后端需要发送特定标记
+                const response = await apiClient.post<{ message: string; user?: UserInfo; requiresTwoFactor?: boolean }>('/auth/login', {});
+                
+                if (response.data.user && !response.data.requiresTwoFactor) {
+                    // 自动登录成功 (且不需要2FA，对于自动登录场景通常是这样)
+                    this.isAuthenticated = true;
+                    this.user = response.data.user;
+                    this.loginRequires2FA = false;
+                    console.log('[AuthStore] Auto login successful:', this.user);
+                    if (this.user?.language) {
+                        setLocale(this.user.language);
+                    }
+                    return true; // 表明自动登录成功
+                }
+                // 如果响应表明需要2FA或没有用户信息，则认为自动登录未发生或不适用
+                console.log('[AuthStore] Auto login did not occur or requires further steps.');
+                return false;
+            } catch (err: any) {
+                // 捕获错误 (例如网络错误，或后端返回4xx/5xx但不是明确的“需要凭证”类型)
+                // 对于自动登录尝试，我们通常不希望这些错误直接显示给用户或阻止应用加载
+                console.warn('[AuthStore] Auto login attempt failed or was not applicable:', err.response?.data?.message || err.message);
+                return false; // 表明自动登录未成功
+            }
+        },
+
+        // 登录 Action - 更新为接受 LoginPayload + optional captchaToken + optional enableAutoLoginForIp
+        async login(payload: LoginPayload & { captchaToken?: string; enableAutoLoginForIp?: boolean }) {
             this.isLoading = true;
             this.error = null;
             this.loginRequires2FA = false; // 重置 2FA 状态
@@ -109,6 +142,21 @@ export const useAuthStore = defineStore('auth', {
                     }
                     // await router.push({ name: 'Workspace' }); // 改为页面刷新
                     window.location.href = '/'; // 跳转到根路径并刷新
+                    
+                    // 如果勾选了 "为此 IP 启用自动登录"，则在登录成功后调用后端接口
+                    if (payload.enableAutoLoginForIp && response.data.user) {
+                        try {
+                            console.log('[AuthStore] Login successful, attempting to enable auto-login for this IP...');
+                            // 注意：后端需要一个新的API端点来处理这个请求
+                            // 例如: POST /api/v1/auth/settings/enable-auto-login-ip
+                            // 该请求应由后端获取当前请求的IP并添加到白名单
+                            await apiClient.post('/auth/settings/enable-auto-login-ip');
+                            console.log('[AuthStore] Successfully requested to enable auto-login for this IP.');
+                        } catch (autoLoginEnableError: any) {
+                            // 即便这个辅助请求失败，也不应影响主登录流程
+                            console.warn('[AuthStore] Failed to request enabling auto-login for this IP:', autoLoginEnableError.response?.data?.message || autoLoginEnableError.message);
+                        }
+                    }
                     return { success: true };
                 } else {
                     // 不应该发生，但作为防御性编程
@@ -146,6 +194,16 @@ export const useAuthStore = defineStore('auth', {
                 }
                 // await router.push({ name: 'Workspace' }); // 改为页面刷新
                 window.location.href = '/'; // 跳转到根路径并刷新
+
+                // 2FA 成功后，也检查是否需要启用自动登录 (如果 enableAutoLoginForIp 是在第一步登录时传递的)
+                // 注意：这里的 payload 是 verifyLogin2FA 的 payload，不包含 enableAutoLoginForIp
+                // 这个逻辑可能需要调整，例如在 session 中临时存储 enableAutoLoginForIp 的意图
+                // 或者，更简单的方式是，如果用户在第一步勾选了，就在第一步登录成功后（如果不需要2FA）或2FA成功后统一处理。
+                // 为了简化，我们假设如果需要2FA，则在2FA成功后不再自动添加IP。用户可以在设置中手动配置。
+                // 或者，后端在 login 阶段就应该处理 enableAutoLoginForIp，即使需要2FA，也记录这个意图。
+                // 当前实现：仅在非2FA登录成功时，前端会尝试调用 enable-auto-login-ip。
+                // 如果希望2FA后也执行，后端 login 接口需要在session中标记这个意图，然后在 verifyLogin2FA 成功后检查并执行。
+
                 return { success: true };
             } catch (err: any) {
                 console.error('2FA 验证失败:', err);

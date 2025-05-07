@@ -58,6 +58,12 @@ interface SettingsState {
   layoutLocked?: string; // 'true' or 'false' - NEW: 布局锁定状态
   terminalScrollbackLimit?: string; // NEW: 终端回滚行数上限 (e.g., '5000', '0' for unlimited)
   fileManagerShowDeleteConfirmation?: string; // NEW: 'true' or 'false' - 文件管理器删除确认提示
+  // --- Auto Login Settings ---
+  autoLoginCloudflareEnabled?: string; // 'true' or 'false'
+  autoLoginCloudflareTrustedIPs?: string; // Comma-separated IPs
+  autoLoginIpWhitelistEnabled?: string; // 'true' or 'false'
+  autoLoginIpWhitelistAllowedIPs?: string; // Comma-separated IPs
+  // --- End Auto Login Settings ---
   [key: string]: string | undefined;
 }
 
@@ -66,7 +72,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const authStore = useAuthStore(); // <--- 实例化 authStore
 
   // --- State ---
-  const settings = ref<Partial<SettingsState>>({}); // 通用设置状态
+  const settings = ref<Partial<SettingsState>>({}); // 通用设置状态 (包含新增的 autoLogin 字段)
   const parsedSidebarPaneWidths = ref<Record<string, string>>({}); // NEW: 解析后的侧边栏宽度对象
   const parsedFileManagerColWidths = ref<Record<string, number>>({}); // NEW: 解析后的文件管理器列宽对象
   const captchaSettings = ref<CaptchaSettings | null>(null); // NEW: CAPTCHA 设置状态
@@ -282,7 +288,19 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.fileManagerShowDeleteConfirmation = 'true'; // 默认显示删除确认
         console.log(`[SettingsStore] fileManagerShowDeleteConfirmation not found, set to default: ${settings.value.fileManagerShowDeleteConfirmation}`);
       }
-        
+      // NEW: Auto Login setting defaults
+      if (settings.value.autoLoginCloudflareEnabled === undefined) {
+          settings.value.autoLoginCloudflareEnabled = 'false'; // 默认禁用
+      }
+      if (settings.value.autoLoginCloudflareTrustedIPs === undefined) {
+          settings.value.autoLoginCloudflareTrustedIPs = ''; // 默认空
+      }
+      if (settings.value.autoLoginIpWhitelistEnabled === undefined) {
+          settings.value.autoLoginIpWhitelistEnabled = 'false'; // 默认禁用
+      }
+      if (settings.value.autoLoginIpWhitelistAllowedIPs === undefined) {
+          settings.value.autoLoginIpWhitelistAllowedIPs = ''; // 默认空
+      }
         
       // --- 语言设置 ---
       const langFromSettings = settings.value.language;
@@ -371,7 +389,13 @@ export const useSettingsStore = defineStore('settings', () => {
         'showQuickCommandTags', // NEW
         'layoutLocked', // NEW
         'terminalScrollbackLimit', // NEW
-        'fileManagerShowDeleteConfirmation' // NEW
+        'fileManagerShowDeleteConfirmation', // NEW
+        // --- Auto Login Keys ---
+        'autoLoginCloudflareEnabled',
+        'autoLoginCloudflareTrustedIPs',
+        'autoLoginIpWhitelistEnabled',
+        'autoLoginIpWhitelistAllowedIPs'
+        // --- End Auto Login Keys ---
       ];
       if (!allowedKeys.includes(key)) {
           console.error(`[SettingsStore] 尝试更新不允许的设置键: ${key}`);
@@ -458,7 +482,13 @@ export const useSettingsStore = defineStore('settings', () => {
         'showQuickCommandTags', // NEW
         'layoutLocked', // NEW
         'terminalScrollbackLimit', // NEW
-        'fileManagerShowDeleteConfirmation' // NEW
+        'fileManagerShowDeleteConfirmation', // NEW
+        // --- Auto Login Keys ---
+        'autoLoginCloudflareEnabled',
+        'autoLoginCloudflareTrustedIPs',
+        'autoLoginIpWhitelistEnabled',
+        'autoLoginIpWhitelistAllowedIPs'
+        // --- End Auto Login Keys ---
       ];
       const filteredUpdates: Partial<SettingsState> = {};
       let languageUpdate: string | undefined = undefined;
@@ -750,9 +780,24 @@ export const useSettingsStore = defineStore('settings', () => {
   const fileManagerShowDeleteConfirmationBoolean = computed(() => {
       return settings.value.fileManagerShowDeleteConfirmation !== 'false'; // Default to true
   });
- 
+  
+  // --- Auto Login Getters ---
+  const autoLoginCloudflareEnabledBoolean = computed(() => {
+      return settings.value.autoLoginCloudflareEnabled === 'true';
+  });
+  const autoLoginCloudflareTrustedIPsString = computed(() => {
+      return settings.value.autoLoginCloudflareTrustedIPs || '';
+  });
+  const autoLoginIpWhitelistEnabledBoolean = computed(() => {
+      return settings.value.autoLoginIpWhitelistEnabled === 'true';
+  });
+  const autoLoginIpWhitelistAllowedIPsString = computed(() => {
+      return settings.value.autoLoginIpWhitelistAllowedIPs || '';
+  });
+  // --- End Auto Login Getters ---
+
  return {
-    settings, // 只包含通用设置
+   settings, // 只包含通用设置 (包括 autoLogin 字段)
     isLoading,
     error,
     language,
@@ -793,5 +838,11 @@ export const useSettingsStore = defineStore('settings', () => {
     layoutLockedBoolean,
     terminalScrollbackLimitNumber, // NEW: Expose terminal scrollback limit getter
     fileManagerShowDeleteConfirmationBoolean, // NEW: Expose file manager delete confirmation getter
+    // --- Auto Login Exports ---
+    autoLoginCloudflareEnabledBoolean,
+    autoLoginCloudflareTrustedIPsString,
+    autoLoginIpWhitelistEnabledBoolean,
+    autoLoginIpWhitelistAllowedIPsString,
+    // --- End Auto Login Exports ---
   };
   });

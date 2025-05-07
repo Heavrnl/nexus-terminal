@@ -19,6 +19,7 @@ const credentials = reactive({
 });
 const twoFactorToken = ref(''); // 用于存储 2FA 验证码
 const rememberMe = ref(false); // 新增：记住我状态，默认为 false
+const enableAutoLoginForIp = ref(false); // 新增：为此IP启用自动登录，默认为 false
 const captchaToken = ref<string | null>(null); // NEW: Store CAPTCHA token
 const captchaError = ref<string | null>(null); // NEW: Store CAPTCHA specific error
 const hcaptchaWidget = ref<InstanceType<typeof VueHcaptcha> | null>(null); // NEW: Ref for hCaptcha component instance
@@ -79,6 +80,7 @@ const handleSubmit = async () => {
       await authStore.login({
           ...credentials,
           rememberMe: rememberMe.value,
+          enableAutoLoginForIp: enableAutoLoginForIp.value, // 新增参数
           captchaToken: captchaToken.value ?? undefined // Pass token or undefined if null
       });
     }
@@ -142,6 +144,12 @@ onMounted(() => {
               <input type="checkbox" id="rememberMe" v-model="rememberMe" :disabled="isLoading"
                      class="w-4 h-4 mr-2 accent-primary rounded border-gray-300 focus:ring-primary disabled:cursor-not-allowed" />
               <label for="rememberMe" class="text-sm text-text-secondary cursor-pointer">{{ t('login.rememberMe', '记住我') }}</label>
+            </div>
+            <!-- Enable Auto Login For IP Checkbox -->
+            <div class="flex items-center">
+              <input type="checkbox" id="enableAutoLoginForIp" v-model="enableAutoLoginForIp" :disabled="isLoading"
+                     class="w-4 h-4 mr-2 accent-primary rounded border-gray-300 focus:ring-primary disabled:cursor-not-allowed" />
+              <label for="enableAutoLoginForIp" class="text-sm text-text-secondary cursor-pointer">{{ t('login.enableAutoLoginForIp', '为此 IP 启用自动登录') }}</label>
             </div>
           </div>
 

@@ -171,12 +171,56 @@
                     </div>
                  </form>
               </div>
-            </div>
-          </div>
+              <hr class="border-border/50"> <!-- Separator -->
+             <!-- Auto Login Settings Section -->
+             <div class="settings-section-content">
+               <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.autoLogin.title', '自动登录') }}</h3>
+               <form @submit.prevent="handleUpdateAutoLoginSettings" class="space-y-6">
+                 <!-- Cloudflare Auto Login -->
+                 <div class="space-y-3 p-3 border border-border/30 rounded-md">
+                   <div class="flex items-center">
+                     <input type="checkbox" id="cloudflareAutoLoginEnabled" v-model="autoLoginSettingsForm.cloudflareEnabled"
+                            class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
+                     <label for="cloudflareAutoLoginEnabled" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoLogin.cloudflareEnableLabel', '启用 Cloudflare Access 自动登录') }}</label>
+                   </div>
+                   <div v-if="autoLoginSettingsForm.cloudflareEnabled">
+                     <label for="cloudflareTrustedIPs" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.autoLogin.cloudflareTrustedIPsLabel', 'Cloudflare 受信任 IP 列表 (逗号分隔)') }}</label>
+                     <textarea id="cloudflareTrustedIPs" v-model="autoLoginSettingsForm.cloudflareTrustedIPs" rows="2"
+                               class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-sm"></textarea>
+                     <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.autoLogin.cloudflareTrustedIPsHint', '通过 Cloudflare Access 认证后，来自这些 IP 的请求将自动登录。') }}</small>
+                   </div>
+                 </div>
 
-          <!-- IP Whitelist Section: Only show if settings data is loaded -->
+                 <!-- App IP Whitelist Auto Login -->
+                 <div class="space-y-3 p-3 border border-border/30 rounded-md">
+                   <div class="flex items-center">
+                     <input type="checkbox" id="ipWhitelistAutoLoginEnabled" v-model="autoLoginSettingsForm.ipWhitelistEnabled"
+                            class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
+                     <label for="ipWhitelistAutoLoginEnabled" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoLogin.ipWhitelistEnableLabel', '启用应用 IP 白名单自动登录') }}</label>
+                   </div>
+                   <div v-if="autoLoginSettingsForm.ipWhitelistEnabled">
+                     <label for="ipWhitelistAllowedIPs" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsLabel', '应用 IP 白名单 (逗号分隔)') }}</label>
+                     <textarea id="ipWhitelistAllowedIPs" v-model="autoLoginSettingsForm.ipWhitelistAllowedIPs" rows="2"
+                               class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono text-sm"></textarea>
+                     <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.autoLogin.ipWhitelistAllowedIPsHint', '来自这些 IP 的请求将自动登录（如果 Cloudflare 自动登录未触发）。') }}</small>
+                   </div>
+                 </div>
+
+                 <div class="flex items-center justify-between pt-2">
+                    <button type="submit" :disabled="autoLoginSettingsLoading"
+                            class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
+                      {{ autoLoginSettingsLoading ? $t('common.loading') : $t('settings.autoLogin.saveButton', '保存自动登录设置') }}
+                    </button>
+                    <p v-if="autoLoginSettingsMessage" :class="['text-sm', autoLoginSettingsSuccess ? 'text-success' : 'text-error']">{{ autoLoginSettingsMessage }}</p>
+                 </div>
+               </form>
+             </div>
+           </div>
+         </div>
+
+          <!-- IP Whitelist Section (General - for access control, not auto-login specific): Only show if settings data is loaded -->
           <div v-if="settings" class="bg-background border border-border rounded-lg shadow-sm overflow-hidden">
-            <h2 class="text-lg font-semibold text-foreground px-6 py-4 border-b border-border bg-header/50">{{ $t('settings.ipWhitelist.title') }}</h2>
+            <h2 class="text-lg font-semibold text-foreground px-6 py-4 border-b border-border bg-header/50">{{ $t('settings.ipWhitelist.title') }} ({{ $t('settings.ipWhitelist.accessControlOnly', '访问控制') }})</h2>
             <div class="p-6 space-y-6">
                <p class="text-sm text-text-secondary mb-4">{{ $t('settings.ipWhitelist.description') }}</p>
                <form @submit.prevent="handleUpdateIpWhitelist" class="space-y-4">
@@ -803,6 +847,19 @@ const captchaForm = reactive<UpdateCaptchaSettingsDto>({ // Use reactive for the
 const captchaLoading = ref(false);
 const captchaMessage = ref('');
 const captchaSuccess = ref(false);
+
+// --- Auto Login Settings State ---
+const autoLoginSettingsForm = reactive({
+ cloudflareEnabled: false,
+ cloudflareTrustedIPs: '',
+ ipWhitelistEnabled: false,
+ ipWhitelistAllowedIPs: '',
+});
+const autoLoginSettingsLoading = ref(false);
+const autoLoginSettingsMessage = ref('');
+const autoLoginSettingsSuccess = ref(false);
+
+
 // Removed Passkey Deletion State
 
 
@@ -845,7 +902,22 @@ watch(settings, (newSettings, oldSettings) => {
   terminalScrollbackLimitLocal.value = terminalScrollbackLimitNumber.value;
   // NEW: Sync file manager delete confirmation
   fileManagerShowDeleteConfirmationLocal.value = fileManagerShowDeleteConfirmationBoolean.value;
- 
+  
+  // Sync Auto Login Settings from store to local form
+  if (newSettings) { // Ensure newSettings is not null/undefined
+    // Helper function to safely convert to boolean
+    const toBoolean = (value: any): boolean => {
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'string') return value.toLowerCase() === 'true';
+      return false; // Default to false if undefined or other types
+    };
+
+    autoLoginSettingsForm.cloudflareEnabled = toBoolean(newSettings.autoLoginCloudflareEnabled);
+    autoLoginSettingsForm.cloudflareTrustedIPs = newSettings.autoLoginCloudflareTrustedIPs || '';
+    autoLoginSettingsForm.ipWhitelistEnabled = toBoolean(newSettings.autoLoginIpWhitelistEnabled);
+    autoLoginSettingsForm.ipWhitelistAllowedIPs = newSettings.autoLoginIpWhitelistAllowedIPs || '';
+  }
+
 }, { deep: true, immediate: true }); // immediate: true to run on initial load
 
 // Watcher for CAPTCHA settings
@@ -1402,6 +1474,33 @@ const handleUpdateCaptchaSettings = async () => {
     } finally {
         captchaLoading.value = false;
     }
+};
+
+// --- Auto Login Settings Method ---
+const handleUpdateAutoLoginSettings = async () => {
+ autoLoginSettingsLoading.value = true;
+ autoLoginSettingsMessage.value = '';
+ autoLoginSettingsSuccess.value = false;
+ try {
+   const settingsToSave = {
+     autoLoginCloudflareEnabled: autoLoginSettingsForm.cloudflareEnabled ? 'true' : 'false',
+     autoLoginCloudflareTrustedIPs: autoLoginSettingsForm.cloudflareTrustedIPs.trim(),
+     autoLoginIpWhitelistEnabled: autoLoginSettingsForm.ipWhitelistEnabled ? 'true' : 'false',
+     autoLoginIpWhitelistAllowedIPs: autoLoginSettingsForm.ipWhitelistAllowedIPs.trim(),
+   };
+   // Assuming a new action in settingsStore or using updateMultipleSettings
+   await settingsStore.updateMultipleSettings(settingsToSave);
+   // Or if you create a specific action: await settingsStore.updateAutoLoginSettings(autoLoginSettingsForm);
+
+   autoLoginSettingsMessage.value = t('settings.autoLogin.success.saved', '自动登录设置已保存。');
+   autoLoginSettingsSuccess.value = true;
+ } catch (error: any) {
+   console.error('更新自动登录设置失败:', error);
+   autoLoginSettingsMessage.value = error.message || t('settings.autoLogin.error.saveFailed', '保存自动登录设置失败。');
+   autoLoginSettingsSuccess.value = false;
+ } finally {
+   autoLoginSettingsLoading.value = false;
+ }
 };
 
 

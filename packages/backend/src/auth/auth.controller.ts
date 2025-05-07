@@ -37,8 +37,8 @@ declare module 'express-session' {
  * 处理用户登录请求 (POST /api/v1/auth/login)
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
-    // 从请求体中解构 username, password 和可选的 rememberMe
-    const { username, password, rememberMe } = req.body;
+    // 从请求体中解构 username, password 和可选的 rememberMe, enableAutoLoginForIp
+    const { username, password, rememberMe, enableAutoLoginForIp } = req.body;
 
     if (!username || !password) {
         res.status(400).json({ message: '用户名和密码不能为空。' });
@@ -137,6 +137,24 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             } else {
                 // 如果未勾选，则不设置 maxAge，使其成为会话 cookie
                 req.session.cookie.maxAge = undefined;
+            }
+
+            // 如果用户勾选了 "为此 IP 启用自动登录"
+            if (enableAutoLoginForIp === true || enableAutoLoginForIp === 'true') {
+                const currentClientIp = (req.headers['cf-connecting-ip'] as string) || req.ip || req.socket?.remoteAddress;
+                if (currentClientIp) {
+                    try {
+                        console.log(`[AuthController] 用户 ${username} 请求为此 IP (${currentClientIp}) 启用自动登录。`);
+                        // 注意：settingsService.enableIpWhitelistAndAddCurrentIp 需要被创建
+                        await settingsService.enableIpWhitelistAndAddCurrentIp(currentClientIp);
+                        console.log(`[AuthController] 已尝试为 IP ${currentClientIp} 启用自动登录白名单。`);
+                    } catch (autoLoginSetupError) {
+                        console.error(`[AuthController] 为 IP ${currentClientIp} 启用自动登录白名单时出错:`, autoLoginSetupError);
+                        // 这个错误不应该阻止登录流程
+                    }
+                } else {
+                    console.warn(`[AuthController] 无法获取客户端 IP 以启用自动登录白名单。`);
+                }
             }
 
             res.status(200).json({
@@ -674,5 +692,36 @@ export const getPublicCaptchaConfig = async (req: Request, res: Response): Promi
              recaptchaSiteKey: '',
              error: '获取 CAPTCHA 配置失败'
         });
+    }
+};
+
+/**
+ * 为当前已认证用户的 IP 启用自动登录白名单。
+ * (POST /api/v1/auth/settings/enable-auto-login-ip)
+ * 这个端点由前端在用户登录成功且勾选了相应选项后调用。
+ */
+export const enableAutoLoginForCurrentIp = async (req: Request, res: Response): Promise<void> => {
+    // 此路由受 isAuthenticated 中间件保护，所以 req.session.userId 应该存在
+    // 我们也需要确保用户确实是登录状态，而不是仅仅通过了 isAuthenticated 但会话可能不完整
+    if (!req.session.userId || !req.session.username || req.session.requiresTwoFactor === true) {
+        res.status(401).json({ message: '用户未完全认证或会话无效。' });
+        return;
+    }
+
+    const clientIp = (req.headers['cf-connecting-ip'] as string) || req.ip || req.socket?.remoteAddress;
+
+    if (!clientIp) {
+        console.warn(`[AuthController] enableAutoLoginForCurrentIp: 无法获取客户端 IP。 UserID: ${req.session.userId}`);
+        res.status(400).json({ message: '无法获取客户端 IP 地址。' });
+        return;
+    }
+
+    try {
+        await settingsService.enableIpWhitelistAndAddCurrentIp(clientIp);
+        console.log(`[AuthController] 已为用户 ID ${req.session.userId} 的 IP ${clientIp} 启用并添加至自动登录白名单。`);
+        res.status(200).json({ message: `IP ${clientIp} 已成功添加至自动登录白名单并启用该功能。` });
+    } catch (error: any) {
+        console.error(`[AuthController] 为 IP ${clientIp} 启用自动登录白名单时发生服务器错误:`, error);
+        res.status(500).json({ message: '处理请求时发生服务器内部错误。', error: error.message });
     }
 };

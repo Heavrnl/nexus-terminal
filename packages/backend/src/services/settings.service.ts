@@ -13,7 +13,17 @@ import {
     CaptchaSettings,
     UpdateCaptchaSettingsDto,
     CaptchaProvider,
+    AutoLoginSettings, // <-- 新增导入
+    AutoLoginCloudflareSettings, // <-- 新增导入
+    AutoLoginIpWhitelistSettings, // <-- 新增导入
 } from '../types/settings.types';
+
+// 环境变量键名定义
+const AUTOLOGIN_CLOUDFLARE_ENABLED_KEY = 'AUTOLOGIN_CLOUDFLARE_ENABLED';
+const AUTOLOGIN_CLOUDFLARE_TRUSTED_IPS_KEY = 'AUTOLOGIN_CLOUDFLARE_TRUSTED_IPS';
+const AUTOLOGIN_IP_WHITELIST_ENABLED_KEY = 'AUTOLOGIN_IP_WHITELIST_ENABLED';
+const AUTOLOGIN_IP_WHITELIST_IPS_KEY = 'AUTOLOGIN_IP_WHITELIST_IPS';
+
 
 // +++ 定义焦点切换完整配置接口 (与前端 store 保持一致) +++
 interface FocusItemConfig { // 单个项目的配置
@@ -535,6 +545,106 @@ export const settingsService = {
      console.error(`[Service] Error calling settingsRepository.setSetting for key ${SHOW_QUICK_COMMAND_TAGS_KEY}:`, error);
      throw new Error('Failed to save show quick command tags setting.');
    }
- } // <-- No comma after the last method
+ }, // <-- Add comma here for new methods
+
+ // --- Auto Login Settings ---
+
+ /**
+  * 获取 Cloudflare Access 自动登录设置
+  * @returns Promise<AutoLoginCloudflareSettings>
+  */
+ async getAutoLoginCloudflareSettings(): Promise<AutoLoginCloudflareSettings> {
+   // 仅从数据库读取
+   const dbEnabledStr = await settingsRepository.getSetting('autoLoginCloudflareEnabled');
+   const dbTrustedIPsStr = await settingsRepository.getSetting('autoLoginCloudflareTrustedIPs');
+
+   // 如果数据库中没有设置，则默认为禁用和空列表
+   const enabled = dbEnabledStr === 'true'; // 如果 dbEnabledStr 为 null 或 'false'，则为 false
+   const trustedIPsString = dbTrustedIPsStr || ''; // 如果 dbTrustedIPsStr 为 null，则为空字符串
+   
+   const trustedIPs = trustedIPsString ? trustedIPsString.split(',').map(ip => ip.trim()).filter(ip => ip) : [];
+   
+   console.log(`[SettingsService] Cloudflare AutoLogin (DB Only) Enabled: ${enabled} (DB value: ${dbEnabledStr}), Trusted IPs: ${trustedIPs.join(', ')} (DB value: ${dbTrustedIPsStr})`);
+   return { enabled, trustedIPs };
+ },
+
+ /**
+  * 获取 IP 白名单自动登录设置
+  * @returns Promise<AutoLoginIpWhitelistSettings>
+  */
+ async getAutoLoginIpWhitelistSettings(): Promise<AutoLoginIpWhitelistSettings> {
+   // 仅从数据库读取
+   const dbEnabledStr = await settingsRepository.getSetting('autoLoginIpWhitelistEnabled');
+   const dbAllowedIPsStr = await settingsRepository.getSetting('autoLoginIpWhitelistAllowedIPs');
+
+   // 如果数据库中没有设置，则默认为禁用和空列表
+   const enabled = dbEnabledStr === 'true'; // 如果 dbEnabledStr 为 null 或 'false'，则为 false
+   const allowedIPsString = dbAllowedIPsStr || ''; // 如果 dbAllowedIPsStr 为 null，则为空字符串
+
+   const allowedIPs = allowedIPsString ? allowedIPsString.split(',').map(ip => ip.trim()).filter(ip => ip) : [];
+
+   console.log(`[SettingsService] IP Whitelist AutoLogin (DB Only) Enabled: ${enabled} (DB value: ${dbEnabledStr}), Allowed IPs: ${allowedIPs.join(', ')} (DB value: ${dbAllowedIPsStr})`);
+   return { enabled, allowedIPs };
+ },
+
+ /**
+  * 获取所有自动登录相关的设置
+  * @returns Promise<AutoLoginSettings>
+  */
+ async getAutoLoginSettings(): Promise<AutoLoginSettings> {
+   const cloudflare = await this.getAutoLoginCloudflareSettings();
+   const ipWhitelist = await this.getAutoLoginIpWhitelistSettings();
+   return {
+     cloudflare,
+     ipWhitelist,
+   };
+ },
+
+ /**
+  * 启用 IP 白名单自动登录并将当前 IP 添加到白名单中。
+  * @param clientIp 要添加到白名单的客户端 IP 地址。
+  */
+ async enableIpWhitelistAndAddCurrentIp(clientIp: string): Promise<void> {
+   if (!clientIp) {
+     console.warn('[SettingsService] enableIpWhitelistAndAddCurrentIp: clientIp is empty, skipping.');
+     return;
+   }
+
+   console.log(`[SettingsService] Attempting to enable IP whitelist auto-login and add IP: ${clientIp}`);
+   try {
+     // 1. 获取当前的 IP 白名单自动登录设置 (优先从数据库读取)
+     const currentEnabledStr = await settingsRepository.getSetting('autoLoginIpWhitelistEnabled');
+     const currentAllowedIPsStr = await settingsRepository.getSetting('autoLoginIpWhitelistAllowedIPs');
+
+     let newEnabled = 'true'; // 总是尝试启用
+     let currentAllowedIPsArray: string[] = [];
+
+     if (currentAllowedIPsStr) {
+       currentAllowedIPsArray = currentAllowedIPsStr.split(',').map(ip => ip.trim()).filter(ip => ip);
+     }
+
+     // 2. 添加新的 IP (如果不存在)
+     if (!currentAllowedIPsArray.includes(clientIp)) {
+       currentAllowedIPsArray.push(clientIp);
+     }
+
+     const newAllowedIPsStr = currentAllowedIPsArray.join(',');
+
+     // 3. 准备要更新的设置
+     const settingsToUpdate: Record<string, string> = {
+       autoLoginIpWhitelistEnabled: newEnabled,
+       autoLoginIpWhitelistAllowedIPs: newAllowedIPsStr,
+     };
+
+     // 4. 保存回数据库
+     await this.setMultipleSettings(settingsToUpdate); // 使用 this 调用
+     console.log(`[SettingsService] IP whitelist auto-login enabled and IP ${clientIp} added/confirmed in whitelist.`);
+
+   } catch (error) {
+     console.error(`[SettingsService] Error enabling IP whitelist auto-login or adding IP ${clientIp}:`, error);
+     // 可以选择性地重新抛出错误，或者静默处理
+     // throw error;
+   }
+ }
 
 }; // <-- End of settingsService object definition

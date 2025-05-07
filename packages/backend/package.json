@@ -10,6 +10,7 @@
    },
    "dependencies": {
       "@types/archiver": "^6.0.3",
+      "@types/jsonwebtoken": "^9.0.9",
       "@types/multer": "^1.4.12",
       "@types/session-file-store": "^1.2.5",
       "@types/uuid": "^10.0.0",
@@ -26,6 +27,7 @@
       "iconv-lite": "^0.6.3",
       "ipaddr.js": "^1.9.1",
       "jschardet": "^3.1.4",
+      "jsonwebtoken": "^9.0.2",
       "multer": "^1.4.5-lts.2",
       "nodemailer": "^6.10.1",
       "qrcode": "^1.5.4",

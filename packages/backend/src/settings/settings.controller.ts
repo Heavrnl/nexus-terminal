@@ -50,7 +50,13 @@ export const settingsController = {
           'ipBlacklistEnabled', // <-- 添加 IP 黑名单启用键
           'layoutLocked', // +++ 添加布局锁定键 +++
           'terminalScrollbackLimit', // NEW: 添加终端回滚行数键
-          'fileManagerShowDeleteConfirmation' // NEW: 添加文件管理器删除确认键
+          'fileManagerShowDeleteConfirmation', // NEW: 添加文件管理器删除确认键
+          // --- Auto Login Keys ---
+          'autoLoginCloudflareEnabled',
+          'autoLoginCloudflareTrustedIPs',
+          'autoLoginIpWhitelistEnabled',
+          'autoLoginIpWhitelistAllowedIPs'
+          // --- End Auto Login Keys ---
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {
