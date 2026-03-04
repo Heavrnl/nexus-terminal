@@ -420,7 +420,9 @@ export class StatusMonitorService {
     private executeSshCommand(sshClient: Client, command: string): Promise<string> {
         return new Promise((resolve, reject) => {
             let output = '';
-            sshClient.exec(command, (err, stream) => {
+            sshClient.exec(command, {
+	    	env: { LC_ALL: 'C' },
+	    }, (err, stream) => {
                 if (err) {
                     return reject(new Error(`执行命令 '${command}' 失败: ${err.message}`));
                 }
