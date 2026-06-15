@@ -25,6 +25,9 @@ export interface ClientState { // 导出以便 Service 可以导入
     isMarkedForSuspend?: boolean; // 标记此会话是否已被用户请求挂起（等待断开连接）
     suspendLogPath?: string;      // 如果标记挂起，则存储日志路径 (基于原始 sessionId)
     // suspendLogWritableStream?: NodeJS.WritableStream; // 移除，将直接使用 temporaryLogStorageService.writeToLog
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    sftp_sudo_password?: string | null;
 }
 
 export interface PortInfo {

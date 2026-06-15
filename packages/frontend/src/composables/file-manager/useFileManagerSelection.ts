@@ -8,10 +8,12 @@ export interface UseFileManagerSelectionOptions {
   displayedFileList: Ref<Readonly<FileListItem[]>>;
   // 回调函数，当需要执行导航或打开文件时调用
   onItemAction: (item: FileListItem) => void;
+  // 双击回调，用于打开文件（目录仍由 onItemAction 处理）
+  onItemDblAction?: (item: FileListItem) => void;
 }
 
 export function useFileManagerSelection(options: UseFileManagerSelectionOptions) {
-  const { displayedFileList, onItemAction } = options;
+  const { displayedFileList, onItemAction, onItemDblAction } = options;
 
   const selectedItems = ref(new Set<string>());
   const lastClickedIndex = ref(-1); // 索引相对于 displayedFileList
@@ -95,7 +97,8 @@ export function useFileManagerSelection(options: UseFileManagerSelectionOptions)
       // Shift-click 也更新 lastClickedIndex 为当前点击项
       lastClickedIndex.value = itemIndex;
     } else { // 3. 处理普通单击 (没有修饰键)
-      // Single Click: Select only the clicked item and perform action
+      // Single Click: Select only the clicked item
+      // 文件需要双击才打开，目录/符号链接/'..'仍单击触发动作
       selectedItems.value.clear();
        // '..' 不应被加入 selectedItems (已在前面处理 shouldPerformAction)
       if (item.filename !== '..') {
@@ -106,14 +109,27 @@ export function useFileManagerSelection(options: UseFileManagerSelectionOptions)
           // lastClickedIndex.value = -1;
       }
       // --- 调用外部传入的动作回调 ---
-      // 只有单击时才执行导航或打开文件
-      // 标记执行动作 (只在普通单击时)
-      shouldPerformAction = true;
+      // 目录、符号链接、'..' 仍然单击触发；普通文件改为双击触发
+      if (!item.attrs.isFile) {
+        shouldPerformAction = true;
+      }
     }
 
     // 在函数末尾根据标志决定是否执行动作
     if (shouldPerformAction) {
         onItemAction(item);
+    }
+  };
+
+
+  // 双击处理：仅对普通文件触发打开动作
+  const handleItemDblClick = (item: FileListItem) => {
+    if (item.attrs.isFile) {
+      if (onItemDblAction) {
+        onItemDblAction(item);
+      } else {
+        onItemAction(item);
+      }
     }
   };
 
@@ -127,6 +143,7 @@ export function useFileManagerSelection(options: UseFileManagerSelectionOptions)
     selectedItems,
     lastClickedIndex, // 只读暴露，主要由内部管理
     handleItemClick,
+    handleItemDblClick, // 双击打开文件
     clearSelection, // 暴露清空选择的方法
   };
 }

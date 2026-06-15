@@ -306,6 +306,21 @@ const definedMigrations: Migration[] = [
         sql: `
             ALTER TABLE quick_commands ADD COLUMN variables TEXT NULL;
         `
+    },
+    {
+        id: 11,
+        name: 'Add startup_command, sftp_sudo_enabled, encrypted_sftp_sudo_password columns to connections table',
+        check: async (db: Database): Promise<boolean> => {
+            const c1 = await columnExists(db, 'connections', 'startup_command');
+            const c2 = await columnExists(db, 'connections', 'sftp_sudo_enabled');
+            const c3 = await columnExists(db, 'connections', 'encrypted_sftp_sudo_password');
+            return !c1 || !c2 || !c3;
+        },
+        sql: `
+            ALTER TABLE connections ADD COLUMN startup_command TEXT NULL;
+            ALTER TABLE connections ADD COLUMN sftp_sudo_enabled INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE connections ADD COLUMN encrypted_sftp_sudo_password TEXT NULL;
+        `
     }
 ];
 

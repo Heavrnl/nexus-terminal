@@ -60,6 +60,9 @@ export async function handleSshConnect(
             connectionName: connInfo!.name,
             ipAddress: clientIp,
             isShellReady: false,
+            startup_command: connInfo!.startup_command ?? null,
+            sftp_sudo_enabled: connInfo!.sftp_sudo_enabled ?? false,
+            sftp_sudo_password: connInfo!.sftp_sudo_password ?? null,
         };
         clientStates.set(newSessionId, newState);
         console.log(`WebSocket: 为用户 ${ws.username} (IP: ${clientIp}) 创建新会话 ${newSessionId} (DB ID: ${dbConnectionIdAsNumber}, 连接名称: ${newState.connectionName})`);
@@ -98,6 +101,11 @@ export async function handleSshConnect(
                 console.log(`WebSocket: 会话 ${newSessionId} Shell 打开成功 (尺寸 ${defaultCols}x${defaultRows})。`);
                 newState.sshShellStream = stream;
                 newState.isShellReady = true;
+                if (connInfo!.startup_command) {
+                    const cmd = connInfo!.startup_command.trimEnd() + '\n';
+                    stream.write(cmd);
+                    console.log(`WebSocket: 会话 ${newSessionId} 执行启动命令: ${connInfo!.startup_command}`);
+                }
 
                 stream.on('data', (data: Buffer) => {
                     if (ws.readyState === WebSocket.OPEN) {

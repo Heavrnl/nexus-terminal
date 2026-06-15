@@ -529,6 +529,7 @@ const {
   selectedItems, // 使用 Composable 返回的 selectedItems
   lastClickedIndex, // 获取 lastClickedIndex 以传递给 ContextMenu
   handleItemClick: originalHandleItemClick, // 使用 Composable 返回的 handleItemClick
+  handleItemDblClick: originalHandleItemDblClick, // 双击打开文件
   clearSelection, // 获取清空选择的方法
 } = useFileManagerSelection({
   // 传递当前显示的列表 (已排序和过滤)
@@ -547,6 +548,71 @@ const handleItemClick = (event: MouseEvent, item: FileListItem, forceMultiSelect
     return;
   }
   originalHandleItemClick(event, item);
+};
+
+// 双击打开文件（移动端多选模式下忽略）
+const handleItemDblClick = (item: FileListItem) => {
+  if (props.isMobile && isMultiSelectMode.value) return;
+  originalHandleItemDblClick(item);
+};
+
+// --- 移动端长按弹出右键菜单 ---
+const longPressItem = ref<FileListItem | null>(null); // 正在长按的文件项（用于高亮）
+let longPressTimer: number | null = null;
+let longPressTriggered = false; // 标记是否已触发长按（用于在 touchend 阻止 click）
+const LONG_PRESS_DURATION = 600; // ms
+
+const clearLongPressTimer = () => {
+  if (longPressTimer !== null) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressItem.value = null;
+};
+
+const handleRowTouchStart = (event: TouchEvent, item: FileListItem) => {
+  if (!props.isMobile) return;
+  clearLongPressTimer();
+  longPressTriggered = false;
+  longPressItem.value = item;
+  const touch = event.touches[0];
+  longPressTimer = window.setTimeout(() => {
+    longPressTimer = null;
+    longPressTriggered = true; // 标记长按已触发
+    // 构造一个 MouseEvent 传给 showContextMenu，使菜单出现在手指位置
+    const fakeEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+    });
+    showContextMenu(fakeEvent, item);
+    // 高亮会因 showContextMenu 选中该项而自然消失，手动清除 longPressItem
+    longPressItem.value = null;
+  }, LONG_PRESS_DURATION);
+};
+
+const handleRowTouchEnd = (event: TouchEvent) => {
+  if (longPressTriggered) {
+    // 长按已触发右键菜单，阻止后续 click 事件（避免菜单打开后页面卡死）
+    event.preventDefault();
+    longPressTriggered = false;
+  }
+  clearLongPressTimer();
+  // 兜底：移动端清掉可能残留的原生拖拽状态，防止整页卡死
+  if (props.isMobile) {
+    handleDragEnd();
+  }
+};
+
+const handleRowTouchMove = () => {
+  // 手指移动说明不是长按，取消计时器
+  longPressTriggered = false;
+  clearLongPressTimer();
+  // 兜底：移动端清掉可能残留的原生拖拽状态
+  if (props.isMobile) {
+    handleDragEnd();
+  }
 };
 
 // +++ 计算属性：获取选中的完整文件对象列表 +++
@@ -894,17 +960,43 @@ const handleDecompress = (item: FileListItem) => {
 
 
 // +++ 复制路径到剪贴板 +++
-const handleCopyPath = async (item: FileListItem) => {
+const handleCopyPath = (item: FileListItem) => {
   if (!currentSftpManager.value) return;
   const fullPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
-  try {
-    await navigator.clipboard.writeText(fullPath);
-    // 可选：显示成功通知
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Copied path to clipboard: ${fullPath}`);
+
+  // 使用同步的 execCommand 方案：在菜单点击的同步调用栈内完成复制，
+  // 避免 async/await 导致焦点丢失，同时兼容 HTTP 非安全上下文（navigator.clipboard 不可用）
+  const syncCopy = (text: string): boolean => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none;';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  if (syncCopy(fullPath)) {
+    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Copied path: ${fullPath}`);
     uiNotificationsStore.showSuccess(t('fileManager.notifications.pathCopied', 'Path copied to clipboard'));
-  } catch (err) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to copy path: `, err);
-    // 可选：显示错误通知
+    return;
+  }
+
+  // execCommand 不可用时（极少数情况）才走异步 Clipboard API
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(fullPath).then(() => {
+      uiNotificationsStore.showSuccess(t('fileManager.notifications.pathCopied', 'Path copied to clipboard'));
+    }).catch((err) => {
+      console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to copy path: `, err);
+      uiNotificationsStore.showError(t('fileManager.errors.copyPathFailed', 'Failed to copy path'));
+    });
+  } else {
     uiNotificationsStore.showError(t('fileManager.errors.copyPathFailed', 'Failed to copy path'));
   }
 };
@@ -929,6 +1021,8 @@ const {
   clipboardState: readonly(clipboardState), // +++ 传递剪贴板状态 (只读) +++
   t,
   // --- 传递回调函数 ---
+  // +++ 打开：复用 handleItemAction（文件夹进入/文件用编辑器打开）+++
+  onOpen: handleItemAction,
   // 修改：确保在调用前检查 currentSftpManager.value
   onRefresh: () => {
       if (currentSftpManager.value) {
@@ -1013,7 +1107,7 @@ const {
   currentPath: computed(() => currentSftpManager.value?.currentPath.value ?? '/'),
   fileListContainerRef: fileListContainerRef,
   // 当 Enter 键按下时，模拟鼠标单击
-  onEnterPress: (item) => handleItemClick(new MouseEvent('click'), item),
+  onEnterPress: (item) => item.attrs.isFile ? handleItemDblClick(item) : handleItemClick(new MouseEvent('click'), item),
 });
 
 
@@ -1947,7 +2041,11 @@ const handleOpenEditorClick = () => {
                     'hover:bg-header/50': dragOverTarget !== '..'
                 }"
                 @click="handleItemClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
-                @contextmenu.prevent.stop="showContextMenu($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
+                @touchstart="handleRowTouchStart($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
+                @touchend="handleRowTouchEnd($event)"
+                @touchcancel="handleRowTouchEnd($event)"
+                @touchmove="handleRowTouchMove"
+                @contextmenu.prevent.stop="!props.isMobile && showContextMenu($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @dragover.prevent="handleDragOverRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
                 @dragleave="handleDragLeaveRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @drop.prevent="handleDropOnRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
@@ -1964,8 +2062,13 @@ const handleOpenEditorClick = () => {
             <!-- File Entries -->
             <tr v-for="(item, index) in filteredFileList"
                 :key="item.filename"
-                :draggable="item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
+                :draggable="!props.isMobile && item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
                 @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
+                @dblclick="handleItemDblClick(item)"
+                @touchstart="handleRowTouchStart($event, item)"
+                @touchend="handleRowTouchEnd($event)"
+                @touchcancel="handleRowTouchEnd($event)"
+                @touchmove="handleRowTouchMove"
                 class="transition-colors duration-150 select-none"
                 :class="[
                     { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
@@ -1974,7 +2077,7 @@ const handleOpenEditorClick = () => {
                     { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                 ]"
                :data-filename="item.filename"
-               @contextmenu.prevent.stop="showContextMenu($event, item)"
+               @contextmenu.prevent.stop="!props.isMobile && showContextMenu($event, item)"
                @dragover.prevent="handleDragOverRow(item, $event)"
                @dragleave="handleDragLeaveRow(item)"
                @drop.prevent="handleDropOnRow(item, $event)">
@@ -1992,7 +2095,7 @@ const handleOpenEditorClick = () => {
                 ]"
                 :style="{ fontSize: `calc(1.1em * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }"></i>
               </td>
-              <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ item.filename }}</td>
+              <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }"><span :class="{ 'bg-primary text-white rounded px-1 transition-colors duration-150': props.isMobile && longPressItem?.filename === item.filename }">{{ item.filename }}</span></td>
               <td class="border-b border-border truncate align-middle" :class="[
                 selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
               ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ item.attrs.isFile ? formatSize(item.attrs.size) : '' }}</td> 
@@ -2042,5 +2145,3 @@ const handleOpenEditorClick = () => {
 <style scoped>
 /* Scoped styles removed for Tailwind CSS refactoring */
 </style>
-
-

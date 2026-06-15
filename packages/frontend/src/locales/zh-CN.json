@@ -341,7 +341,12 @@
       "selectJumpHost": "请选择跳板机",
       "removeJumpHostTitle": "移除此跳板机",
       "addJumpHost": "添加跳板机",
-      "noAvailableSshConnectionsForJump": "没有可用的SSH连接作为跳板机。请先创建一些SSH连接。"
+      "noAvailableSshConnectionsForJump": "没有可用的SSH连接作为跳板机。请先创建一些SSH连接。",
+      "startupCommand": "启动命令",
+      "startupCommandPlaceholder": "SSH 连接建立后自动执行的命令（延迟500ms）...",
+      "sftpSudoEnabled": "开启 SFTP sudo 提权",
+      "sftpSudoPasswordPlaceholder": "留空则使用免密 sudo",
+      "sftpSudoPasswordHint": "使用上述密码自动获取 SFTP Root权限，如果为空，请确保服务器允许免密sudo"
     },
     "test": {
       "success": "连接测试成功！",
@@ -420,6 +425,7 @@
     "emptyDirectory": "目录为空",
     "uploadTasks": "上传任务",
     "actions": {
+      "open": "打开",
       "refresh": "刷新",
       "parentDirectory": "上一级",
       "uploadFile": "上传文件",

@@ -19,6 +19,8 @@ export interface ConnectionInfo {
     last_connected_at: number | null;
 notes?: string | null;
     vncPassword?: string; // VNC specific password
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
     jump_chain?: number[] | null;
 }
 
@@ -103,6 +105,7 @@ export const useConnectionsStore = defineStore('connections', {
             proxy_type?: 'proxy' | 'jump' | null; 
             tag_ids?: number[]; // 允许传入 tag_ids
             jump_chain?: number[] | null;
+            sftp_sudo_password?: string | null;
         }) {
             this.isLoading = true;
             this.error = null;
@@ -129,7 +132,7 @@ export const useConnectionsStore = defineStore('connections', {
         // 更新连接 Action
         // 更新参数类型以包含 proxy_id 和 tag_ids
         // Update parameter type to include 'type' and VNC fields
-        async updateConnection(connectionId: number, updatedData: Partial<Omit<ConnectionInfo, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { type?: 'SSH' | 'RDP' | 'VNC'; password?: string; private_key?: string; passphrase?: string; vncPassword?: string; proxy_id?: number | null; proxy_type?: 'proxy' | 'jump' | null; tag_ids?: number[]; jump_chain?: number[] | null; }>) {
+        async updateConnection(connectionId: number, updatedData: Partial<Omit<ConnectionInfo, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { type?: 'SSH' | 'RDP' | 'VNC'; password?: string; private_key?: string; passphrase?: string; vncPassword?: string; proxy_id?: number | null; proxy_type?: 'proxy' | 'jump' | null; tag_ids?: number[]; jump_chain?: number[] | null; startup_command?: string | null; sftp_sudo_enabled?: boolean; sftp_sudo_password?: string | null; }>) {
             this.isLoading = true;
             this.error = null;
             try {

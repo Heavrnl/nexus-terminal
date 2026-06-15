@@ -37,6 +37,13 @@
   --color-error-text: var(--color-error-text);
 }
 
+/* 锁定根元素横向溢出，配合 body 的 overflow-x: clip 防止超宽子元素撑大移动端视口 */
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 /* 全局样式和 CSS 变量定义 */
 :root {
   /* 基础颜色 */
@@ -87,6 +94,10 @@ body {
   background-color: var(--app-bg-color);
   color: var(--text-color);
   line-height: 1.6; /* 改善可读性 */
+  width: 100%;
+  max-width: 100%;
+  position: relative; /* 关键：让 body 成为 xterm 那个 absolute 测量元素的包含块，overflow-x: clip 才能裁到它 */
+  overflow-x: clip; /* 关键：裁切 xterm 注入 body 的 50000px 测量元素，防止移动端 layout viewport 被撑大导致 fixed 弹窗错位 */
 }
 
 /* 全局链接样式 */

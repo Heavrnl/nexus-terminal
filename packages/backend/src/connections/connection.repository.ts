@@ -18,14 +18,16 @@ interface ConnectionBase {
     updated_at: number;
     last_connected_at: number | null;
     ssh_key_id?: number | null;
-notes?: string | null;
+    notes?: string | null;
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
 //    jump_chain: number[] | null; // <-- REMOVE from ConnectionBase
 }
 
 // ConnectionWithTagsRow implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
-interface ConnectionWithTagsRow extends ConnectionBase { // This will no longer cause error if ConnectionBase has no jump_chain
+interface ConnectionWithTagsRow extends Omit<ConnectionBase, 'sftp_sudo_enabled'> {
     tag_ids_str: string | null;
-    jump_chain: string | null; // Stored as JSON string in DB
+    jump_chain: string | null;sftp_sudo_enabled: number; // SQLite stores as 0/1
 }
 
 // ConnectionWithTags implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
@@ -40,10 +42,13 @@ export interface FullConnectionData extends ConnectionBase {
     encrypted_password?: string | null;
     encrypted_private_key?: string | null;
     encrypted_passphrase?: string | null;
-notes?: string | null;
+    notes?: string | null;
     tag_ids?: number[];
     jump_chain: number[] | null; // Explicitly add for service layer input type
     proxy_type?: 'proxy' | 'jump' | null; // 新增连接本身的 proxy_type
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    encrypted_sftp_sudo_password?: string | null;
 }
 
 
@@ -70,7 +75,7 @@ interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 't
 export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]> => {
     const sql = `
         SELECT
-            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, -- +++ Select ssh_key_id, notes, jump_chain AND proxy_type +++
+            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.startup_command, c.sftp_sudo_enabled,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -85,8 +90,9 @@ export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]
             return {
                 ...restOfRow,
                 tag_ids: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
-                jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null
-            } as ConnectionWithTags;
+                jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null,
+                sftp_sudo_enabled: row.sftp_sudo_enabled === 1,
+            } as unknown as ConnectionWithTags;
         });
     } catch (err: any) {
         console.error('Repository: 查询连接列表时出错:', err.message);
@@ -100,7 +106,7 @@ export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]
 export const findConnectionByIdWithTags = async (id: number): Promise<ConnectionWithTags | null> => {
     const sql = `
         SELECT
-            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, -- +++ Select ssh_key_id, notes, jump_chain AND proxy_type +++
+            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.startup_command, c.sftp_sudo_enabled,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -115,8 +121,9 @@ export const findConnectionByIdWithTags = async (id: number): Promise<Connection
             return {
                 ...restOfRow,
                 tag_ids: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
-                jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null
-            } as ConnectionWithTags;
+                jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null,
+                sftp_sudo_enabled: row.sftp_sudo_enabled === 1,
+            } as unknown as ConnectionWithTags;
         } else {
             return null;
         }
@@ -172,7 +179,7 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
                  // Let's assume ConnectionBase should NOT have it to keep it truly base.
                  // The caller using findConnectionByName might not expect jump_chain.
                  // If service needs it, it should use a find method that returns a richer type.
-             } as ConnectionBase; // jump_chain is not part of ConnectionBase anymore
+             } as unknown as ConnectionBase; // jump_chain is not part of ConnectionBase anymore
          }
          return null; // Ensure null is returned if row is null
      } catch (err: any) {
@@ -190,8 +197,8 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
     console.log('[Repository:createConnection] Received data:', JSON.stringify(data, null, 2));
     const now = Math.floor(Date.now() / 1000);
     const sql = `
-        INSERT INTO connections (name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, created_at, updated_at) -- +++ Add ssh_key_id, notes, jump_chain AND proxy_type columns +++
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`; // +++ Add placeholders for ssh_key_id, notes, jump_chain AND proxy_type +++
+        INSERT INTO connections (name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, startup_command, sftp_sudo_enabled, encrypted_sftp_sudo_password, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
     const jumpChainStringified = (data.jump_chain && data.jump_chain.length > 0) ? JSON.stringify(data.jump_chain) : null;
     console.log(`[Repository:createConnection] jump_chain input: ${JSON.stringify(data.jump_chain)}, stringified to: ${jumpChainStringified}`);
@@ -206,6 +213,9 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
         data.ssh_key_id ?? null, // +++ Add ssh_key_id parameter +++
         data.notes ?? null, // Add notes parameter
         jumpChainStringified, // Use the stringified jump_chain
+        data.startup_command ?? null,
+        data.sftp_sudo_enabled ? 1 : 0,
+        data.encrypted_sftp_sudo_password ?? null,
         now, now
     ];
     console.log('[Repository:createConnection] SQL:', sql);
@@ -249,6 +259,8 @@ export const updateConnection = async (id: number, data: Partial<Omit<FullConnec
             const jumpChainStringified = (jumpChainValue && jumpChainValue.length > 0) ? JSON.stringify(jumpChainValue) : null;
             console.log(`[Repository:updateConnection] jump_chain input for ID ${id}: ${JSON.stringify(jumpChainValue)}, stringified to: ${jumpChainStringified}`);
             params.push(jumpChainStringified);
+        } else if (K === 'sftp_sudo_enabled') {
+            params.push(value ? 1 : 0);
         } else {
             params.push(value ?? null);
         }

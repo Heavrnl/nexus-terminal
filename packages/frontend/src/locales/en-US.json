@@ -340,8 +340,12 @@
 "selectJumpHost": "Please select a jump host",
 "removeJumpHostTitle": "Remove this jump host",
 "addJumpHost": "Add Jump Host",
-"noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first."
-
+"noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first.",
+"startupCommand": "Startup Command",
+"startupCommandPlaceholder": "Command to run automatically after the SSH connection is established (500ms delay)...",
+"sftpSudoEnabled": "Enable SFTP sudo elevation",
+"sftpSudoPasswordPlaceholder": "Leave empty to use passwordless sudo",
+"sftpSudoPasswordHint": "Use the password above to automatically gain SFTP root access. If empty, make sure the server allows passwordless sudo."
     },
     "test": {
       "success": "Connection test successful!",
@@ -420,6 +424,7 @@
     "emptyDirectory": "Directory is empty",
     "uploadTasks": "Upload Tasks",
     "actions": {
+      "open": "Open",
       "refresh": "Refresh",
       "parentDirectory": "Parent Directory",
       "uploadFile": "Upload File",

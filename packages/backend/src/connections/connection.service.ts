@@ -201,6 +201,9 @@ notes: input.notes ?? null, // Add notes field
         proxy_id: input.proxy_id ?? null, // 直接使用输入的 proxy_id
         proxy_type: input.proxy_type ?? null, // 新增 proxy_type
         jump_chain: processedJumpChain,
+        startup_command: input.startup_command ?? null,
+        sftp_sudo_enabled: input.sftp_sudo_enabled ?? false,
+        encrypted_sftp_sudo_password: input.sftp_sudo_password ? encrypt(input.sftp_sudo_password) : null,
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
     const finalConnectionData = { ...connectionData };
@@ -286,6 +289,11 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     if (input.proxy_type !== undefined) dataToUpdate.proxy_type = input.proxy_type; // 新增 proxy_type 更新
     // Handle ssh_key_id update (can be set to null or a new ID)
     if (input.ssh_key_id !== undefined) dataToUpdate.ssh_key_id = input.ssh_key_id;
+    if (input.startup_command !== undefined) dataToUpdate.startup_command = input.startup_command;
+    if (input.sftp_sudo_enabled !== undefined) dataToUpdate.sftp_sudo_enabled = input.sftp_sudo_enabled;
+    if (input.sftp_sudo_password !== undefined) {
+        (dataToUpdate as any).encrypted_sftp_sudo_password = input.sftp_sudo_password ? encrypt(input.sftp_sudo_password) : null;
+    }
 
     // 处理认证方法更改或凭证更新 (根据 targetType)
     // Use the validated targetType for logic

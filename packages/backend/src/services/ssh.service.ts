@@ -57,6 +57,9 @@ export interface DecryptedConnectionDetails {
     } | null;
     jump_chain?: JumpHostDetail[]; 
     connection_proxy_setting?: 'proxy' | 'jump' | null; 
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    sftp_sudo_password?: string | null; // 解密后的 sudo 密码
 }
 
 /**
@@ -90,6 +93,10 @@ export const getConnectionDetails = async (connectionId: number): Promise<Decryp
             proxy: null,
             jump_chain: undefined,
             connection_proxy_setting: typedRawConnInfo.proxy_type ?? null,
+            startup_command: typedRawConnInfo.startup_command ?? null,
+            sftp_sudo_enabled: typedRawConnInfo.sftp_sudo_enabled ?? false,
+            sftp_sudo_password: typedRawConnInfo.encrypted_sftp_sudo_password? decrypt(typedRawConnInfo.encrypted_sftp_sudo_password)
+                : null,
         };
 
         if (fullConnInfo.auth_method === 'password' && rawConnInfo.encrypted_password) {

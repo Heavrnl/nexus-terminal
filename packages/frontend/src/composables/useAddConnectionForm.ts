@@ -58,6 +58,9 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     tag_ids: [] as number[],
     notes: '',
     vncPassword: '',
+    startup_command: '',
+    sftp_sudo_enabled: false,
+    sftp_sudo_password: '',
   };
   const formData = reactive({ ...initialFormData });
 
@@ -117,6 +120,9 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           console.log('[Debug] watch connectionToEdit - formData.jump_chain initialized:', formData.jump_chain);
           formData.notes = newVal.notes ?? '';
           formData.tag_ids = newVal.tag_ids ? [...newVal.tag_ids] : [];
+          formData.startup_command = newVal.startup_command ?? '';
+          formData.sftp_sudo_enabled = newVal.sftp_sudo_enabled ?? false;
+          formData.sftp_sudo_password = ''; // 安全起见不回填，用户若要修改密码需重新输入
 
           if (newVal.type === 'SSH' && newVal.auth_method === 'key') {
               formData.selected_ssh_key_id = newVal.ssh_key_id ?? null;
@@ -152,6 +158,9 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.jump_chain = null; 
          formData.proxy_type = null;
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');
+         formData.startup_command = '';
+         formData.sftp_sudo_enabled = false;
+         formData.sftp_sudo_password = '';
          advancedConnectionMode.value = 'proxy'; 
     }
   }, { immediate: true });
@@ -659,6 +668,9 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     proxy_id: formData.proxy_id || null,
                     tag_ids: currentSelectedValidTagIds,
                     proxy_type: formData.proxy_type,
+                    startup_command: formData.startup_command || null,
+                    sftp_sudo_enabled: formData.sftp_sudo_enabled,
+                    sftp_sudo_password: formData.sftp_sudo_password || null,
                 };
 
                 if (formData.type === 'SSH') {
@@ -725,6 +737,9 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         proxy_type: formData.proxy_type,
         tag_ids: currentSelectedValidTagIds,
         jump_chain: formData.jump_chain ? JSON.parse(JSON.stringify(formData.jump_chain)) : null,
+        startup_command: formData.startup_command || null,
+        sftp_sudo_enabled: formData.sftp_sudo_enabled,
+        sftp_sudo_password: formData.sftp_sudo_password || null,
     };
 
     if (formData.type === 'SSH') {

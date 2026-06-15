@@ -9,6 +9,8 @@ import type { WebSocketMessage, MessagePayload } from '../types/websocket.types'
 import type { WebSocketDependencies } from './useSftpActions'; 
 
 
+// +++ 滑动窗口大小：与后端 UPLOAD_WINDOW_SIZE 保持一致，限制同时在途的块数量，防止大文件上传卡死 +++
+const UPLOAD_WINDOW_SIZE = 8;
 const generateUploadId = (): string => {
     return `upload-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 };
@@ -36,8 +38,7 @@ wsDeps;
 
     const sendFileChunks = (uploadId: string, file: File, startByte = 0) => {
         const upload = uploads[uploadId];
-        // 在继续之前检查连接和上传状态
-        if (!wsDeps.value.isConnected.value || !upload || upload.status !== 'uploading') { 
+        if (!wsDeps.value.isConnected.value || !upload || upload.status !== 'uploading') {
             console.warn(`[FileUploader ${sessionIdForLog.value}] Cannot send chunk for ${uploadId}. Connection: ${wsDeps.value.isConnected.value}, Upload status: ${upload?.status}`);
             return;
         }
@@ -45,46 +46,69 @@ wsDeps;
         const chunkSize = 1024 * 64; // 64KB 块大小
         const reader = new FileReader();
         let offset = startByte;
-        let chunkIndex = 0; // Initialize chunk index counter
-        let currentChunkSize = 0; // Store the size of the chunk being processed
+        let chunkIndex = 0;
+        let currentChunkSize = 0;
+        let inFlight = 0;       // 已发送但未收到 ack 的块数量
+        let reading = false;    // FileReader 是否正在读取（防止并发读取）
+        let finished = false;   // 是否已发送最后一块
+
+        const maybeReadNext = () => {
+            if (finished || reading) return;
+            if (!wsDeps.value.isConnected.value || uploads[uploadId]?.status !== 'uploading') return;
+            if (inFlight >= UPLOAD_WINDOW_SIZE) return; // 窗口已满，等待 ack
+            if (offset >= file.size) return;            // 没有更多数据
+            reading = true;
+            const slice = file.slice(offset, offset + chunkSize);
+            currentChunkSize = slice.size;
+            reader.readAsDataURL(slice);
+        };
+
+        // 注册滑动窗口 ack 监听：后端每写完一块回 ack，释放窗口槽位后再继续发送
+        const unregisterAck = wsDeps.value.onMessage('sftp:upload:chunk:ack', (payload: MessagePayload, message: WebSocketMessage) => {
+            const ackUploadId = message.uploadId || (payload as any)?.uploadId;
+            if (ackUploadId !== uploadId) return;
+            inFlight = Math.max(0, inFlight - 1);
+            maybeReadNext();
+        });
+        // 保存注销函数，便于上传结束/取消时清理监听器
+        (upload as any)._unregisterAck = unregisterAck;
 
         reader.onload = (e) => {
+            reading = false;
             const currentUpload = uploads[uploadId];
-            // *发送前* 再次检查连接和状态
-            if (!wsDeps.value.isConnected.value || !currentUpload || currentUpload.status !== 'uploading') { 
-                 console.warn(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} status changed or disconnected before sending chunk at offset ${offset}.`);
-                 return; // 如果状态改变或断开连接，则停止发送
+            if (!wsDeps.value.isConnected.value || !currentUpload || currentUpload.status !== 'uploading') {
+                return;
             }
 
             const chunkResult = e.target?.result as string;
-            // 确保结果是字符串并且包含 base64 前缀
             if (typeof chunkResult === 'string' && chunkResult.startsWith('data:')) {
                 const chunkBase64 = chunkResult.split(',')[1];
                 const isLast = offset + chunkSize >= file.size;
 
-                wsDeps.value.sendMessage({ 
+                wsDeps.value.sendMessage({
                     type: 'sftp:upload:chunk',
                     payload: { uploadId, chunkIndex: chunkIndex++, data: chunkBase64, isLast }
                 });
 
-                
-                offset += currentChunkSize; 
-                
+                inFlight++;
+                offset += currentChunkSize;
 
-                if (!isLast) {                                     
-                    nextTick(readNextChunk);
-                } else {
+                if (isLast) {
+                    finished = true;
                     console.log(`[FileUploader ${sessionIdForLog.value}] Sent last chunk for ${uploadId}`);
-                    
+                } else {
+                    // 继续在窗口允许范围内读取下一块
+                    maybeReadNext();
                 }
             } else {
-                 console.error(`[FileUploader ${sessionIdForLog.value}] FileReader returned unexpected result for ${uploadId}:`, chunkResult);
-                 currentUpload.status = 'error';
-                 currentUpload.error = t('fileManager.errors.readFileError');
+                console.error(`[FileUploader ${sessionIdForLog.value}] FileReader returned unexpected result for ${uploadId}:`, chunkResult);
+                currentUpload.status = 'error';
+                currentUpload.error = t('fileManager.errors.readFileError');
             }
         };
 
         reader.onerror = () => {
+            reading = false;
             console.error(`[FileUploader ${sessionIdForLog.value}] FileReader error for upload ID: ${uploadId}`);
             const failedUpload = uploads[uploadId];
             if (failedUpload) {
@@ -93,25 +117,13 @@ wsDeps;
             }
         };
 
-        const readNextChunk = () => {
-            // 读取下一个块之前再次检查状态
-            if (offset < file.size && uploads[uploadId]?.status === 'uploading') {
-                const slice = file.slice(offset, offset + chunkSize);
-                currentChunkSize = slice.size; 
-                reader.readAsDataURL(slice);
-            }
-        };
-
-        // 开始读取第一个块（或恢复时的下一个块）
         if (file.size > 0) {
-             readNextChunk();
+            maybeReadNext();
         } else {
-             // 立即处理零字节文件
-             console.log(`[FileUploader ${sessionIdForLog.value}] Processing zero-byte file ${uploadId}`);
-             // Send chunkIndex 0 for zero-byte file
-             wsDeps.value.sendMessage({ type: 'sftp:upload:chunk', payload: { uploadId, chunkIndex: 0, data: '', isLast: true } });
-             upload.progress = 100;
-             
+            // 立即处理零字节文件
+            console.log(`[FileUploader ${sessionIdForLog.value}] Processing zero-byte file ${uploadId}`);
+            wsDeps.value.sendMessage({ type: 'sftp:upload:chunk', payload: { uploadId, chunkIndex: 0, data: '', isLast: true } });
+            upload.progress = 100;
         }
     };
 
@@ -168,7 +180,11 @@ wsDeps;
             console.log(`[FileUploader ${sessionIdForLog.value}] Cancelling upload ${uploadId}`);
             upload.status = 'cancelled'; // 立即更新状态
 
-            if (notifyBackend && wsDeps.value.isConnected.value) { 
+            // +++ 清理滑动窗口 ack 监听器 +++
+            const u = upload as any;
+            if (u._unregisterAck) { u._unregisterAck(); u._unregisterAck = undefined; }
+
+            if (notifyBackend && wsDeps.value.isConnected.value) {
                 wsDeps.value.sendMessage({ type: 'sftp:upload:cancel', payload: { uploadId } }); 
             }
 
@@ -207,6 +223,9 @@ wsDeps;
             upload.status = 'success';
             upload.progress = 100;
 
+            // +++ 清理滑动窗口 ack 监听器 +++
+            const u = upload as any;
+            if (u._unregisterAck) { u._unregisterAck(); u._unregisterAck = undefined; }
 
             // 立即删除记录
             if (uploads[uploadId]) { // 确保记录仍然存在
@@ -232,6 +251,10 @@ wsDeps;
             console.error(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} error:`, errorMessage);
             upload.status = 'error';
             upload.error = errorMessage; // 使用 payload 作为错误消息
+
+            // +++ 清理滑动窗口 ack 监听器 +++
+            const u = upload as any;
+            if (u._unregisterAck) { u._unregisterAck(); u._unregisterAck = undefined; }
 
             // 让错误消息可见时间长一些
             setTimeout(() => {
@@ -274,6 +297,9 @@ wsDeps;
             if (upload.status !== 'cancelled') {
                  upload.status = 'cancelled';
             }
+            // +++ 清理滑动窗口 ack 监听器 +++
+            const u = upload as any;
+            if (u._unregisterAck) { u._unregisterAck(); u._unregisterAck = undefined; }
             // 确保它会被移除（如果尚未计划移除）
             setTimeout(() => {
                 if (uploads[uploadId]?.status === 'cancelled') {

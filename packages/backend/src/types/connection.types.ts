@@ -13,6 +13,8 @@ export interface ConnectionBase {
     last_connected_at: number | null;
 notes?: string | null;
     jump_chain: number[] | null;
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
 }
 
 export interface ConnectionWithTags extends ConnectionBase {
@@ -36,6 +38,9 @@ export interface CreateConnectionInput {
     tag_ids?: number[];
 notes?: string | null;
     jump_chain?: number[] | null;
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    sftp_sudo_password?: string | null;
 }
 
 
@@ -55,6 +60,9 @@ export interface UpdateConnectionInput {
 notes?: string | null;
     tag_ids?: number[];
     jump_chain?: number[] | null;
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    sftp_sudo_password?: string | null;
 }
 
 
@@ -77,6 +85,9 @@ notes: string | null;
     updated_at: number;
     last_connected_at: number | null;
     jump_chain: number[] | null;
+    startup_command?: string | null;
+    sftp_sudo_enabled?: boolean;
+    encrypted_sftp_sudo_password?: string | null;
 }
 
 export interface DecryptedConnectionCredentials {

@@ -254,8 +254,12 @@
 "selectJumpHost": "ジャンプホストを選択してください",
 "removeJumpHostTitle": "このジャンプホストを削除",
 "addJumpHost": "ジャンプホストを追加",
-"noAvailableSshConnectionsForJump": "ジャンプホストとして使用できるSSH接続がありません。先にSSH接続を作成してください。"
-
+"noAvailableSshConnectionsForJump": "ジャンプホストとして使用できるSSH接続がありません。先にSSH接続を作成してください。",
+"startupCommand": "起動コマンド",
+"startupCommandPlaceholder": "SSH接続の確立後に自動実行するコマンド（500ms遅延）...",
+"sftpSudoEnabled": "SFTP sudo昇格を有効にする",
+"sftpSudoPasswordPlaceholder": "空欄の場合はパスワードなしsudoを使用します",
+"sftpSudoPasswordHint": "上記のパスワードを使用してSFTPのルート権限を自動取得します。空欄の場合は、サーバーがパスワードなしsudoを許可していることを確認してください。"
         },
         "noConnections": "接続がありません。'新しい接続を追加'をクリックして作成してください。",
         "noUntaggedConnections": "タグなしの接続はありません。",
@@ -358,6 +362,7 @@
     "fileManager": {
         "modalTitle": "ファイルマネージャー",
         "actions": {
+            "open": "開く",
             "cancel": "キャンセル",
             "cdToTerminal": "ターミナルのディレクトリを現在のパスに変更",
             "changePermissions": "権限を変更",
@@ -1346,7 +1351,6 @@
         "errorMissingDownloadUrl": "リモートテーマのダウンロードURLがありません。",
         "errorPresetNameRequired": "プリセット名を空にすることはできません。",
         "remotePresetApplyFailed": "リモートHTMLテーマの適用に失敗しました: {message}",
-        "customHtmlResetSuccess":"カスタムHTMLがリセットされました。",
         "searchLocalThemesPlaceholder": "ローカルテーマを検索...",
     "searchRemoteThemesPlaceholder": "リモートテーマを検索...",
     "noMatchingLocalPresetsFound": "一致するローカルテーマが見つかりませんでした",

@@ -109,28 +109,9 @@ watch(
   { deep: true, immediate: true } // immediate 确保初始状态（如果isVisible为true）也设置正确
 );
 
-// 点击其他地方自动关闭菜单
-const handleClickOutside = (event: MouseEvent) => {
-  if (contextMenuRef.value && !contextMenuRef.value.contains(event.target as Node)) {
-    emit('close-request');
-  }
-};
-
-watch(() => props.isVisible, (newValue) => {
-  if (newValue) {
-    document.addEventListener('click', handleClickOutside, { capture: true });
-  } else {
-    document.removeEventListener('click', handleClickOutside, { capture: true });
-  }
-}, { immediate: true });
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside, { capture: true });
-});
-
-// 隐藏菜单的逻辑由 useFileManagerContextMenu 中的全局点击监听器处理
-// 但我们仍然需要触发菜单项的 action，并通知父组件关闭菜单
-const emit = defineEmits(['item-click', 'close-request']); // 添加 close-request
+// 关闭菜单由 useFileManagerContextMenu 中的 click once 监听器统一处理
+// 此组件不注册任何额外的 document click 监听器，避免监听器堆积导致卡死
+const emit = defineEmits(['item-click', 'close-request']);
 
 const handleItemClick = (item: ContextMenuItem) => {
   if (item.action) {
