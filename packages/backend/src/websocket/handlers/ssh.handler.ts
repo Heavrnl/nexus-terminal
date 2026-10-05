@@ -95,9 +95,15 @@ export async function handleSshConnect(
                     return;
                 }
 
-                console.log(`WebSocket: 会话 ${newSessionId} Shell 打开成功 (尺寸 ${defaultCols}x${defaultRows})。`);
                 newState.sshShellStream = stream;
                 newState.isShellReady = true;
+
+                // 如果在 Shell 打开前已收到前端的调整尺寸请求，立即应用
+                if (newState.pendingDimensions) {
+                    console.log(`WebSocket: 会话 ${newSessionId} 应用就绪前暂存的终端尺寸: ${newState.pendingDimensions.cols}x${newState.pendingDimensions.rows}`);
+                    stream.setWindow(newState.pendingDimensions.rows, newState.pendingDimensions.cols, 0, 0);
+                    delete newState.pendingDimensions;
+                }
 
                 stream.on('data', (data: Buffer) => {
                     if (ws.readyState === WebSocket.OPEN) {
@@ -245,11 +251,9 @@ export function handleSshResize(ws: AuthenticatedWebSocket, payload: any): void 
         console.log(`SSH: 会话 ${sessionId} 调整终端大小: ${cols}x${rows}`);
         state.sshShellStream.setWindow(rows, cols, 0, 0);
     } else {
-        // Store intended size if shell not ready, apply when shell is ready.
-        // This part is a bit more complex as it requires modifying the shell opening logic.
-        // For now, we just log if shell is not ready.
-        console.warn(`WebSocket: 会话 ${sessionId} 收到调整大小请求，但 Shell 尚未就绪或流不存在 (isShellReady: ${state.isShellReady})。尺寸将不会立即应用。`);
-        // A more robust solution would queue the resize or store it in ClientState to be applied later.
+        // 暂存尺寸请求，待 Shell 就绪后立即无缝应用，防止初始终端错位
+        console.log(`WebSocket: 会话 ${sessionId} 收到调整大小请求，Shell 尚未就绪，暂存尺寸: ${cols}x${rows}`);
+        state.pendingDimensions = { cols, rows };
     }
 }
 

@@ -9,6 +9,7 @@ import { storeToRefs } from 'pinia';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import 'xterm/css/xterm.css';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
 
@@ -245,8 +246,12 @@ onMounted(() => {
       rows: 24, // 初始行数
       cols: 80, // 初始列数
       allowTransparency: true,
+      allowProposedApi: true, // 必须开启以支持 Unicode 11 和高级扩展
       disableStdin: false,
-      convertEol: true,
+      convertEol: false, // 禁用 convertEol，保持规范的 VT100/ANSI 光标控制，防止 TUI (如 agy cli) 渲染错位
+      rescaleOverlappingGlyphs: true, // 允许特殊字符与宽字符自动缩放，防止字形溢出
+      letterSpacing: 0,
+      lineHeight: 1.1,
       scrollback: getScrollbackValue(terminalScrollbackLimitNumber.value), //  Use setting from store
       scrollOnUserInput: true, // 输入时滚动到底部
       ...props.options, // 合并外部传入的选项
@@ -257,9 +262,12 @@ onMounted(() => {
     // 加载插件
     fitAddon = new FitAddon();
     searchAddon = new SearchAddon(); // *** 创建 SearchAddon 实例 ***
+    const unicode11Addon = new Unicode11Addon(); // 支持 Unicode 11 现代宽字符规范
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.loadAddon(searchAddon); // *** 加载 SearchAddon ***
+    terminal.loadAddon(unicode11Addon);
+    terminal.unicode.activeVersion = '11'; // 激活 Unicode 11 版本支持
 
     // 将终端附加到 DOM
     terminal.open(terminalRef.value);

@@ -85,7 +85,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
 
     // 当前终端字体设置
     const currentTerminalFontFamily = computed<string>(() => {
-        return appearanceSettings.value.terminalFontFamily || 'Consolas, "Courier New", monospace, "Microsoft YaHei", "微软雅黑"'; // 提供默认值
+        return appearanceSettings.value.terminalFontFamily || "'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', 'Microsoft YaHei Mono', monospace"; // 提供高保真等宽字体栈
     });
 
     // 当前终端字体大小

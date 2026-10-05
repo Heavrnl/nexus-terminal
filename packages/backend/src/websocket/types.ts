@@ -24,6 +24,7 @@ export interface ClientState { // 导出以便 Service 可以导入
     isSuspendedByService?: boolean; // 标记此会话是否已被 SshSuspendService 接管
     isMarkedForSuspend?: boolean; // 标记此会话是否已被用户请求挂起（等待断开连接）
     suspendLogPath?: string;      // 如果标记挂起，则存储日志路径 (基于原始 sessionId)
+    pendingDimensions?: { cols: number; rows: number }; // 暂存 Shell 就绪前收到的终端尺寸
     // suspendLogWritableStream?: NodeJS.WritableStream; // 移除，将直接使用 temporaryLogStorageService.writeToLog
 }
 
