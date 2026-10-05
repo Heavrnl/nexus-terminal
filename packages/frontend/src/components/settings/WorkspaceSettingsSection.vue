@@ -1,336 +1,455 @@
 <template>
-  <div v-if="settings" class="bg-background border border-border rounded-lg shadow-sm overflow-hidden">
-    <h2 class="text-lg font-semibold text-foreground px-6 py-4 border-b border-border bg-header/50">{{ $t('settings.workspace.title') }}</h2>
-    <div class="p-6 space-y-6">
-      <!-- Popup Editor -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.popupEditor.title') }}</h3>
-         <form @submit.prevent="handleUpdatePopupEditorSetting" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="showPopupEditor" v-model="popupEditorEnabled"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="showPopupEditor" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.popupEditor.enableLabel') }}</label>
-             </div>
-             <div class="flex items-center justify-between">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="popupEditorMessage" :class="['text-sm', popupEditorSuccess ? 'text-success' : 'text-error']">{{ popupEditorMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50">
-      <!-- Popup File Manager -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ t('settings.popupFileManager.title') }}</h3>
-         <form @submit.prevent="handleUpdateShowPopupFileManager" class="space-y-4">
-           <div class="flex items-center">
-             <input type="checkbox" id="showPopupFileManager" v-model="showPopupFileManagerLocal"
-                    class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-             <label for="showPopupFileManager" class="text-sm text-foreground cursor-pointer select-none">{{ t('settings.popupFileManager.enableLabel') }}</label>
-           </div>
-           <!-- <small class="block mt-1 text-xs text-text-secondary">{{ t('settings.popupFileManager.description') }}</small> -->
-           <div class="flex items-center justify-between">
-              <button type="submit"
-                      class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                {{ t('common.save') }}
-              </button>
-              <p v-if="showPopupFileManagerMessage" :class="['text-sm', showPopupFileManagerSuccess ? 'text-success' : 'text-error']">{{ showPopupFileManagerMessage }}</p>
-           </div>
-         </form>
-      </div>
-      <hr class="border-border/50">
-      <!-- Share Tabs -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.shareEditorTabs.title') }}</h3>
-         <form @submit.prevent="handleUpdateShareTabsSetting" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="shareEditorTabs" v-model="shareTabsEnabled"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="shareEditorTabs" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.shareEditorTabs.enableLabel') }}</label>
-             </div>
-             <p class="text-xs text-text-secondary mt-1">{{ $t('settings.shareEditorTabs.description') }}</p>
-             <div class="flex items-center justify-between">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="shareTabsMessage" :class="['text-sm', shareTabsSuccess ? 'text-success' : 'text-error']">{{ shareTabsMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50">
-      <!-- Auto Copy -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.autoCopyOnSelect.title') }}</h3>
-         <form @submit.prevent="handleUpdateAutoCopySetting" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="autoCopyOnSelect" v-model="autoCopyEnabled"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="autoCopyOnSelect" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.autoCopyOnSelect.enableLabel') }}</label>
-             </div>
-             <div class="flex items-center justify-between">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="autoCopyMessage" :class="['text-sm', autoCopySuccess ? 'text-success' : 'text-error']">{{ autoCopyMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50">
-      <!-- Persistent Sidebar -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.workspace.sidebarPersistentTitle') }}</h3>
-         <form @submit.prevent="handleUpdateWorkspaceSidebarSetting" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="workspaceSidebarPersistent" v-model="workspaceSidebarPersistentEnabled"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="workspaceSidebarPersistent" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.workspace.sidebarPersistentLabel') }}</label>
-             </div>
-             <p class="text-xs text-text-secondary mt-1">{{ $t('settings.workspace.sidebarPersistentDescription') }}</p>
-             <div class="flex items-center justify-between">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="workspaceSidebarPersistentMessage" :class="['text-sm', workspaceSidebarPersistentSuccess ? 'text-success' : 'text-error']">{{ workspaceSidebarPersistentMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50"> 
-      <!-- Command Input Sync Target -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.commandInputSync.title', '命令输入同步') }}</h3>
-         <form @submit.prevent="handleUpdateCommandInputSyncTarget" class="space-y-4">
-           <div>
-             <label for="commandInputSyncTargetSelect" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.commandInputSync.selectLabel', '同步目标') }}</label>
-             <select id="commandInputSyncTargetSelect" v-model="commandInputSyncTargetLocal"
-                     class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
-                     style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;">
-               <option value="none">{{ $t('settings.commandInputSync.targetNone', '无') }}</option>
-               <option value="quickCommands">{{ $t('settings.commandInputSync.targetQuickCommands', '快捷指令') }}</option>
-               <option value="commandHistory">{{ $t('settings.commandInputSync.targetCommandHistory', '历史命令') }}</option>
-             </select>
-             <p class="text-xs text-text-secondary mt-1">{{ $t('settings.commandInputSync.description', '将命令输入框的内容实时同步到所选面板的搜索框。') }}</p>
-           </div>
-           <div class="flex items-center justify-between">
-              <button type="submit"
-                      class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                {{ $t('common.save') }}
-              </button>
-              <p v-if="commandInputSyncMessage" :class="['text-sm', commandInputSyncSuccess ? 'text-success' : 'text-error']">{{ commandInputSyncMessage }}</p>
-           </div>
-         </form>
-      </div>
-      <hr class="border-border/50"> 
-      <!-- Show Connection Tags -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}</h3>
-         <form @submit.prevent="handleUpdateShowConnectionTags" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="showConnectionTags" v-model="showConnectionTagsLocal"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="showConnectionTags" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.workspace.showConnectionTagsLabel', '在连接列表中显示标签') }}</label>
-             </div>
-             <p class="text-xs text-text-secondary mt-1">{{ $t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。') }}</p>
-             <div class="flex items-center justify-between pt-2">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="showConnectionTagsMessage" :class="['text-sm', showConnectionTagsSuccess ? 'text-success' : 'text-error']">{{ showConnectionTagsMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50"> 
-      <!-- Show Quick Command Tags -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}</h3>
-         <form @submit.prevent="handleUpdateShowQuickCommandTags" class="space-y-4">
-             <div class="flex items-center">
-                 <input type="checkbox" id="showQuickCommandTags" v-model="showQuickCommandTagsLocal"
-                        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                 <label for="showQuickCommandTags" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.workspace.showQuickCommandTagsLabel', '在快捷指令列表中显示标签') }}</label>
-             </div>
-             <p class="text-xs text-text-secondary mt-1">{{ $t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。') }}</p>
-             <div class="flex items-center justify-between pt-2">
-                <button type="submit"
-                        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                  {{ $t('common.save') }}
-                </button>
-                <p v-if="showQuickCommandTagsMessage" :class="['text-sm', showQuickCommandTagsSuccess ? 'text-success' : 'text-error']">{{ showQuickCommandTagsMessage }}</p>
-             </div>
-         </form>
-      </div>
-      <hr class="border-border/50"> 
-      <!-- Terminal Scrollback Limit -->
-      <div class="settings-section-content">
-         <h3 class="text-base font-semibold text-foreground mb-3">{{ t('settings.terminalScrollback.title', '终端回滚行数') }}</h3>
-         <form @submit.prevent="handleUpdateTerminalScrollbackLimit" class="space-y-4">
-           <div>
-             <label for="terminalScrollbackLimitInput" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.terminalScrollback.limitLabel', '最大行数') }}</label>
-             <input type="number" id="terminalScrollbackLimitInput" v-model.number="terminalScrollbackLimitLocal" min="0" step="1" placeholder="5000"
-                    class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
-             <small class="block mt-1 text-xs text-text-secondary">{{ t('settings.terminalScrollback.limitHint', '设置终端保留的最大输出行数。0 或留空表示无限制 (使用默认值 5000)。此设置将在下次打开终端时生效。') }}</small>
-           </div>
-           <div class="flex items-center justify-between">
-              <button type="submit"
-                      class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                {{ t('common.save') }}
-              </button>
-              <p v-if="terminalScrollbackLimitMessage" :class="['text-sm', terminalScrollbackLimitSuccess ? 'text-success' : 'text-error']">{{ terminalScrollbackLimitMessage }}</p>
-           </div>
-         </form>
-      </div>
-      <hr class="border-border/50"> 
-     <!-- File Manager Delete Confirmation -->
-     <div class="settings-section-content">
-        <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}</h3>
-        <form @submit.prevent="handleUpdateFileManagerDeleteConfirmation" class="space-y-4">
-            <div class="flex items-center">
-                <input type="checkbox" id="fileManagerShowDeleteConfirmation" v-model="fileManagerShowDeleteConfirmationLocal"
-                       class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                <label for="fileManagerShowDeleteConfirmation" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框') }}</label>
-            </div>
-            <div class="flex items-center justify-between pt-2">
-               <button type="submit"
-                       class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                 {{ $t('common.save') }}
-               </button>
-               <p v-if="fileManagerShowDeleteConfirmationMessage" :class="['text-sm', fileManagerShowDeleteConfirmationSuccess ? 'text-success' : 'text-error']">{{ fileManagerShowDeleteConfirmationMessage }}</p>
-            </div>
-        </form>
-     </div>
-     <hr class="border-border/50"> 
-     <!-- Terminal Right Click Paste -->
-     <div class="settings-section-content">
-        <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.workspace.terminalRightClickPasteTitle') }}</h3>
-        <form @submit.prevent="handleUpdateTerminalRightClickPasteSetting" class="space-y-4">
-            <div class="flex items-center">
-                <input type="checkbox" id="terminalEnableRightClickPaste" v-model="terminalEnableRightClickPasteLocal"
-                       class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                <label for="terminalEnableRightClickPaste" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.workspace.terminalEnableRightClickPasteLabel') }}</label>
-            </div>
-            <p class="text-xs text-text-secondary mt-1">{{ $t('settings.workspace.terminalEnableRightClickPasteDescription') }}</p>
-            <div class="flex items-center justify-between pt-2">
-               <button type="submit"
-                       class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                 {{ $t('common.save') }}
-               </button>
-               <p v-if="terminalEnableRightClickPasteMessage" :class="['text-sm', terminalEnableRightClickPasteSuccess ? 'text-success' : 'text-error']">{{ terminalEnableRightClickPasteMessage }}</p>
-            </div>
-        </form>
-      </div>
-      <hr class="border-border/50">
-      <!-- Status Monitor Show IP -->
-      <div class="settings-section-content">
-        <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}</h3>
-        <form @submit.prevent="handleUpdateStatusMonitorShowIpSetting" class="space-y-4">
-            <div class="flex items-center">
-                <input type="checkbox" id="statusMonitorShowIp" v-model="statusMonitorShowIpEnabled"
-                       class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer">
-                <label for="statusMonitorShowIp" class="text-sm text-foreground cursor-pointer select-none">{{ $t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址') }}</label>
-            </div>
-            <div class="flex items-center justify-between pt-2">
-               <button type="submit"
-                       :disabled="statusMonitorShowIpLoading"
-                       class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium">
-                 {{ $t('common.save') }}
-               </button>
-               <p v-if="statusMonitorShowIpMessage" :class="['text-sm', statusMonitorShowIpSuccess ? 'text-success' : 'text-error']">{{ statusMonitorShowIpMessage }}</p>
-            </div>
-        </form>
-      </div>
-      <hr class="border-border/50">
+  <div v-if="settings" class="space-y-6">
 
-<div class="settings-section-content">
-  <h3 class="text-base font-semibold text-foreground mb-3">
-    {{ t('settings.statusMonitor.title') }}
-  </h3>
-  <form @submit.prevent="handleUpdateStatusMonitorInterval" class="space-y-4">
-    <div>
-      <label for="statusMonitorInterval" class="block text-sm font-medium text-text-secondary mb-1">
-        {{ t('settings.statusMonitor.refreshIntervalLabel') }}
-      </label>
-      <input
-        type="number"
-        id="statusMonitorInterval"
-        v-model.number="statusMonitorIntervalLocal"
-        min="1"
-        step="1"
-        required
-        class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-      >
-      <small class="block mt-1 text-xs text-text-secondary">
-        {{ t('settings.statusMonitor.refreshIntervalHint') }}
-      </small>
-    </div>
-    <div class="flex items-center justify-between">
-      <button
-        type="submit"
-        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium"
-      >
-        {{ t('settings.statusMonitor.saveButton') }}
-      </button>
-      <p v-if="statusMonitorMessage" :class="['text-sm', statusMonitorSuccess ? 'text-success' : 'text-error']">
-        {{ statusMonitorMessage }}
-      </p>
-    </div>
-  </form>
-</div>
+    <!-- 1. 终端与控制台 (Terminal & Console) -->
+    <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+            <i class="fas fa-terminal"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-foreground leading-snug">
+              {{ $t('settings.workspace.terminalGroupTitle', '终端与控制台') }}
+            </h3>
+            <p class="text-xs text-text-secondary mt-0.5">
+              {{ $t('settings.workspace.terminalGroupDesc', '控制终端输出缓冲区、鼠标右键交互、选中文本复制与命令同步') }}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-border/40">
+        <!-- 终端回滚行数 -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <label for="terminalScrollbackLimitInput" class="text-sm font-medium text-foreground block">
+              {{ t('settings.terminalScrollback.title', '终端回滚行数') }}
+            </label>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ t('settings.terminalScrollback.limitHint', '设置终端保留的最大输出行数。0 或留空表示无限制 (使用默认值 5000)。') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2.5 shrink-0">
+            <div class="relative flex items-center">
+              <input
+                type="number"
+                id="terminalScrollbackLimitInput"
+                v-model.number="terminalScrollbackLimitLocal"
+                min="0"
+                step="1"
+                placeholder="5000"
+                @change="handleUpdateTerminalScrollbackLimit"
+                @keydown.enter.prevent="handleUpdateTerminalScrollbackLimit"
+                class="w-28 px-2.5 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <span class="text-xs text-text-secondary ml-1.5 shrink-0">{{ t('settings.terminalScrollback.unit', '行') }}</span>
+            </div>
+            <span v-if="!terminalScrollbackLimitSuccess && terminalScrollbackLimitMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ terminalScrollbackLimitMessage }}
+            </span>
+          </div>
+        </div>
 
-<hr class="border-border/50">
+        <!-- 终端右键粘贴 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.workspace.terminalRightClickPasteTitle') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.workspace.terminalEnableRightClickPasteDescription') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!terminalEnableRightClickPasteSuccess && terminalEnableRightClickPasteMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ terminalEnableRightClickPasteMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="terminalEnableRightClickPasteLocal"
+              :loading="terminalEnableRightClickPasteLoading"
+              @change="handleUpdateTerminalRightClickPasteSetting"
+              aria-label="终端右键粘贴"
+            />
+          </div>
+        </div>
 
-<div class="settings-section-content">
-  <h3 class="text-base font-semibold text-foreground mb-3">
-    {{ t('settings.docker.title') }}
-  </h3>
-  <form @submit.prevent="handleUpdateDockerSettings" class="space-y-4">
-    <div>
-      <label for="dockerInterval" class="block text-sm font-medium text-text-secondary mb-1">
-        {{ t('settings.docker.refreshIntervalLabel') }}
-      </label>
-      <input
-        type="number"
-        id="dockerInterval"
-        v-model.number="dockerInterval"
-        min="1"
-        step="1"
-        required
-        class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-      >
-      <small class="block mt-1 text-xs text-text-secondary">
-        {{ t('settings.docker.refreshIntervalHint') }}
-      </small>
-    </div>
-    <div class="flex items-center">
-      <input
-        type="checkbox"
-        id="dockerExpandDefault"
-        v-model="dockerExpandDefault"
-        class="h-4 w-4 rounded border-border text-primary focus:ring-primary mr-2 cursor-pointer"
-      >
-      <label for="dockerExpandDefault" class="text-sm text-foreground cursor-pointer select-none">
-        {{ t('settings.docker.defaultExpandLabel') }}
-      </label>
-    </div>
-    <div class="flex items-center justify-between">
-      <button
-        type="submit"
-        class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium"
-      >
-        {{ t('settings.docker.saveButton') }}
-      </button>
-      <p v-if="dockerSettingsMessage" :class="['text-sm', dockerSettingsSuccess ? 'text-success' : 'text-error']">
-        {{ dockerSettingsMessage }}
-      </p>
-    </div>
-  </form>
-</div>
+        <!-- 松开鼠标时自动复制选中文本 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.autoCopyOnSelect.title') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.autoCopyOnSelect.enableLabel') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!autoCopySuccess && autoCopyMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ autoCopyMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="autoCopyEnabled"
+              @change="handleUpdateAutoCopySetting"
+              aria-label="自动复制"
+            />
+          </div>
+        </div>
 
+        <!-- 命令输入同步目标 -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <label for="commandInputSyncTargetSelect" class="text-sm font-medium text-foreground block">
+              {{ $t('settings.commandInputSync.title', '命令输入同步') }}
+            </label>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.commandInputSync.description', '将命令输入框的内容实时同步到所选面板的搜索框。') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2.5 shrink-0">
+            <select
+              id="commandInputSyncTargetSelect"
+              v-model="commandInputSyncTargetLocal"
+              @change="handleUpdateCommandInputSyncTarget"
+              class="px-3 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-7 cursor-pointer"
+              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 14px 10px;"
+            >
+              <option value="none">{{ $t('settings.commandInputSync.targetNone', '无') }}</option>
+              <option value="quickCommands">{{ $t('settings.commandInputSync.targetQuickCommands', '快捷指令') }}</option>
+              <option value="commandHistory">{{ $t('settings.commandInputSync.targetCommandHistory', '历史命令') }}</option>
+            </select>
+            <span v-if="!commandInputSyncSuccess && commandInputSyncMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ commandInputSyncMessage }}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- 2. 文件管理与代码编辑 (File Manager & Editor) -->
+    <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+            <i class="fas fa-folder-open"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-foreground leading-snug">
+              {{ $t('settings.workspace.fileManagerGroupTitle', '文件管理与代码编辑') }}
+            </h3>
+            <p class="text-xs text-text-secondary mt-0.5">
+              {{ $t('settings.workspace.fileManagerGroupDesc', '配置文件编辑器展现形态、弹窗模式、多会话标签共享与防误触确认') }}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-border/40">
+        <!-- 弹窗编辑器 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.popupEditor.title') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.popupEditor.enableLabel') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!popupEditorSuccess && popupEditorMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ popupEditorMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="popupEditorEnabled"
+              @change="handleUpdatePopupEditorSetting"
+              aria-label="弹窗编辑器"
+            />
+          </div>
+        </div>
+
+        <!-- 弹窗文件管理器 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ t('settings.popupFileManager.title') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ t('settings.popupFileManager.enableLabel') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!showPopupFileManagerSuccess && showPopupFileManagerMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ showPopupFileManagerMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="showPopupFileManagerLocal"
+              @change="handleUpdateShowPopupFileManager"
+              aria-label="弹窗文件管理器"
+            />
+          </div>
+        </div>
+
+        <!-- 共享编辑器标签页 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.shareEditorTabs.title') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.shareEditorTabs.description') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!shareTabsSuccess && shareTabsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ shareTabsMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="shareTabsEnabled"
+              @change="handleUpdateShareTabsSetting"
+              aria-label="共享编辑器标签页"
+            />
+          </div>
+        </div>
+
+        <!-- 文件管理器删除确认 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!fileManagerShowDeleteConfirmationSuccess && fileManagerShowDeleteConfirmationMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ fileManagerShowDeleteConfirmationMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="fileManagerShowDeleteConfirmationLocal"
+              @change="handleUpdateFileManagerDeleteConfirmation"
+              aria-label="文件管理器删除确认"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 工作区与侧边栏视图 (Sidebar & View Options) -->
+    <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+            <i class="fas fa-columns"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-foreground leading-snug">
+              {{ $t('settings.workspace.viewGroupTitle', '工作区与侧边栏视图') }}
+            </h3>
+            <p class="text-xs text-text-secondary mt-0.5">
+              {{ $t('settings.workspace.viewGroupDesc', '定制侧边栏抽屉交互、连接列表标签过滤与快捷指令标签展示') }}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-border/40">
+        <!-- 侧边栏持久化/固定行为 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.workspace.sidebarPersistentTitle') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.workspace.sidebarPersistentDescription') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!workspaceSidebarPersistentSuccess && workspaceSidebarPersistentMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ workspaceSidebarPersistentMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="workspaceSidebarPersistentEnabled"
+              @change="handleUpdateWorkspaceSidebarSetting"
+              aria-label="侧边栏固定行为"
+            />
+          </div>
+        </div>
+
+        <!-- 显示连接标签 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!showConnectionTagsSuccess && showConnectionTagsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ showConnectionTagsMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="showConnectionTagsLocal"
+              @change="handleUpdateShowConnectionTags"
+              aria-label="显示连接标签"
+            />
+          </div>
+        </div>
+
+        <!-- 显示快捷指令标签 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!showQuickCommandTagsSuccess && showQuickCommandTagsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ showQuickCommandTagsMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="showQuickCommandTagsLocal"
+              @change="handleUpdateShowQuickCommandTags"
+              aria-label="显示快捷指令标签"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. 系统监控与容器服务 (Monitoring & Containers) -->
+    <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-foreground leading-snug">
+              {{ $t('settings.workspace.monitoringGroupTitle', '系统监控与容器服务') }}
+            </h3>
+            <p class="text-xs text-text-secondary mt-0.5">
+              {{ $t('settings.workspace.monitoringGroupDesc', '管理服务器实时性能指标刷新频率、IP 暴露以及 Docker 容器状态监控') }}
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="divide-y divide-border/40">
+        <!-- 状态监视器 IP 显示 (纯开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground block">
+              {{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ $t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!statusMonitorShowIpSuccess && statusMonitorShowIpMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ statusMonitorShowIpMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="statusMonitorShowIpEnabled"
+              :loading="statusMonitorShowIpLoading"
+              @change="handleUpdateStatusMonitorShowIpSetting"
+              aria-label="状态监视器IP显示"
+            />
+          </div>
+        </div>
+
+        <!-- 状态监视器刷新间隔 -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <label for="statusMonitorInterval" class="text-sm font-medium text-foreground block">
+              {{ t('settings.statusMonitor.title') }}
+            </label>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ t('settings.statusMonitor.refreshIntervalHint') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2.5 shrink-0">
+            <div class="relative flex items-center">
+              <input
+                type="number"
+                id="statusMonitorInterval"
+                v-model.number="statusMonitorIntervalLocal"
+                min="1"
+                step="1"
+                required
+                @change="handleUpdateStatusMonitorInterval"
+                @keydown.enter.prevent="handleUpdateStatusMonitorInterval"
+                class="w-24 px-2.5 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <span class="text-xs text-text-secondary ml-1.5 shrink-0">{{ t('settings.statusMonitor.unit', '秒') }}</span>
+            </div>
+            <span v-if="!statusMonitorSuccess && statusMonitorMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ statusMonitorMessage }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Docker 设置 (刷新间隔 + 开关) -->
+        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-sm font-medium text-foreground">
+              {{ t('settings.docker.title') }}
+            </div>
+            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+              {{ t('settings.docker.refreshIntervalHint') }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-4 shrink-0">
+            <div class="flex items-center gap-1.5">
+              <label for="dockerInterval" class="text-xs text-text-secondary">间隔</label>
+              <input
+                type="number"
+                id="dockerInterval"
+                v-model.number="dockerInterval"
+                min="1"
+                step="1"
+                required
+                @change="handleUpdateDockerSettings"
+                @keydown.enter.prevent="handleUpdateDockerSettings"
+                class="w-20 px-2.5 py-1 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <span class="text-xs text-text-secondary">秒</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-foreground select-none">
+                {{ t('settings.docker.defaultExpandLabel') }}
+              </span>
+              <ToggleSwitch
+                v-model="dockerExpandDefault"
+                size="sm"
+                @change="handleUpdateDockerSettings"
+                aria-label="默认展开Docker容器"
+              />
+            </div>
+            <span v-if="!dockerSettingsSuccess && dockerSettingsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-[10px]"></i>
+              {{ dockerSettingsMessage }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -340,9 +459,10 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useWorkspaceSettings } from '../../composables/settings/useWorkspaceSettings';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
+import ToggleSwitch from '../common/ToggleSwitch.vue';
 
 const settingsStore = useSettingsStore();
-const { settings } = storeToRefs(settingsStore); // To ensure v-if="settings" works
+const { settings } = storeToRefs(settingsStore);
 const { t } = useI18n();
 
 const workspaceSettings = useWorkspaceSettings();
@@ -413,4 +533,3 @@ const {
   handleUpdateDockerSettings,
 } = systemSettings;
 </script>
-
