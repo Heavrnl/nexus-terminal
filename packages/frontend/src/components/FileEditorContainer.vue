@@ -22,21 +22,39 @@ const { shareFileEditorTabsBoolean } = storeToRefs(settingsStore); // +++ 获取
 const { currentEditorFontFamily, currentEditorFontSize } = storeToRefs(appearanceStore);
 
 // 外部冲突解决动作
-const handleResolveReload = () => {
-  if (activeTab.value) {
-    fileEditorStore.resolveConflictReload(activeTab.value.id);
+const handleResolveReload = async () => {
+  if (!activeTab.value) return;
+  const tabId = activeTab.value.id;
+  if (!shareFileEditorTabsBoolean.value && props.sessionId) {
+    await sessionStore.resolveConflictReloadInSession(props.sessionId, tabId);
+    if (activeTab.value) {
+      localEditorContent.value = activeTab.value.content;
+    }
+  } else {
+    await fileEditorStore.resolveConflictReload(tabId);
+    if (activeTab.value) {
+      localEditorContent.value = activeTab.value.content;
+    }
   }
 };
 
-const handleResolveOverwrite = () => {
-  if (activeTab.value) {
-    fileEditorStore.resolveConflictOverwrite(activeTab.value.id);
+const handleResolveOverwrite = async () => {
+  if (!activeTab.value) return;
+  const tabId = activeTab.value.id;
+  if (!shareFileEditorTabsBoolean.value && props.sessionId) {
+    await sessionStore.resolveConflictOverwriteInSession(props.sessionId, tabId);
+  } else {
+    await fileEditorStore.resolveConflictOverwrite(tabId);
   }
 };
 
 const handleResolveIgnore = () => {
-  if (activeTab.value) {
-    fileEditorStore.resolveConflictIgnore(activeTab.value.id);
+  if (!activeTab.value) return;
+  const tabId = activeTab.value.id;
+  if (!shareFileEditorTabsBoolean.value && props.sessionId) {
+    sessionStore.resolveConflictIgnoreInSession(props.sessionId, tabId);
+  } else {
+    fileEditorStore.resolveConflictIgnore(tabId);
   }
 };
  

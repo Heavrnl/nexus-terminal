@@ -436,6 +436,46 @@ const handleCloseContainer = () => {
     isVisible.value = false;
 };
 
+// 外部冲突解决动作
+const handleResolveReload = async () => {
+    if (!activeTab.value) return;
+    const tabId = activeTab.value.id;
+    if (shareFileEditorTabsBoolean.value) {
+        await fileEditorStore.resolveConflictReload(tabId);
+    } else {
+        const sessionId = popupFileInfo.value?.sessionId;
+        if (sessionId) {
+            await sessionStore.resolveConflictReloadInSession(sessionId, tabId);
+        }
+    }
+};
+
+const handleResolveOverwrite = async () => {
+    if (!activeTab.value) return;
+    const tabId = activeTab.value.id;
+    if (shareFileEditorTabsBoolean.value) {
+        await fileEditorStore.resolveConflictOverwrite(tabId);
+    } else {
+        const sessionId = popupFileInfo.value?.sessionId;
+        if (sessionId) {
+            await sessionStore.resolveConflictOverwriteInSession(sessionId, tabId);
+        }
+    }
+};
+
+const handleResolveIgnore = () => {
+    if (!activeTab.value) return;
+    const tabId = activeTab.value.id;
+    if (shareFileEditorTabsBoolean.value) {
+        fileEditorStore.resolveConflictIgnore(tabId);
+    } else {
+        const sessionId = popupFileInfo.value?.sessionId;
+        if (sessionId) {
+            sessionStore.resolveConflictIgnoreInSession(sessionId, tabId);
+        }
+    }
+};
+
 
 // --- 拖拽调整大小逻辑 ---
 const startResize = (event: MouseEvent) => {
@@ -566,6 +606,25 @@ onBeforeUnmount(() => {
       <div v-else class="editor-header editor-header-placeholder" :class="{ 'is-mobile': props.isMobile }">
         <span>{{ t('fileManager.noOpenFile') }}</span>
          <button @click="handleCloseContainer" class="close-editor-btn" :title="t('fileManager.actions.closeEditor')">✖</button>
+      </div>
+
+      <!-- 外部修改冲突保护横幅 -->
+      <div v-if="activeTab?.hasExternalConflict" class="conflict-banner">
+        <div class="conflict-message">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span>{{ t('fileManager.conflictWarning', '文件已在终端或远端被修改，本地有未保存内容。') }}</span>
+        </div>
+        <div class="conflict-actions">
+          <button @click="handleResolveReload" class="conflict-btn reload-btn" :title="t('fileManager.conflictReloadTooltip', '放弃本地未保存更改，拉取远端最新内容')">
+            {{ t('fileManager.actions.reloadRemote', '以远端内容载入') }}
+          </button>
+          <button @click="handleResolveOverwrite" class="conflict-btn overwrite-btn" :title="t('fileManager.conflictOverwriteTooltip', '将本地修改强制保存并覆盖远端')">
+            {{ t('fileManager.actions.overwriteRemote', '覆盖保存到远端') }}
+          </button>
+          <button @click="handleResolveIgnore" class="conflict-btn ignore-btn" :title="t('fileManager.conflictIgnoreTooltip', '保留本地更改，暂不提示')">
+            {{ t('fileManager.actions.ignoreConflict', '忽略') }}
+          </button>
+        </div>
       </div>
 
       <!-- 编辑器内容区域 (现在基于 activeTab) -->
@@ -902,5 +961,76 @@ onBeforeUnmount(() => {
     display: inline-block;
     min-width: 80px; /* 与 select 大致对齐 */
     text-align: center;
+}
+
+/* 外部冲突横幅样式 */
+.conflict-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(234, 179, 8, 0.15);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.4);
+  padding: 0.5rem 1rem;
+  color: #facc15;
+  font-size: 0.85rem;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.conflict-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.conflict-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.conflict-btn {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.conflict-btn.reload-btn {
+  background: #ca8a04;
+  color: #ffffff;
+  border-color: #a16207;
+}
+
+.conflict-btn.reload-btn:hover {
+  background: #eab308;
+}
+
+.conflict-btn.overwrite-btn {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.conflict-btn.overwrite-btn:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #ffffff;
+}
+
+.conflict-btn.ignore-btn {
+  background: transparent;
+  color: #d1d5db;
+  border-color: #4b5563;
+}
+
+.conflict-btn.ignore-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 </style>

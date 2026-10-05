@@ -98,6 +98,33 @@ export const useSessionStore = defineStore('session', () => {
   const updateTabScrollPositionInSession = (sessionId: string, tabId: string, scrollTop: number, scrollLeft: number) =>
     editorActions.updateTabScrollPositionInSession(sessionId, tabId, scrollTop, scrollLeft);
 
+  const reloadFileInSession = (sessionId: string, tabId: string, silent = false) =>
+    editorActions.reloadFileInSession(sessionId, tabId, { getOrCreateSftpManager, t }, silent);
+  const checkFileExternalChangesInSession = (sessionId: string, tabId: string) =>
+    editorActions.checkFileExternalChangesInSession(sessionId, tabId, { getOrCreateSftpManager, t });
+  const resolveConflictReloadInSession = (sessionId: string, tabId: string) =>
+    editorActions.resolveConflictReloadInSession(sessionId, tabId, { getOrCreateSftpManager, t });
+  const resolveConflictOverwriteInSession = (sessionId: string, tabId: string) =>
+    editorActions.resolveConflictOverwriteInSession(sessionId, tabId, { getOrCreateSftpManager, t });
+  const resolveConflictIgnoreInSession = (sessionId: string, tabId: string) =>
+    editorActions.resolveConflictIgnoreInSession(sessionId, tabId);
+
+  // --- 轻量探针调度器 (针对单会话独立标签页) ---
+  const pollActiveSessionFile = () => {
+    const sId = activeSessionId.value;
+    if (!sId) return;
+    const session = sessions.value.get(sId);
+    const tabId = session?.activeEditorTabId.value;
+    if (tabId) {
+      checkFileExternalChangesInSession(sId, tabId);
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    setInterval(pollActiveSessionFile, 1500);
+    window.addEventListener('focus', pollActiveSessionFile);
+  }
+
   // Command Input Actions
   const updateSessionCommandInput = (sessionId: string, content: string) =>
     commandInputActions.updateSessionCommandInput(sessionId, content);
@@ -134,6 +161,11 @@ export const useSessionStore = defineStore('session', () => {
     setActiveEditorTabInSession,
     updateFileContentInSession,
     saveFileInSession,
+    reloadFileInSession,
+    checkFileExternalChangesInSession,
+    resolveConflictReloadInSession,
+    resolveConflictOverwriteInSession,
+    resolveConflictIgnoreInSession,
     changeEncodingInSession,
     closeOtherTabsInSession,
     closeTabsToTheRightInSession,

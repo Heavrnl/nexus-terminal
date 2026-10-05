@@ -245,7 +245,6 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
 
             console.log(`[文件编辑器 Store] 文件 ${targetFilePath} 内容已解码 (${fileData.encodingUsed}) 并设置到标签页 ${tabId}。`);
 
-            // 异步获取远端初始状态用于后续实时变动监听
             sftpManager.stat(targetFilePath).then((stats) => {
                 const cur = tabs.value.get(tabId);
                 if (cur) {
@@ -257,6 +256,8 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
                 if (cur) {
                     cur.remoteMtime = Date.now();
                 }
+            }).finally(() => {
+                startFileWatcher();
             });
 
         } catch (err: any) {
@@ -742,17 +743,21 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
         }
     });
 
-    // 根据是否有打开标签页自动启停探针
-    watch(tabs, (currentTabs) => {
-        if (currentTabs.size > 0) {
+    // 根据是否有打开标签页自动启停探针（监听 tabs.value.size）
+    watch(() => tabs.value.size, (newSize) => {
+        if (newSize > 0) {
             startFileWatcher();
         } else {
             stopFileWatcher();
         }
-    }, { deep: false, immediate: true });
+    }, { immediate: true });
 
     if (typeof window !== 'undefined') {
         window.addEventListener('focus', handleWindowFocus);
+        // 初始若有标签也启动
+        if (tabs.value.size > 0) {
+            startFileWatcher();
+        }
     }
 
     // 监听会话关闭事件，移除相关标签页

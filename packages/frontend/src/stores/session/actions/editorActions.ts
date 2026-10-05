@@ -45,6 +45,9 @@ export const openFileInSession = (
             saveStatus: 'idle',
             saveError: null,
             isModified: false,
+            remoteMtime: undefined,
+            remoteSize: undefined,
+            hasExternalConflict: false,
         };
         session.editorTabs.value.push(newTab);
         session.activeEditorTabId.value = newTab.id;
@@ -80,6 +83,17 @@ export const openFileInSession = (
                 currentTabState.isLoading = false;
                 currentTabState.isModified = false;
                 currentTabState.loadingError = null;
+
+                // 尝试获取最新 stat 作为外部变动比对基准
+                try {
+                    const stats = await sftpManager.stat(fileInfo.fullPath);
+                    if (stats) {
+                        currentTabState.remoteMtime = stats.mtime;
+                        currentTabState.remoteSize = stats.size;
+                    }
+                } catch (statErr) {
+                    console.warn(`[EditorActions ${sessionId}] 获取初始 stat 失败:`, statErr);
+                }
                 console.log(`[EditorActions ${sessionId}] 文件 ${fileInfo.fullPath} 内容已加载并设置到标签页 ${newTab.id}。`);
 
             } catch (err: any) {
@@ -220,6 +234,19 @@ export const saveFileInSession = async (
         tab.saveError = null;
         tab.originalContent = contentToSave;
         tab.isModified = false;
+        tab.hasExternalConflict = false;
+
+        // 保存成功后刷新本地基准 mtime 和 size，防止误判
+        try {
+            const stats = await sftpManager.stat(tab.filePath);
+            if (stats) {
+                tab.remoteMtime = stats.mtime;
+                tab.remoteSize = stats.size;
+            }
+        } catch (statErr) {
+            console.warn(`[EditorActions ${sessionId}] 保存后更新 stat 失败:`, statErr);
+        }
+
         setTimeout(() => { if (tab.saveStatus === 'success') { tab.saveStatus = 'idle'; } }, 2000);
     } catch (err: any) {
         console.error(`[EditorActions] 保存文件 ${tab.filePath} (会话 ${sessionId}) 失败:`, err);
@@ -327,4 +354,169 @@ export const closeTabsToTheLeftInSession = (sessionId: string, targetTabId: stri
     const tabsToClose = session.editorTabs.value.slice(0, targetIndex);
     const idsToClose = tabsToClose.map(t => t.id);
     idsToClose.forEach(id => closeEditorTabInSession(sessionId, id));
+};
+
+/**
+ * 重新加载会话中指定标签页的文件内容
+ */
+export const reloadFileInSession = async (
+    sessionId: string,
+    tabId: string,
+    dependencies: {
+        getOrCreateSftpManager: (sessionId: string, instanceId: string) => SftpManagerInstance | null;
+        t: ReturnType<typeof useI18n>['t'];
+    },
+    silent = false
+): Promise<boolean> => {
+    const session = sessions.value.get(sessionId);
+    if (!session) return false;
+    const tab = session.editorTabs.value.find(t => t.id === tabId);
+    if (!tab) return false;
+
+    const { getOrCreateSftpManager, t } = dependencies;
+    const sftpManager = getOrCreateSftpManager(sessionId, 'primary-editor');
+    if (!sftpManager) return false;
+
+    if (!silent) {
+        tab.isLoading = true;
+        tab.loadingError = null;
+    }
+
+    try {
+        const fileData = await sftpManager.readFile(tab.filePath, tab.selectedEncoding);
+        const newContent = decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
+
+        tab.content = newContent;
+        tab.originalContent = newContent;
+        tab.rawContentBase64 = fileData.rawContentBase64;
+        tab.selectedEncoding = fileData.encodingUsed;
+        tab.isModified = false;
+        tab.hasExternalConflict = false;
+        tab.loadingError = null;
+
+        try {
+            const stats = await sftpManager.stat(tab.filePath);
+            if (stats) {
+                tab.remoteMtime = stats.mtime;
+                tab.remoteSize = stats.size;
+            }
+        } catch (statErr) {
+            console.warn(`[EditorActions ${sessionId}] reloadFile 更新 stat 失败:`, statErr);
+        }
+
+        console.log(`[EditorActions ${sessionId}] 成功重载文件: ${tab.filePath}`);
+        return true;
+    } catch (err: any) {
+        console.error(`[EditorActions ${sessionId}] 重载文件失败:`, err);
+        if (!silent) {
+            tab.loadingError = `${t('fileManager.errors.readFileFailed')}: ${err.message || err}`;
+        }
+        return false;
+    } finally {
+        if (!silent) {
+            tab.isLoading = false;
+        }
+    }
+};
+
+/**
+ * 检查会话中标签页在远端是否发生变化
+ */
+export const checkFileExternalChangesInSession = async (
+    sessionId: string,
+    tabId: string,
+    dependencies: {
+        getOrCreateSftpManager: (sessionId: string, instanceId: string) => SftpManagerInstance | null;
+        t: ReturnType<typeof useI18n>['t'];
+    }
+): Promise<boolean> => {
+    const session = sessions.value.get(sessionId);
+    if (!session) return false;
+    const tab = session.editorTabs.value.find(t => t.id === tabId);
+    if (!tab || tab.isLoading || tab.isSaving) return false;
+
+    const { getOrCreateSftpManager } = dependencies;
+    const sftpManager = getOrCreateSftpManager(sessionId, 'primary-editor');
+    if (!sftpManager) return false;
+
+    try {
+        const stats = await sftpManager.stat(tab.filePath);
+        if (!stats) return false;
+
+        const currentRemoteMtime = stats.mtime;
+        const currentRemoteSize = stats.size;
+
+        if (tab.remoteMtime === undefined || tab.remoteSize === undefined) {
+            tab.remoteMtime = currentRemoteMtime;
+            tab.remoteSize = currentRemoteSize;
+            return false;
+        }
+
+        const isChanged = currentRemoteMtime !== tab.remoteMtime || currentRemoteSize !== tab.remoteSize;
+        if (!isChanged) {
+            return false;
+        }
+
+        console.log(`[EditorActions ${sessionId}] 检测到外部文件变动: ${tab.filePath} (mtime: ${tab.remoteMtime} -> ${currentRemoteMtime}, size: ${tab.remoteSize} -> ${currentRemoteSize})`);
+
+        if (tab.isModified) {
+            tab.hasExternalConflict = true;
+            console.warn(`[EditorActions ${sessionId}] 外部变动且本地有未保存编辑，激活冲突横幅: ${tab.filePath}`);
+        } else {
+            await reloadFileInSession(sessionId, tabId, dependencies, true);
+        }
+        return true;
+    } catch (statError) {
+        return false;
+    }
+};
+
+/**
+ * 冲突处理：放弃本地修改，载入远端最新内容
+ */
+export const resolveConflictReloadInSession = async (
+    sessionId: string,
+    tabId: string,
+    dependencies: {
+        getOrCreateSftpManager: (sessionId: string, instanceId: string) => SftpManagerInstance | null;
+        t: ReturnType<typeof useI18n>['t'];
+    }
+) => {
+    const session = sessions.value.get(sessionId);
+    const tab = session?.editorTabs.value.find(t => t.id === tabId);
+    if (tab) {
+        tab.hasExternalConflict = false;
+    }
+    await reloadFileInSession(sessionId, tabId, dependencies, false);
+};
+
+/**
+ * 冲突处理：以本地修改强制覆盖远端
+ */
+export const resolveConflictOverwriteInSession = async (
+    sessionId: string,
+    tabId: string,
+    dependencies: {
+        getOrCreateSftpManager: (sessionId: string, instanceId: string) => SftpManagerInstance | null;
+        t: ReturnType<typeof useI18n>['t'];
+    }
+) => {
+    const session = sessions.value.get(sessionId);
+    const tab = session?.editorTabs.value.find(t => t.id === tabId);
+    if (tab) {
+        tab.hasExternalConflict = false;
+    }
+    await saveFileInSession(sessionId, tabId, dependencies);
+};
+
+/**
+ * 冲突处理：忽略本次冲突
+ */
+export const resolveConflictIgnoreInSession = (sessionId: string, tabId: string) => {
+    const session = sessions.value.get(sessionId);
+    const tab = session?.editorTabs.value.find(t => t.id === tabId);
+    if (tab) {
+        tab.hasExternalConflict = false;
+        console.log(`[EditorActions ${sessionId}] 用户忽略外部修改冲突: ${tab.filePath}`);
+    }
 };
