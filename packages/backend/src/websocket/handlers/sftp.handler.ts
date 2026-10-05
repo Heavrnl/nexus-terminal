@@ -126,7 +126,7 @@ export async function handleSftpOperation(
     }
 }
 
-export function handleSftpUploadStart(ws: AuthenticatedWebSocket, payload: any): void {
+export async function handleSftpUploadStart(ws: AuthenticatedWebSocket, payload: any): Promise<void> {
     const sessionId = ws.sessionId;
     const state = sessionId ? clientStates.get(sessionId) : undefined;
 
@@ -142,7 +142,14 @@ export function handleSftpUploadStart(ws: AuthenticatedWebSocket, payload: any):
     }
     const relativePath = payload?.relativePath;
     console.log(`WebSocket: SFTP Upload Start - Session: ${sessionId}, UploadID: ${payload.uploadId}, RemotePath: ${payload.remotePath}, Size: ${payload.size}, RelativePath: ${relativePath}`);
-    sftpService.startUpload(sessionId, payload.uploadId, payload.remotePath, payload.size, relativePath);
+    try {
+        await sftpService.startUpload(sessionId, payload.uploadId, payload.remotePath, payload.size, relativePath);
+    } catch (startErr: any) {
+        console.error(`WebSocket: 启动 SFTP 上传失败 (UploadID: ${payload.uploadId}):`, startErr);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId: payload.uploadId, message: `启动上传失败: ${startErr.message}` } }));
+        }
+    }
 }
 
 export async function handleSftpUploadChunk(ws: AuthenticatedWebSocket, payload: any): Promise<void> {

@@ -63,6 +63,8 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
         } else {
             // Standard SSH/SFTP/Docker connection
             ws.on('message', async (message: RawData) => {
+                ws.isAlive = true;
+                (ws as any).missedPongs = 0;
                 let parsedMessage: any;
                 try {
                     parsedMessage = JSON.parse(message.toString());
@@ -125,7 +127,7 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
                         // SFTP Upload Cases
                         case 'sftp:upload:start':
-                            handleSftpUploadStart(ws, payload);
+                            await handleSftpUploadStart(ws, payload);
                             break;
                         case 'sftp:upload:chunk':
                             await handleSftpUploadChunk(ws, payload);

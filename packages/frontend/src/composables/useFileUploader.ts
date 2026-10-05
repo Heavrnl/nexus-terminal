@@ -32,6 +32,20 @@ wsDeps;
     // 对 uploads 字典使用 reactive 以获得更好的深度响应性
     const uploads = reactive<Record<string, UploadItem>>({});
 
+    // 上传流控控制器映射
+    interface UploadController {
+        file: File;
+        offset: number;
+        chunkIndex: number;
+        chunkSize: number;
+        waitingForAck: boolean;
+        ackTimeoutTimer: any;
+        readNextChunk: () => void;
+        onAck: (payload: any) => void;
+        cleanup: () => void;
+    }
+    const uploadControllers = new Map<string, UploadController>();
+
     // --- 上传逻辑 ---
 
     const sendFileChunks = (uploadId: string, file: File, startByte = 0) => {
@@ -42,45 +56,92 @@ wsDeps;
             return;
         }
 
-        const chunkSize = 1024 * 64; // 64KB 块大小
+        // 提升单块大小至 128KB，兼顾吞吐量与极低内存占用
+        const chunkSize = 1024 * 128;
         const reader = new FileReader();
         let offset = startByte;
-        let chunkIndex = 0; // Initialize chunk index counter
-        let currentChunkSize = 0; // Store the size of the chunk being processed
+        let chunkIndex = 0;
+        let currentChunkSize = 0;
+
+        // 若已有旧控制器先做清理
+        uploadControllers.get(uploadId)?.cleanup();
+
+        const ctrl: UploadController = {
+            file,
+            offset,
+            chunkIndex,
+            chunkSize,
+            waitingForAck: false,
+            ackTimeoutTimer: null,
+            readNextChunk: () => {},
+            onAck: () => {},
+            cleanup: () => {
+                if (ctrl.ackTimeoutTimer) {
+                    clearTimeout(ctrl.ackTimeoutTimer);
+                    ctrl.ackTimeoutTimer = null;
+                }
+                uploadControllers.delete(uploadId);
+            }
+        };
+
+        const readNextChunk = () => {
+            const currentUpload = uploads[uploadId];
+            if (!wsDeps.value.isConnected.value || !currentUpload || currentUpload.status !== 'uploading') {
+                return;
+            }
+            if (offset < file.size) {
+                const slice = file.slice(offset, offset + chunkSize);
+                currentChunkSize = slice.size;
+                reader.readAsDataURL(slice);
+            }
+        };
+        ctrl.readNextChunk = readNextChunk;
 
         reader.onload = (e) => {
             const currentUpload = uploads[uploadId];
-            // *发送前* 再次检查连接和状态
             if (!wsDeps.value.isConnected.value || !currentUpload || currentUpload.status !== 'uploading') { 
-                 console.warn(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} status changed or disconnected before sending chunk at offset ${offset}.`);
-                 return; // 如果状态改变或断开连接，则停止发送
+                console.warn(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} status changed or disconnected before sending chunk.`);
+                ctrl.cleanup();
+                return;
             }
 
             const chunkResult = e.target?.result as string;
-            // 确保结果是字符串并且包含 base64 前缀
             if (typeof chunkResult === 'string' && chunkResult.startsWith('data:')) {
                 const chunkBase64 = chunkResult.split(',')[1];
-                const isLast = offset + chunkSize >= file.size;
+                const isLast = offset + currentChunkSize >= file.size;
 
+                // 发送当前分片
                 wsDeps.value.sendMessage({ 
                     type: 'sftp:upload:chunk',
-                    payload: { uploadId, chunkIndex: chunkIndex++, data: chunkBase64, isLast }
+                    payload: { uploadId, chunkIndex, data: chunkBase64, isLast }
                 });
 
-                
-                offset += currentChunkSize; 
-                
+                ctrl.waitingForAck = true;
 
-                if (!isLast) {                                     
-                    nextTick(readNextChunk);
-                } else {
-                    console.log(`[FileUploader ${sessionIdForLog.value}] Sent last chunk for ${uploadId}`);
-                    
+                // 设置 30 秒 ACK 超时保护，防止极端网络挂起
+                if (ctrl.ackTimeoutTimer) clearTimeout(ctrl.ackTimeoutTimer);
+                ctrl.ackTimeoutTimer = setTimeout(() => {
+                    if (ctrl.waitingForAck && uploads[uploadId]?.status === 'uploading') {
+                        console.error(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} timed out waiting for ACK on chunk ${chunkIndex}`);
+                        uploads[uploadId].status = 'error';
+                        uploads[uploadId].error = t('fileManager.errors.uploadFailed') + ' (ACK Timeout)';
+                        ctrl.cleanup();
+                    }
+                }, 30000);
+
+                offset += currentChunkSize;
+                chunkIndex++;
+                ctrl.offset = offset;
+                ctrl.chunkIndex = chunkIndex;
+
+                if (isLast) {
+                    console.log(`[FileUploader ${sessionIdForLog.value}] Sent all chunks for ${uploadId}, awaiting finalize.`);
                 }
             } else {
-                 console.error(`[FileUploader ${sessionIdForLog.value}] FileReader returned unexpected result for ${uploadId}:`, chunkResult);
-                 currentUpload.status = 'error';
-                 currentUpload.error = t('fileManager.errors.readFileError');
+                console.error(`[FileUploader ${sessionIdForLog.value}] FileReader returned unexpected result for ${uploadId}:`, chunkResult);
+                currentUpload.status = 'error';
+                currentUpload.error = t('fileManager.errors.readFileError');
+                ctrl.cleanup();
             }
         };
 
@@ -91,27 +152,43 @@ wsDeps;
                 failedUpload.status = 'error';
                 failedUpload.error = t('fileManager.errors.readFileError');
             }
+            ctrl.cleanup();
         };
 
-        const readNextChunk = () => {
-            // 读取下一个块之前再次检查状态
-            if (offset < file.size && uploads[uploadId]?.status === 'uploading') {
-                const slice = file.slice(offset, offset + chunkSize);
-                currentChunkSize = slice.size; 
-                reader.readAsDataURL(slice);
+        // 响应服务端 ACK 确认驱动下一块传输
+        ctrl.onAck = (ackPayload: any) => {
+            if (ctrl.ackTimeoutTimer) {
+                clearTimeout(ctrl.ackTimeoutTimer);
+                ctrl.ackTimeoutTimer = null;
+            }
+            ctrl.waitingForAck = false;
+
+            const currentUpload = uploads[uploadId];
+            if (!currentUpload || currentUpload.status !== 'uploading') {
+                ctrl.cleanup();
+                return;
+            }
+
+            // 使用后端确认的实际写入字节更新进度
+            if (typeof ackPayload?.bytesWritten === 'number') {
+                currentUpload.progress = Math.min(100, Math.round((ackPayload.bytesWritten / file.size) * 100));
+            }
+
+            // 若尚未读完，则读取并发送下一块（背压流控核心机制）
+            if (offset < file.size) {
+                readNextChunk();
             }
         };
 
-        // 开始读取第一个块（或恢复时的下一个块）
+        uploadControllers.set(uploadId, ctrl);
+
+        // 开始读取第一个块
         if (file.size > 0) {
-             readNextChunk();
+            readNextChunk();
         } else {
-             // 立即处理零字节文件
-             console.log(`[FileUploader ${sessionIdForLog.value}] Processing zero-byte file ${uploadId}`);
-             // Send chunkIndex 0 for zero-byte file
-             wsDeps.value.sendMessage({ type: 'sftp:upload:chunk', payload: { uploadId, chunkIndex: 0, data: '', isLast: true } });
-             upload.progress = 100;
-             
+            console.log(`[FileUploader ${sessionIdForLog.value}] Processing zero-byte file ${uploadId}`);
+            wsDeps.value.sendMessage({ type: 'sftp:upload:chunk', payload: { uploadId, chunkIndex: 0, data: '', isLast: true } });
+            upload.progress = 100;
         }
     };
 
@@ -168,6 +245,9 @@ wsDeps;
             console.log(`[FileUploader ${sessionIdForLog.value}] Cancelling upload ${uploadId}`);
             upload.status = 'cancelled'; // 立即更新状态
 
+            // 清理流控控制器与定时器
+            uploadControllers.get(uploadId)?.cleanup();
+
             if (notifyBackend && wsDeps.value.isConnected.value) { 
                 wsDeps.value.sendMessage({ type: 'sftp:upload:cancel', payload: { uploadId } }); 
             }
@@ -197,16 +277,29 @@ wsDeps;
         }
     };
 
+    // +++ 核心：处理服务端分片 ACK 确认 +++
+    const onUploadAck = (payload: MessagePayload, message: WebSocketMessage) => {
+        const uploadId = message.uploadId || payload?.uploadId;
+        if (!uploadId) return;
+
+        const ctrl = uploadControllers.get(uploadId);
+        if (ctrl) {
+            ctrl.onAck(payload);
+        }
+    };
+
     const onUploadSuccess = (payload: MessagePayload, message: WebSocketMessage) => {
         const uploadId = message.uploadId || payload?.uploadId;
         if (!uploadId) return;
+
+        // 清理流控控制器
+        uploadControllers.get(uploadId)?.cleanup();
 
         const upload = uploads[uploadId];
         if (upload) {
             console.log(`[FileUploader ${sessionIdForLog.value}] Upload ${uploadId} successful.`);
             upload.status = 'success';
             upload.progress = 100;
-
 
             // 立即删除记录
             if (uploads[uploadId]) { // 确保记录仍然存在
@@ -225,6 +318,9 @@ wsDeps;
              console.warn(`[FileUploader ${sessionIdForLog.value}] Received upload:error with missing uploadId:`, message);
              return;
         }
+
+        // 清理流控控制器
+        uploadControllers.get(uploadId)?.cleanup();
 
         const upload = uploads[uploadId];
         if (upload) {
@@ -268,6 +364,9 @@ wsDeps;
      const onUploadCancelled = (payload: MessagePayload, message: WebSocketMessage) => {
         const uploadId = message.uploadId || payload?.uploadId;
         if (!uploadId) return;
+
+        uploadControllers.get(uploadId)?.cleanup();
+
         const upload = uploads[uploadId];
         if (upload) {
             // 状态可能已经由用户操作设置为 'cancelled'
@@ -316,6 +415,7 @@ wsDeps;
         }
 
         const unregisterUploadReady = wsDeps.value.onMessage('sftp:upload:ready', onUploadReady);
+        const unregisterUploadAck = wsDeps.value.onMessage('sftp:upload:ack', onUploadAck);
         const unregisterUploadSuccess = wsDeps.value.onMessage('sftp:upload:success', onUploadSuccess);
         const unregisterUploadError = wsDeps.value.onMessage('sftp:upload:error', onUploadError);
         const unregisterUploadPause = wsDeps.value.onMessage('sftp:upload:pause', onUploadPause);
@@ -325,6 +425,7 @@ wsDeps;
 
         onCleanup(() => {
             unregisterUploadReady?.();
+            unregisterUploadAck?.();
             unregisterUploadSuccess?.();
             unregisterUploadError?.();
             unregisterUploadPause?.();
@@ -336,10 +437,10 @@ wsDeps;
 
     // --- 清理 (onUnmounted 仍然用于组件生命周期结束时的清理) ---
     onUnmounted(() => {
-        // 注意：消息监听器的注销现在主要由 watchEffect 的 onCleanup 处理。
-        // onUnmounted 仍然负责取消正在进行的上传。
+        // 当使用此 composable 的组件卸载时，取消任何正在进行的上传并清理所有流控
+        uploadControllers.forEach(ctrl => ctrl.cleanup());
+        uploadControllers.clear();
 
-        // 当使用此 composable 的组件卸载时，取消任何正在进行的上传
         Object.keys(uploads).forEach(uploadId => {
             cancelUpload(uploadId, true); // 卸载时通知后端
         });
