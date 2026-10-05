@@ -51,6 +51,16 @@ const initCommandHistoryTable = async (db: Database): Promise<void> => {
     }
 };
 
+const initQuickCommandsTable = async (db: Database): Promise<void> => {
+    try {
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_quick_commands_name ON quick_commands(name);`);
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_quick_commands_usage_count ON quick_commands(usage_count DESC);`);
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_qc_tag_associations_tag_id ON quick_command_tag_associations(tag_id);`);
+    } catch (err: any) {
+        console.error('[DB Init] 创建 quick_commands 索引失败:', err.message);
+    }
+};
+
 // --- Table Definitions Registry ---
 
 /**
@@ -86,7 +96,11 @@ export const tableDefinitions: TableDefinition[] = [
         init: initCommandHistoryTable
     },
     { name: 'path_history', sql: schemaSql.createPathHistoryTableSQL },
-    { name: 'quick_commands', sql: schemaSql.createQuickCommandsTableSQL },
+    {
+        name: 'quick_commands',
+        sql: schemaSql.createQuickCommandsTableSQL,
+        init: initQuickCommandsTable
+    },
     { name: 'favorite_paths', sql: schemaSql.createFavoritePathsTableSQL }, // Added Favorite Paths table
 
     // Appearance related tables (often depend on others or have init logic)

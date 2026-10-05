@@ -22,7 +22,7 @@ const handleCommandExecute = (command: string) => {
   closeModal(); // 选择指令后自动关闭
 };
 
-// Optional: Add keyboard listener to close on Esc key
+// Add keyboard listener to close on Esc key
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
     closeModal();
@@ -35,20 +35,17 @@ watch(() => props.isVisible, (newValue) => {
   } else {
     document.removeEventListener('keydown', handleKeydown);
   }
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeydown);
 });
 
 const onWorkspaceEvent = useWorkspaceEventSubscriber(); // 获取事件订阅器
 
-// Clean up listener on unmount (though v-if usually handles this)
-import { onUnmounted } from 'vue';
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown);
-});
-
 onMounted(() => {
   // 监听 terminal:sendCommand 事件以关闭模态框
   onWorkspaceEvent('terminal:sendCommand', () => {
-    console.log('[QuickCommandsModal] Received terminal:sendCommand event, closing modal.');
     closeModal();
   });
 });

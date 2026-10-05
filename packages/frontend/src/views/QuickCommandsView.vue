@@ -7,7 +7,7 @@
         <input
           type="text"
           :placeholder="$t('quickCommands.searchPlaceholder', '搜索名称或指令...')"
-          :value="searchTerm"
+          :value="localSearchTerm"
           data-focus-id="quickCommandsSearch"
           @input="updateSearchTerm($event)"
           @keydown="handleSearchInputKeydown"
@@ -270,6 +270,9 @@ const quickCommandContextMenuVisible = ref(false);
 const quickCommandContextMenuPosition = ref({ x: 0, y: 0 });
 const quickCommandContextTargetCommand = ref<QuickCommandFE | null>(null);
 
+const localSearchTerm = ref(quickCommandsStore.searchTerm);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 // --- 从 Store 获取状态和 Getter ---
 const searchTerm = computed(() => quickCommandsStore.searchTerm);
 const sortBy = computed(() => quickCommandsStore.sortBy);
@@ -277,6 +280,11 @@ const sortBy = computed(() => quickCommandsStore.sortBy);
 const filteredAndGroupedCommands = computed(() => quickCommandsStore.filteredAndGroupedCommands);
 const isLoading = computed(() => quickCommandsStore.isLoading);
 
+watch(searchTerm, (newVal) => {
+  if (newVal !== localSearchTerm.value) {
+    localSearchTerm.value = newVal;
+  }
+});
 
 const { selectedIndex: storeSelectedIndex, flatVisibleCommands, expandedGroups } = storeToRefs(quickCommandsStore);
 const {
@@ -355,6 +363,10 @@ onMounted(async () => { // Make onMounted async
 });
 
 onBeforeUnmount(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
   // +++ 调用保存的注销函数 +++
   if (unregisterFocus) {
     unregisterFocus();
@@ -384,10 +396,17 @@ watch(showQuickCommandTagsBoolean, () => {
 
 // --- 事件处理 ---
 
+// 更新搜索词 (带 120ms 防抖，消除连续打字掉帧)
 const updateSearchTerm = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  quickCommandsStore.setSearchTerm(target.value);
-  // selectedIndex.value = -1; // REMOVED: Store handles resetting index
+  localSearchTerm.value = target.value;
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(() => {
+    quickCommandsStore.setSearchTerm(localSearchTerm.value);
+    searchDebounceTimer = null;
+  }, 120);
 };
 
 // +++ 重构滚动逻辑 +++
@@ -436,6 +455,11 @@ const handleSearchInputKeydown = (event: KeyboardEvent) => {
       break;
     case 'Enter':
       event.preventDefault();
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+        quickCommandsStore.setSearchTerm(localSearchTerm.value);
+      }
       // 使用 store 的 storeSelectedIndex
       if (storeSelectedIndex.value >= 0 && storeSelectedIndex.value < commands.length) {
         executeCommand(commands[storeSelectedIndex.value]);
