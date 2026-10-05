@@ -3,16 +3,16 @@
 
     <!-- 1. 终端与控制台 (Terminal & Console) -->
     <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
-      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+      <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+          <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-base shrink-0">
             <i class="fas fa-terminal"></i>
           </div>
           <div>
-            <h3 class="text-base font-semibold text-foreground leading-snug">
+            <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.terminalGroupTitle', '终端与控制台') }}
             </h3>
-            <p class="text-xs text-text-secondary mt-0.5">
+            <p class="text-sm text-text-secondary mt-1">
               {{ $t('settings.workspace.terminalGroupDesc', '控制终端输出缓冲区、鼠标右键交互、选中文本复制与命令同步') }}
             </p>
           </div>
@@ -20,16 +20,16 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 终端回滚行数 -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="terminalScrollbackLimitInput" class="text-sm font-medium text-foreground block">
+            <label for="terminalScrollbackLimitInput" class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ t('settings.terminalScrollback.title', '终端回滚行数') }}
             </label>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ t('settings.terminalScrollback.limitHint', '设置终端保留的最大输出行数。0 或留空表示无限制 (使用默认值 5000)。') }}
             </p>
           </div>
-          <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-3 shrink-0">
             <div class="relative flex items-center">
               <input
                 type="number"
@@ -40,30 +40,30 @@
                 placeholder="5000"
                 @change="handleUpdateTerminalScrollbackLimit"
                 @keydown.enter.prevent="handleUpdateTerminalScrollbackLimit"
-                class="w-28 px-2.5 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                class="w-32 sm:w-36 h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
               />
-              <span class="text-xs text-text-secondary ml-1.5 shrink-0">{{ t('settings.terminalScrollback.unit', '行') }}</span>
+              <span class="text-sm text-text-secondary ml-2 shrink-0">{{ t('settings.terminalScrollback.unit', '行') }}</span>
             </div>
-            <span v-if="!terminalScrollbackLimitSuccess && terminalScrollbackLimitMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!terminalScrollbackLimitSuccess && terminalScrollbackLimitMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ terminalScrollbackLimitMessage }}
             </span>
           </div>
         </div>
 
         <!-- 终端右键粘贴 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.workspace.terminalRightClickPasteTitle') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.workspace.terminalEnableRightClickPasteDescription') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!terminalEnableRightClickPasteSuccess && terminalEnableRightClickPasteMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!terminalEnableRightClickPasteSuccess && terminalEnableRightClickPasteMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ terminalEnableRightClickPasteMessage }}
             </span>
             <ToggleSwitch
@@ -76,18 +76,18 @@
         </div>
 
         <!-- 松开鼠标时自动复制选中文本 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.autoCopyOnSelect.title') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.autoCopyOnSelect.enableLabel') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!autoCopySuccess && autoCopyMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!autoCopySuccess && autoCopyMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ autoCopyMessage }}
             </span>
             <ToggleSwitch
@@ -99,29 +99,29 @@
         </div>
 
         <!-- 命令输入同步目标 -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="commandInputSyncTargetSelect" class="text-sm font-medium text-foreground block">
+            <label for="commandInputSyncTargetSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.commandInputSync.title', '命令输入同步') }}
             </label>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.commandInputSync.description', '将命令输入框的内容实时同步到所选面板的搜索框。') }}
             </p>
           </div>
-          <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-3 shrink-0">
             <select
               id="commandInputSyncTargetSelect"
               v-model="commandInputSyncTargetLocal"
               @change="handleUpdateCommandInputSyncTarget"
-              class="px-3 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-7 cursor-pointer"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 14px 10px;"
+              class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer"
+              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
             >
               <option value="none">{{ $t('settings.commandInputSync.targetNone', '无') }}</option>
               <option value="quickCommands">{{ $t('settings.commandInputSync.targetQuickCommands', '快捷指令') }}</option>
               <option value="commandHistory">{{ $t('settings.commandInputSync.targetCommandHistory', '历史命令') }}</option>
             </select>
-            <span v-if="!commandInputSyncSuccess && commandInputSyncMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!commandInputSyncSuccess && commandInputSyncMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ commandInputSyncMessage }}
             </span>
           </div>
@@ -131,16 +131,16 @@
 
     <!-- 2. 文件管理与代码编辑 (File Manager & Editor) -->
     <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
-      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+      <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+          <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-base shrink-0">
             <i class="fas fa-folder-open"></i>
           </div>
           <div>
-            <h3 class="text-base font-semibold text-foreground leading-snug">
+            <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.fileManagerGroupTitle', '文件管理与代码编辑') }}
             </h3>
-            <p class="text-xs text-text-secondary mt-0.5">
+            <p class="text-sm text-text-secondary mt-1">
               {{ $t('settings.workspace.fileManagerGroupDesc', '配置文件编辑器展现形态、弹窗模式、多会话标签共享与防误触确认') }}
             </p>
           </div>
@@ -148,18 +148,18 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 弹窗编辑器 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.popupEditor.title') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.popupEditor.enableLabel') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!popupEditorSuccess && popupEditorMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!popupEditorSuccess && popupEditorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ popupEditorMessage }}
             </span>
             <ToggleSwitch
@@ -171,18 +171,18 @@
         </div>
 
         <!-- 弹窗文件管理器 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ t('settings.popupFileManager.title') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ t('settings.popupFileManager.enableLabel') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showPopupFileManagerSuccess && showPopupFileManagerMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!showPopupFileManagerSuccess && showPopupFileManagerMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ showPopupFileManagerMessage }}
             </span>
             <ToggleSwitch
@@ -194,18 +194,18 @@
         </div>
 
         <!-- 共享编辑器标签页 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.shareEditorTabs.title') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.shareEditorTabs.description') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!shareTabsSuccess && shareTabsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!shareTabsSuccess && shareTabsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ shareTabsMessage }}
             </span>
             <ToggleSwitch
@@ -217,18 +217,18 @@
         </div>
 
         <!-- 文件管理器删除确认 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!fileManagerShowDeleteConfirmationSuccess && fileManagerShowDeleteConfirmationMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!fileManagerShowDeleteConfirmationSuccess && fileManagerShowDeleteConfirmationMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ fileManagerShowDeleteConfirmationMessage }}
             </span>
             <ToggleSwitch
@@ -243,16 +243,16 @@
 
     <!-- 3. 工作区与侧边栏视图 (Sidebar & View Options) -->
     <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
-      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+      <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+          <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-base shrink-0">
             <i class="fas fa-columns"></i>
           </div>
           <div>
-            <h3 class="text-base font-semibold text-foreground leading-snug">
+            <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.viewGroupTitle', '工作区与侧边栏视图') }}
             </h3>
-            <p class="text-xs text-text-secondary mt-0.5">
+            <p class="text-sm text-text-secondary mt-1">
               {{ $t('settings.workspace.viewGroupDesc', '定制侧边栏抽屉交互、连接列表标签过滤与快捷指令标签展示') }}
             </p>
           </div>
@@ -260,18 +260,18 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 侧边栏持久化/固定行为 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.workspace.sidebarPersistentTitle') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.workspace.sidebarPersistentDescription') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!workspaceSidebarPersistentSuccess && workspaceSidebarPersistentMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!workspaceSidebarPersistentSuccess && workspaceSidebarPersistentMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ workspaceSidebarPersistentMessage }}
             </span>
             <ToggleSwitch
@@ -283,18 +283,18 @@
         </div>
 
         <!-- 显示连接标签 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showConnectionTagsSuccess && showConnectionTagsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!showConnectionTagsSuccess && showConnectionTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ showConnectionTagsMessage }}
             </span>
             <ToggleSwitch
@@ -306,18 +306,18 @@
         </div>
 
         <!-- 显示快捷指令标签 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showQuickCommandTagsSuccess && showQuickCommandTagsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!showQuickCommandTagsSuccess && showQuickCommandTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ showQuickCommandTagsMessage }}
             </span>
             <ToggleSwitch
@@ -332,16 +332,16 @@
 
     <!-- 4. 系统监控与容器服务 (Monitoring & Containers) -->
     <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
-      <div class="px-6 py-4 border-b border-border/80 bg-header/30 flex items-center justify-between">
+      <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm shrink-0">
+          <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-base shrink-0">
             <i class="fas fa-chart-line"></i>
           </div>
           <div>
-            <h3 class="text-base font-semibold text-foreground leading-snug">
+            <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.monitoringGroupTitle', '系统监控与容器服务') }}
             </h3>
-            <p class="text-xs text-text-secondary mt-0.5">
+            <p class="text-sm text-text-secondary mt-1">
               {{ $t('settings.workspace.monitoringGroupDesc', '管理服务器实时性能指标刷新频率、IP 暴露以及 Docker 容器状态监控') }}
             </p>
           </div>
@@ -349,18 +349,18 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 状态监视器 IP 显示 (纯开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground block">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ $t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!statusMonitorShowIpSuccess && statusMonitorShowIpMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!statusMonitorShowIpSuccess && statusMonitorShowIpMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ statusMonitorShowIpMessage }}
             </span>
             <ToggleSwitch
@@ -373,16 +373,16 @@
         </div>
 
         <!-- 状态监视器刷新间隔 -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="statusMonitorInterval" class="text-sm font-medium text-foreground block">
+            <label for="statusMonitorInterval" class="text-[15px] sm:text-base font-medium text-foreground block">
               {{ t('settings.statusMonitor.title') }}
             </label>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ t('settings.statusMonitor.refreshIntervalHint') }}
             </p>
           </div>
-          <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-3 shrink-0">
             <div class="relative flex items-center">
               <input
                 type="number"
@@ -393,30 +393,30 @@
                 required
                 @change="handleUpdateStatusMonitorInterval"
                 @keydown.enter.prevent="handleUpdateStatusMonitorInterval"
-                class="w-24 px-2.5 py-1.5 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                class="w-28 sm:w-32 h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
               />
-              <span class="text-xs text-text-secondary ml-1.5 shrink-0">{{ t('settings.statusMonitor.unit', '秒') }}</span>
+              <span class="text-sm text-text-secondary ml-2 shrink-0">{{ t('settings.statusMonitor.unit', '秒') }}</span>
             </div>
-            <span v-if="!statusMonitorSuccess && statusMonitorMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!statusMonitorSuccess && statusMonitorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ statusMonitorMessage }}
             </span>
           </div>
         </div>
 
         <!-- Docker 设置 (刷新间隔 + 开关) -->
-        <div class="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/15 transition-colors">
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-sm font-medium text-foreground">
+            <div class="text-[15px] sm:text-base font-medium text-foreground">
               {{ t('settings.docker.title') }}
             </div>
-            <p class="text-xs text-text-secondary mt-1 leading-relaxed">
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
               {{ t('settings.docker.refreshIntervalHint') }}
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-4 shrink-0">
-            <div class="flex items-center gap-1.5">
-              <label for="dockerInterval" class="text-xs text-text-secondary">间隔</label>
+            <div class="flex items-center gap-2">
+              <label for="dockerInterval" class="text-sm text-text-secondary font-medium">间隔</label>
               <input
                 type="number"
                 id="dockerInterval"
@@ -426,23 +426,23 @@
                 required
                 @change="handleUpdateDockerSettings"
                 @keydown.enter.prevent="handleUpdateDockerSettings"
-                class="w-20 px-2.5 py-1 text-xs border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                class="w-24 h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
               />
-              <span class="text-xs text-text-secondary">秒</span>
+              <span class="text-sm text-text-secondary">秒</span>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-foreground select-none">
+            <div class="flex items-center gap-2.5">
+              <span class="text-sm text-foreground select-none font-medium">
                 {{ t('settings.docker.defaultExpandLabel') }}
               </span>
               <ToggleSwitch
                 v-model="dockerExpandDefault"
-                size="sm"
+                size="md"
                 @change="handleUpdateDockerSettings"
                 aria-label="默认展开Docker容器"
               />
             </div>
-            <span v-if="!dockerSettingsSuccess && dockerSettingsMessage" class="text-xs font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-[10px]"></i>
+            <span v-if="!dockerSettingsSuccess && dockerSettingsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
               {{ dockerSettingsMessage }}
             </span>
           </div>
