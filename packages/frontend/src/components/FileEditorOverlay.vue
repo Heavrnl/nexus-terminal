@@ -87,6 +87,9 @@ const {
 const popupWidthPx = ref(window.innerWidth * 0.75); // 初始宽度 75vw (像素)
 const popupHeightPx = ref(window.innerHeight * 0.85); // 初始高度 85vh (像素)
 const isResizing = ref(false);
+const justFinishedResizing = ref(false);
+let resizeCooldownTimer: number | null = null;
+const isBackdropMouseDown = ref(false);
 const startX = ref(0);
 const startY = ref(0);
 const startWidthPx = ref(0);
@@ -480,6 +483,12 @@ const handleResolveIgnore = () => {
 // --- 拖拽调整大小逻辑 ---
 const startResize = (event: MouseEvent) => {
     isResizing.value = true;
+    justFinishedResizing.value = false;
+    isBackdropMouseDown.value = false;
+    if (resizeCooldownTimer) {
+        clearTimeout(resizeCooldownTimer);
+        resizeCooldownTimer = null;
+    }
     startX.value = event.clientX;
     startY.value = event.clientY;
     startWidthPx.value = popupWidthPx.value;
@@ -501,11 +510,50 @@ const handleResize = (event: MouseEvent) => {
 const stopResize = () => {
     if (isResizing.value) {
         isResizing.value = false;
+        isBackdropMouseDown.value = false;
         document.removeEventListener('mousemove', handleResize);
         document.removeEventListener('mouseup', stopResize);
         document.body.style.cursor = ''; // 恢复默认光标
-    document.body.style.userSelect = ''; // 恢复文本选择
+        document.body.style.userSelect = ''; // 恢复文本选择
+
+        // 设置防抖冷却时间，防止拖拽拉伸在弹窗外部松手时派发的合成 click 事件误关闭弹窗
+        justFinishedResizing.value = true;
+        if (resizeCooldownTimer) clearTimeout(resizeCooldownTimer);
+        resizeCooldownTimer = window.setTimeout(() => {
+            justFinishedResizing.value = false;
+            resizeCooldownTimer = null;
+        }, 250);
     }
+};
+
+// --- 遮罩背景点击关闭处理 (严格生命周期防误触) ---
+const handleBackdropMouseDown = (event: MouseEvent) => {
+    // 只有直接在背景遮罩层上按下鼠标才有效（排除弹窗内部、手柄或子元素）
+    if (event.target === event.currentTarget) {
+        isBackdropMouseDown.value = true;
+    } else {
+        isBackdropMouseDown.value = false;
+    }
+};
+
+const handleBackdropClick = (event: MouseEvent) => {
+    // 1. 点击目标必须是背景遮罩本身
+    if (event.target !== event.currentTarget) {
+        isBackdropMouseDown.value = false;
+        return;
+    }
+    // 2. 必须是直接在背景遮罩上发起的 mousedown，防止从弹窗内或拖拽手柄拉出后松手合成的 click 误触
+    if (!isBackdropMouseDown.value) {
+        return;
+    }
+    // 3. 如果当前正在拉伸，或者处于拉伸刚结束的冷却期内，直接拦截阻止关闭
+    if (isResizing.value || justFinishedResizing.value) {
+        isBackdropMouseDown.value = false;
+        return;
+    }
+
+    isBackdropMouseDown.value = false;
+    handleCloseContainer();
 };
 
 // 监听 popupTrigger 的变化来显示弹窗
@@ -537,13 +585,22 @@ watch(currentSelectedEncoding, () => {
 // 组件卸载时清理事件监听器
 onBeforeUnmount(() => {
     stopResize(); // 确保移除监听器
+    if (resizeCooldownTimer) {
+        clearTimeout(resizeCooldownTimer);
+        resizeCooldownTimer = null;
+    }
 });
 
 </script>
 
 <template>
   <!-- 使用本地 isVisible 控制显示 (App.vue 中已有 v-if="showPopupFileEditorBoolean") -->
-  <div v-if="isVisible" class="editor-overlay-backdrop" @click.self="handleCloseContainer"> <!-- 恢复点击背景关闭 -->
+  <div
+    v-if="isVisible"
+    class="editor-overlay-backdrop"
+    @mousedown="handleBackdropMouseDown"
+    @click="handleBackdropClick"
+  > <!-- 恢复严格校验的点击背景关闭 -->
     <!-- 编辑器弹窗/容器，应用动态样式 -->
     <div class="editor-popup" :style="popupStyle">
 
