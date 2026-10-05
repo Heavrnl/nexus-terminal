@@ -377,8 +377,14 @@
       "save": "保存",
       "upload": "アップロード",
       "uploadFile": "ファイルをアップロード",
-      "copyPath": "パスをコピー"
+      "copyPath": "パスをコピー",
+      "reloadRemote": "リモート内容で再読み込み",
+      "overwriteRemote": "リモートに上書き保存"
     },
+    "conflictWarning": "ファイルが端末またはリモートで変更されています。未保存の変更があります。",
+    "conflictReloadTooltip": "ローカルの変更を破棄して、最新のリモート内容を読み込みます",
+    "conflictOverwriteTooltip": "ローカルの変更でリモートファイルを強制的に上書き保存します",
+    "conflictIgnoreTooltip": "ローカルの変更を保持し、通知を非表示にします",
     "contextMenu": {
       "compress": "圧縮",
       "compressZip": "zip に圧縮",

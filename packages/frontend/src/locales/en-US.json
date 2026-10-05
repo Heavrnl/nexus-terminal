@@ -441,8 +441,14 @@
       "cut": "Cut",
       "paste": "Paste",
       "openEditor": "Open Editor",
-      "copyPath": "Copy Path"
+      "copyPath": "Copy Path",
+      "reloadRemote": "Reload from Remote",
+      "overwriteRemote": "Overwrite Remote"
     },
+    "conflictWarning": "File has been modified remotely. Local unsaved changes exist.",
+    "conflictReloadTooltip": "Discard local changes and load latest remote content",
+    "conflictOverwriteTooltip": "Overwrite remote file with local changes",
+    "conflictIgnoreTooltip": "Keep local changes without reloading",
     "contextMenu": {
       "compress": "Compress",
       "compressZip": "Compress to zip",

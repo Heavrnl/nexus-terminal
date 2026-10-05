@@ -36,6 +36,7 @@ export interface SftpManagerInstance {
    changePermissions: (item: FileListItem, mode: number) => void;
    readFile: (path: string, encoding?: string) => Promise<SftpReadFileSuccessPayload>;
    writeFile: (path: string, content: string, encoding?: string) => Promise<void>;
+   stat: (path: string) => Promise<FileAttributes>;
    copyItems: (sourcePaths: string[], destinationDir: string) => void;
    moveItems: (sourcePaths: string[], destinationDir: string) => void;
    compressItems: (items: FileListItem[], format: 'zip' | 'targz' | 'tarbz2') => Promise<void>; // Assume async
@@ -443,6 +444,48 @@ export function createSftpActionsManager(
                 requestId: requestId,
                 // --- 修改：在 payload 中包含最终的编码 ---
                 payload: { path, content, encoding: finalEncoding }
+            });
+        });
+    };
+
+    /** 获取文件/目录状态元数据 */
+    const stat = (path: string): Promise<FileAttributes> => {
+        return new Promise((resolve, reject) => {
+            if (!isSftpReady.value) {
+                return reject(new Error('SFTP not ready'));
+            }
+            const requestId = generateRequestId();
+            let unregisterSuccess: (() => void) | null = null;
+            let unregisterError: (() => void) | null = null;
+
+            const timeoutId = setTimeout(() => {
+                unregisterSuccess?.();
+                unregisterError?.();
+                reject(new Error('SFTP stat timeout'));
+            }, 10000);
+
+            unregisterSuccess = onMessage('sftp:stat:success', (payload: MessagePayload, message: WebSocketMessage) => {
+                if (message.requestId === requestId) {
+                    clearTimeout(timeoutId);
+                    unregisterSuccess?.();
+                    unregisterError?.();
+                    resolve(payload as FileAttributes);
+                }
+            });
+
+            unregisterError = onMessage('sftp:stat:error', (payload: MessagePayload, message: WebSocketMessage) => {
+                if (message.requestId === requestId) {
+                    clearTimeout(timeoutId);
+                    unregisterSuccess?.();
+                    unregisterError?.();
+                    reject(new Error(typeof payload === 'string' ? payload : 'SFTP stat failed'));
+                }
+            });
+
+            sendMessage({
+                type: 'sftp:stat',
+                requestId: requestId,
+                payload: { path }
             });
         });
     };
@@ -1170,6 +1213,7 @@ export function createSftpActionsManager(
         changePermissions,
         readFile,
         writeFile,
+        stat,
         copyItems, // +++ 暴露 copyItems +++
        moveItems, // +++ 暴露 moveItems +++
        compressItems, // +++ 暴露 compressItems +++

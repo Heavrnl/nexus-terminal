@@ -3,7 +3,7 @@ import { computed, type PropType, ref, watch, defineExpose, onMounted, onBeforeU
 import { useI18n } from 'vue-i18n';
 import MonacoEditor from './MonacoEditor.vue'; 
 import FileEditorTabs from './FileEditorTabs.vue';
-import type { FileTab } from '../stores/fileEditor.store'; 
+import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store'; 
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useSessionStore } from '../stores/session.store';
 import { useSettingsStore } from '../stores/settings.store';
@@ -13,12 +13,32 @@ import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 
 const { t } = useI18n();
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射器 +++
+const fileEditorStore = useFileEditorStore(); // +++ 实例化文件编辑器 Store +++
 const focusSwitcherStore = useFocusSwitcherStore(); // +++ 实例化焦点切换 Store +++
 const sessionStore = useSessionStore(); // +++ 实例化会话 Store +++
 const settingsStore = useSettingsStore(); // +++ 实例化设置 Store +++
 const appearanceStore = useAppearanceStore(); // +++ 实例化外观 Store +++
 const { shareFileEditorTabsBoolean } = storeToRefs(settingsStore); // +++ 获取共享设置 +++
 const { currentEditorFontFamily, currentEditorFontSize } = storeToRefs(appearanceStore);
+
+// 外部冲突解决动作
+const handleResolveReload = () => {
+  if (activeTab.value) {
+    fileEditorStore.resolveConflictReload(activeTab.value.id);
+  }
+};
+
+const handleResolveOverwrite = () => {
+  if (activeTab.value) {
+    fileEditorStore.resolveConflictOverwrite(activeTab.value.id);
+  }
+};
+
+const handleResolveIgnore = () => {
+  if (activeTab.value) {
+    fileEditorStore.resolveConflictIgnore(activeTab.value.id);
+  }
+};
  
 // --- Props ---
 const props = defineProps({
@@ -344,6 +364,25 @@ const handleKeyDown = (event: KeyboardEvent) => {
         <!-- 动作区域留空或只显示通用按钮 -->
       </div>
 
+      <!-- 外部修改冲突保护横幅 -->
+      <div v-if="activeTab?.hasExternalConflict" class="conflict-banner">
+        <div class="conflict-message">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span>{{ t('fileManager.conflictWarning', '文件已在终端或远端被修改，本地有未保存内容。') }}</span>
+        </div>
+        <div class="conflict-actions">
+          <button @click="handleResolveReload" class="conflict-btn reload-btn" :title="t('fileManager.conflictReloadTooltip', '放弃本地未保存更改，拉取远端最新内容')">
+            {{ t('fileManager.actions.reloadRemote', '以远端内容载入') }}
+          </button>
+          <button @click="handleResolveOverwrite" class="conflict-btn overwrite-btn" :title="t('fileManager.conflictOverwriteTooltip', '将本地修改强制保存并覆盖远端')">
+            {{ t('fileManager.actions.overwriteRemote', '覆盖保存到远端') }}
+          </button>
+          <button @click="handleResolveIgnore" class="conflict-btn ignore-btn" :title="t('fileManager.conflictIgnoreTooltip', '保留本地更改，暂不提示')">
+            {{ t('common.ignore', '忽略') }}
+          </button>
+        </div>
+      </div>
+
       <!-- 3. 编辑器内容区域 -->
       <div class="editor-content-area">
         <div v-if="currentTabIsLoading" class="editor-loading">{{ t('fileManager.loadingFile') }}</div>
@@ -514,6 +553,59 @@ const handleKeyDown = (event: KeyboardEvent) => {
     display: inline-block;
     min-width: 80px; /* 与 select 大致对齐 */
     text-align: center;
+}
+
+.conflict-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.8rem;
+  background-color: rgba(245, 158, 11, 0.15);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}
+.conflict-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.conflict-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.conflict-btn {
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+.conflict-btn.reload-btn {
+  background-color: rgba(245, 158, 11, 0.25);
+  color: #fef3c7;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.conflict-btn.reload-btn:hover {
+  background-color: rgba(245, 158, 11, 0.4);
+}
+.conflict-btn.overwrite-btn {
+  background-color: var(--primary-color, #3b82f6);
+  color: #fff;
+}
+.conflict-btn.overwrite-btn:hover {
+  background-color: var(--primary-color-dark, #2563eb);
+}
+.conflict-btn.ignore-btn {
+  background: transparent;
+  color: #fbbf24;
+}
+.conflict-btn.ignore-btn:hover {
+  color: #fff;
 }
 </style>
 

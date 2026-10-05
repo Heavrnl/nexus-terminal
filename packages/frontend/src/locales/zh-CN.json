@@ -442,8 +442,14 @@
       "cut": "剪切",
       "paste": "粘贴",
       "openEditor": "打开编辑器",
-      "copyPath": "复制路径"
+      "copyPath": "复制路径",
+      "reloadRemote": "以远端内容载入",
+      "overwriteRemote": "覆盖保存到远端"
     },
+    "conflictWarning": "文件已在终端或远端被修改，本地有未保存内容。",
+    "conflictReloadTooltip": "放弃本地未保存更改，拉取远端最新内容",
+    "conflictOverwriteTooltip": "将本地修改强制保存并覆盖远端",
+    "conflictIgnoreTooltip": "保留本地更改，暂不提示",
     "contextMenu": {
       "compress": "压缩",
       "compressZip": "压缩为 zip",
