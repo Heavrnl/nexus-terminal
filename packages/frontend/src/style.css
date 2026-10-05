@@ -224,3 +224,143 @@ button:focus-visible {
 button:hover {
   cursor: pointer;
 }
+
+/* 全局复选框 (Checkbox) 现代美化设计 */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  margin: 0;
+  margin-right: 0.5rem; /* 默认右侧预留 8px (0.5rem) 舒适间距，防止与文字拥挤 */
+  vertical-align: middle;
+  position: relative;
+  display: inline-grid;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-color);
+  background-color: var(--app-bg-color);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: background-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.08s ease;
+}
+
+/* 当位于配置了 gap 的容器内时（如 label 具有 gap-1），自动清除右外边距，由 gap 统一度量 */
+:is([class*="gap-"], [style*="gap"]) > input[type="checkbox"],
+:is([class*="gap-"], [style*="gap"]) > label > input[type="checkbox"] {
+  margin-right: 0;
+}
+
+/* 兼容显式外边距修饰类 */
+input[type="checkbox"].mr-0,
+input[type="checkbox"].m-0 {
+  margin-right: 0 !important;
+}
+
+input[type="checkbox"].mr-1 {
+  margin-right: 0.25rem !important;
+}
+
+input[type="checkbox"].mr-1\.5 {
+  margin-right: 0.375rem !important;
+}
+
+input[type="checkbox"].mr-2 {
+  margin-right: 0.5rem !important;
+}
+
+input[type="checkbox"].mr-3 {
+  margin-right: 0.75rem !important;
+}
+
+/* 兼容紧凑尺寸 class (如 h-3 w-3, h-3.5 w-3.5) */
+input[type="checkbox"].h-3,
+input[type="checkbox"].w-3 {
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+  min-width: 0.875rem !important;
+  min-height: 0.875rem !important;
+  border-radius: 3px !important;
+}
+
+input[type="checkbox"].h-3\.5,
+input[type="checkbox"].w-3\.5 {
+  width: 0.9375rem !important;
+  height: 0.9375rem !important;
+  min-width: 0.9375rem !important;
+  min-height: 0.9375rem !important;
+  border-radius: 3.5px !important;
+}
+
+input[type="checkbox"].h-5,
+input[type="checkbox"].w-5 {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  min-height: 1.25rem !important;
+  border-radius: 5px !important;
+}
+
+input[type="checkbox"].h-6,
+input[type="checkbox"].w-6 {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  min-width: 1.5rem !important;
+  min-height: 1.5rem !important;
+  border-radius: 6px !important;
+}
+
+/* 悬停态 (自身与父级 label 联动) */
+input[type="checkbox"]:hover:not(:disabled),
+label:hover input[type="checkbox"]:not(:disabled) {
+  border-color: var(--link-active-color);
+}
+
+input[type="checkbox"]:hover:not(:disabled) {
+  box-shadow: 0 0 0 2.5px rgba(var(--input-focus-glow-rgb, 99, 102, 241), 0.15);
+}
+
+/* 点击按压轻微缩放反馈 */
+input[type="checkbox"]:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+/* 选中态 (Checked) - 精美矢量圆角对勾 */
+input[type="checkbox"]:checked {
+  background-color: var(--link-active-color) !important;
+  border-color: var(--link-active-color) !important;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3e%3cpolyline points='3.5 8.5 6.5 11.5 12.5 4.5'/%3e%3c/svg%3e");
+  background-size: 80% 80%;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* 半选态 (Indeterminate) - 精美矢量水平条 */
+input[type="checkbox"]:indeterminate {
+  background-color: var(--link-active-color) !important;
+  border-color: var(--link-active-color) !important;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' xmlns='http://www.w3.org/2000/svg'%3e%3cline x1='3.5' y1='8' x2='12.5' y2='8'/%3e%3c/svg%3e");
+  background-size: 80% 80%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* 键盘与无障碍聚焦光环 (Focus Visible) */
+input[type="checkbox"]:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--app-bg-color), 0 0 0 4px var(--link-active-color) !important;
+}
+
+/* 禁用态 (Disabled) */
+input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
