@@ -22,6 +22,10 @@ import PathHistoryDropdown from './PathHistoryDropdown.vue';
 import { usePathHistoryStore } from '../stores/pathHistory.store';
 import FavoritePathsModal from './FavoritePathsModal.vue';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import { getFileIconClass } from '../utils/fileIcons';
+import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
+import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
+import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 
 
 type SftpManagerInstance = ReturnType<typeof createSftpActionsManager>;
@@ -140,183 +144,21 @@ const pathInputWrapperRef = ref<HTMLDivElement | null>(null); // Wrapper for pat
 const pathHistoryDropdownRef = ref<InstanceType<typeof PathHistoryDropdown> | null>(null);
 const { selectedIndex: pathSelectedIndex, filteredHistory: filteredPathHistory } = storeToRefs(pathHistoryStore); // Reactive store state
 
-// +++ 操作模态框状态 +++
-const isActionModalVisible = ref(false);
-const currentActionType = ref<'delete' | 'rename' | 'chmod' | 'newFile' | 'newFolder' | null>(null);
-const actionItem = ref<FileListItem | null>(null); // For single item operations
-const actionItems = ref<FileListItem[]>([]); // For multi-item operations (e.g., delete)
-const actionInitialValue = ref(''); // For pre-filling input in modal
-
-// +++ 剪贴板状态 +++
-const clipboardState = ref<ClipboardState>({ hasContent: false });
-const clipboardSourcePaths = ref<string[]>([]); // 存储源完整路径
-const clipboardSourceBaseDir = ref<string>(''); // 存储源目录
-
 const rowSizeMultiplier = ref(1.0); // 行大小（字体）乘数, 默认值会被 store 覆盖
-// --- 键盘导航状态 (移至 useFileManagerKeyboardNavigation) ---
-// const selectedIndex = ref<number>(-1);
-
-// --- Column Resizing State (Remains the same) ---
 const tableRef = ref<HTMLTableElement | null>(null);
-const colWidths = ref({ // 默认值会被 store 覆盖
-    type: 50,
-    name: 300,
-    size: 100,
-    permissions: 120,
-    modified: 180,
+
+// --- 列宽调整 Composable ---
+const {
+  colWidths,
+  isResizing,
+  resizingColumnIndex,
+  startResize,
+} = useFileManagerColumnResize(undefined, () => {
+  saveLayoutSettings();
 });
-const isResizing = ref(false);
-const resizingColumnIndex = ref(-1);
-const startX = ref(0);
-const startWidth = ref(0);
 
 // --- 辅助函数 ---
 const generateRequestId = (): string => `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-
-// UI 格式化函数保持不变
-const formatSize = (size: number): string => {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-};
-
-const formatMode = (mode: number): string => {
-    const perm = mode & 0o777; let str = '';
-    str += (perm & 0o400) ? 'r' : '-'; str += (perm & 0o200) ? 'w' : '-'; str += (perm & 0o100) ? 'x' : '-';
-    str += (perm & 0o040) ? 'r' : '-'; str += (perm & 0o020) ? 'w' : '-'; str += (perm & 0o010) ? 'x' : '-';
-    str += (perm & 0o004) ? 'r' : '-'; str += (perm & 0o002) ? 'w' : '-'; str += (perm & 0o001) ? 'x' : '-';
-    return str;
-};
-
-const getFileIconClassBase = (filename: string): string => {
-  const lowerFilename = filename.toLowerCase();
-  let extension = '';
-  const lastDotIndex = lowerFilename.lastIndexOf('.');
-
-  if (lastDotIndex > 0 && lastDotIndex < lowerFilename.length - 1) { // e.g. file.txt
-    extension = lowerFilename.substring(lastDotIndex + 1);
-  } else if (lastDotIndex === 0 && lowerFilename.length > 1) { // e.g. .bashrc, .gitignore
-    extension = lowerFilename.substring(1); // use 'bashrc' or 'gitignore' as extension
-  }
-  // Handle specific full filenames first for higher precedence
-  if (lowerFilename === 'makefile') return 'fas fa-cogs';
-  if (lowerFilename === 'dockerfile') return 'fab fa-docker';
-  if (lowerFilename.endsWith('docker-compose.yml') || lowerFilename.endsWith('docker-compose.yaml')) return 'fab fa-docker';
-  if (lowerFilename === 'package.json') return 'fab fa-npm';
-  if (lowerFilename === 'package-lock.json') return 'fab fa-npm';
-  if (lowerFilename === 'yarn.lock') return 'fab fa-yarn';
-  if (lowerFilename === 'composer.json') return 'fab fa-php';
-  if (lowerFilename === 'composer.lock') return 'fab fa-php';
-  if (lowerFilename === 'gemfile') return 'fas fa-gem';
-  if (lowerFilename === 'gemfile.lock') return 'fas fa-gem';
-  if (lowerFilename.startsWith('.env')) return 'fas fa-shield-alt';
-  if (lowerFilename === '.git') return 'fab fa-git-alt';
-  if (lowerFilename === '.gitignore') return 'fab fa-git-alt';
-  if (lowerFilename === '.gitattributes') return 'fab fa-git-alt';
-  if (lowerFilename === '.gitmodules') return 'fab fa-git-alt';
-  if (lowerFilename === 'readme' || lowerFilename.startsWith('readme.')) return 'fas fa-book-reader';
-  if (lowerFilename === 'license' || lowerFilename.startsWith('license.')) return 'fas fa-balance-scale';
-  if (lowerFilename === 'contributing' || lowerFilename.startsWith('contributing.')) return 'fas fa-users-cog';
-  if (lowerFilename === 'code_of_conduct' || lowerFilename.startsWith('code_of_conduct.')) return 'fas fa-gavel';
-  if (lowerFilename === 'changelog' || lowerFilename.startsWith('changelog.')) return 'fas fa-list-alt';
-  if (lowerFilename === 'favicon.ico') return 'fas fa-icons';
-
-
-  const iconMap: { [key: string]: string } = {
-    // Images
-    'jpg': 'fas fa-file-image', 'jpeg': 'fas fa-file-image', 'png': 'fas fa-file-image',
-    'gif': 'fas fa-file-image', 'bmp': 'fas fa-file-image', 'svg': 'fas fa-file-image',
-    'webp': 'fas fa-file-image', 'ico': 'fas fa-file-image', 'tiff': 'fas fa-file-image',
-    // Videos
-    'mp4': 'fas fa-file-video', 'mkv': 'fas fa-file-video', 'avi': 'fas fa-file-video',
-    'mov': 'fas fa-file-video', 'wmv': 'fas fa-file-video', 'flv': 'fas fa-file-video', 'webm': 'fas fa-file-video',
-    // Audio
-    'mp3': 'fas fa-file-audio', 'wav': 'fas fa-file-audio', 'ogg': 'fas fa-file-audio',
-    'flac': 'fas fa-file-audio', 'aac': 'fas fa-file-audio', 'm4a': 'fas fa-file-audio',
-    // Documents
-    'doc': 'fas fa-file-word', 'docx': 'fas fa-file-word',
-    'xls': 'fas fa-file-excel', 'xlsx': 'fas fa-file-excel',
-    'ppt': 'fas fa-file-powerpoint', 'pptx': 'fas fa-file-powerpoint',
-    'pdf': 'fas fa-file-pdf', 'odt': 'fas fa-file-alt', 'ods': 'fas fa-file-alt', 'odp': 'fas fa-file-alt',
-    'rtf': 'fas fa-file-alt',
-    'csv': 'fas fa-file-csv', 'tsv': 'fas fa-file-csv',
-    // Archives
-    'zip': 'fas fa-file-archive', 'rar': 'fas fa-file-archive', 'tar': 'fas fa-file-archive',
-    'gz': 'fas fa-file-archive', '7z': 'fas fa-file-archive', 'bz2': 'fas fa-file-archive', 'xz': 'fas fa-file-archive',
-    'iso': 'fas fa-compact-disc',
-    // Code & Config
-    'js': 'fab fa-js-square', 'mjs': 'fab fa-js-square', 'cjs': 'fab fa-js-square',
-    'jsx': 'fab fa-react',
-    'ts': 'fas fa-file-code',
-    'tsx': 'fab fa-react',
-    'vue': 'fab fa-vuejs',
-    'svelte': 'fas fa-file-code',
-    'py': 'fab fa-python', 'pyc': 'fab fa-python', 'pyd': 'fab fa-python', 'pyw': 'fab fa-python', 'ipynb': 'fab fa-python',
-    'java': 'fab fa-java', 'jar': 'fab fa-java', 'class': 'fab fa-java',
-    'kt': 'fas fa-file-code', 'kts': 'fas fa-file-code',
-    'cs': 'fas fa-file-code',
-    'fs': 'fas fa-file-code',
-    'go': 'fas fa-file-code',
-    'rs': 'fas fa-file-code',
-    'c': 'fas fa-file-code', 'h': 'fas fa-file-code',
-    'cpp': 'fas fa-file-code', 'hpp': 'fas fa-file-code', 'cxx': 'fas fa-file-code', 'hxx': 'fas fa-file-code',
-    'rb': 'fas fa-gem', 'erb': 'fas fa-gem',
-    'php': 'fab fa-php',
-    'swift': 'fab fa-swift',
-    'scala': 'fas fa-file-code',
-    'perl': 'fas fa-file-code', 'pl': 'fas fa-file-code',
-    'lua': 'fas fa-file-code',
-    'dart': 'fas fa-file-code',
-    'r': 'fas fa-file-code',
-    'html': 'fab fa-html5', 'htm': 'fab fa-html5', 'xhtml': 'fab fa-html5',
-    'css': 'fab fa-css3-alt',
-    'scss': 'fab fa-sass', 'sass': 'fab fa-sass',
-    'less': 'fab fa-less',
-    'styl': 'fas fa-file-code',
-    'json': 'fas fa-file-code', 'webmanifest': 'fas fa-file-code', 'jsonc': 'fas fa-file-code',
-    'xml': 'fas fa-file-code', 'xsl': 'fas fa-file-code', 'xsd': 'fas fa-file-code',
-    'yml': 'fas fa-cog', 'yaml': 'fas fa-cog',
-    'ini': 'fas fa-cog', 'conf': 'fas fa-cog', 'cfg': 'fas fa-cog', 'config': 'fas fa-cog',
-    'toml': 'fas fa-cog',
-    'md': 'fab fa-markdown', 'markdown': 'fab fa-markdown',
-    'sql': 'fas fa-database', 'ddl': 'fas fa-database',
-    'db': 'fas fa-database', 'sqlite': 'fas fa-database', 'mdb': 'fas fa-database',
-    'lock': 'fas fa-lock',
-    'gitignore': 'fab fa-git-alt', /* 'gitattributes': 'fab fa-git-alt', */ /* 'gitmodules': 'fab fa-git-alt', */ 'gitkeep': 'fab fa-git-alt', // Removed duplicate gitattributes and gitmodules
-    /* 'dockerfile': 'fab fa-docker', */ 'dockerignore': 'fab fa-docker', // Removed duplicate dockerfile
-    'npmrc': 'fab fa-npm', 'yarnrc': 'fab fa-yarn', 'pnpmfile.js': 'fas fa-cogs',
-    'babelrc': 'fas fa-cogs', 'eslintrc': 'fas fa-cogs', 'prettierrc': 'fas fa-cogs', 'stylelintrc': 'fas fa-cogs',
-    'browserslistrc': 'fas fa-cogs', 'editorconfig': 'fas fa-cog',
-    'tsconfig.json': 'fas fa-cogs', 'jsconfig.json': 'fas fa-cogs',
-    'webpack.config.js': 'fas fa-cogs', 'vite.config.js': 'fas fa-cogs', 'vite.config.ts': 'fas fa-cogs',
-    'rollup.config.js': 'fas fa-cogs', 'postcss.config.js': 'fas fa-cogs',
-    'jest.config.js': 'fas fa-cogs', 'cypress.json': 'fas fa-cogs', 'playwright.config.ts': 'fas fa-cogs',
-    // Text & Others
-    'txt': 'fas fa-file-alt', 'text': 'fas fa-file-alt',
-    'log': 'fas fa-file-alt', 'out': 'fas fa-file-alt', 'err': 'fas fa-file-alt',
-    'key': 'fas fa-key', 'pem': 'fas fa-key', 'pub': 'fas fa-key', 'asc': 'fas fa-key',
-    'crt': 'fas fa-certificate', 'cer': 'fas fa-certificate', 'csr': 'fas fa-certificate', 'pfx': 'fas fa-certificate', 'p12': 'fas fa-certificate',
-    // Executables & scripts
-    'exe': 'fas fa-cogs', 'msi': 'fas fa-cogs', 'app': 'fas fa-cogs', 'com': 'fas fa-cogs',
-    'sh': 'fas fa-terminal', 'bash': 'fas fa-terminal', 'zsh': 'fas fa-terminal', 'fish': 'fas fa-terminal', 'csh': 'fas fa-terminal', 'ksh': 'fas fa-terminal',
-    'bat': 'fas fa-terminal', 'cmd': 'fas fa-terminal', 'ps1': 'fas fa-terminal', 'psm1': 'fas fa-terminal',
-    'vb': 'fas fa-file-code', 'vbs': 'fas fa-file-code',
-    'deb': 'fas fa-archive', 'rpm': 'fas fa-archive', 'pkg': 'fas fa-archive',
-    'dmg': 'fas fa-compact-disc',  'img': 'fas fa-compact-disc', 
-    // Fonts
-    'ttf': 'fas fa-font', 'otf': 'fas fa-font', 'woff': 'fas fa-font', 'woff2': 'fas fa-font', 'eot': 'fas fa-font',
-    // Special hidden files (extension is the part after dot)
-    'bashrc': 'fas fa-cog', 'zshrc': 'fas fa-cog', 'profile': 'fas fa-cog', 'bash_profile': 'fas fa-cog',
-    'vimrc': 'fas fa-cog', 'screenrc': 'fas fa-cog', 'tmux.conf': 'fas fa-cog',
-    'gitconfig': 'fab fa-git-alt', 'npmignore': 'fab fa-npm',
-    'htaccess': 'fas fa-cog', 'htpasswd': 'fas fa-lock',
-    // Default
-    'default': 'far fa-file'
-  };
-  return iconMap[extension] || iconMap['default'];
-};
 
 // --- 排序与过滤逻辑 ---
 // 修改：依赖 currentSftpManager.value.fileList
@@ -557,357 +399,48 @@ const computedSelectedFullItems = computed((): FileListItem[] => {
   return filteredFileList.value.filter(item => selectedItems.value.has(item.filename));
 });
 
-// --- 操作模态框辅助函数 ---
-const openActionModal = (
- type: 'delete' | 'rename' | 'chmod' | 'newFile' | 'newFolder',
- item?: FileListItem | null, // For single item operations like rename, chmod
- items?: FileListItem[], // For multi-item operations like delete
- initialValue?: string // For pre-filling input, e.g., old name for rename
-) => {
- currentActionType.value = type;
- actionItem.value = item || null;
- actionItems.value = items || (item ? [item] : []); // Ensure actionItems has the item(s)
- actionInitialValue.value = initialValue || '';
- isActionModalVisible.value = true;
-};
-
-const handleModalClose = () => {
- isActionModalVisible.value = false;
- // Reset states if needed, though they'll be overwritten on next open
- currentActionType.value = null;
- actionItem.value = null;
- actionItems.value = [];
- actionInitialValue.value = '';
-};
-
-const handleModalConfirm = (value?: string) => {
- if (!currentSftpManager.value || !currentActionType.value) {
-   handleModalClose();
-   return;
- }
- const manager = currentSftpManager.value;
-
- switch (currentActionType.value) {
-   case 'delete':
-     if (actionItems.value.length > 0) {
-       manager.deleteItems(actionItems.value);
-       selectedItems.value.clear(); // Clear selection after delete
-     }
-     break;
-   case 'rename':
-     if (actionItem.value && value && value !== actionItem.value.filename) {
-       manager.renameItem(actionItem.value, value);
-     }
-     break;
-   case 'chmod':
-     if (actionItem.value && value && /^[0-7]{3,4}$/.test(value)) {
-       const newMode = parseInt(value, 8);
-       manager.changePermissions(actionItem.value, newMode);
-     } else if (value) { // value exists but is invalid
-       // Optionally, re-open modal with error or use a notification
-       // For now, just log and close
-       console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Invalid chmod value from modal: ${value}`);
-       // It might be better to show an error in the modal itself and not close it.
-       // The modal currently has its own validation, so this path might not be hit often.
-     }
-     break;
-   case 'newFile':
-     if (value) {
-       if (manager.fileList.value.some((item: FileListItem) => item.filename === value)) {
-         console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] File ${value} already exists. Modal should prevent this.`);
-         return; // Prevent closing if error
-       }
-       manager.createFile(value);
-     }
-     break;
-   case 'newFolder':
-     if (value) {
-       if (manager.fileList.value.some((item: FileListItem) => item.filename === value)) {
-         console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Folder ${value} already exists. Modal should prevent this.`);
-         return; // Prevent closing if error
-       }
-       manager.createDirectory(value);
-     }
-     break;
- }
- handleModalClose(); // Close modal after action
-};
-
-
-// --- SFTP 操作处理函数 (定义在此处，供 Composable 使用) ---
-const handleDeleteSelectedClick = () => {
-    // 修改：检查 currentSftpManager 是否存在
-    if (!currentSftpManager.value) return;
-    // 使用 props.wsDeps 和 currentSftpManager.value.fileList
-    if (!props.wsDeps.isConnected.value || selectedItems.value.size === 0) return;
-    const itemsToDelete = Array.from(selectedItems.value)
-                               .map(filename => currentSftpManager.value?.fileList.value.find((f: FileListItem) => f.filename === filename))
-                               .filter((item): item is FileListItem => item !== undefined);
-   if (itemsToDelete.length === 0) return;
- 
-    // 根据设置决定是否显示确认模态框
-    if (settingsStore.fileManagerShowDeleteConfirmationBoolean) {
-        openActionModal('delete', null, itemsToDelete);
-    } else {
-        // 直接执行删除
-        if (currentSftpManager.value) {
-            currentSftpManager.value.deleteItems(itemsToDelete);
-            selectedItems.value.clear(); // Clear selection after delete
-        }
-    }
-};
- 
-const handleRenameContextMenuClick = (item: FileListItem) => { // item 已有类型
-    if (!props.wsDeps.isConnected.value || !item) return; // 恢复使用 props.wsDeps
-    if (!currentSftpManager.value) return;
-    openActionModal('rename', item, undefined, item.filename);
-};
-
-const handleChangePermissionsContextMenuClick = (item: FileListItem) => { // item 已有类型
-    if (!props.wsDeps.isConnected.value || !item) return; // 恢复使用 props.wsDeps
-    if (!currentSftpManager.value) return;
-    const currentModeOctal = (item.attrs.mode & 0o777).toString(8).padStart(3, '0');
-    openActionModal('chmod', item, undefined, currentModeOctal);
-};
-
-const handleNewFolderContextMenuClick = () => {
-    if (!props.wsDeps.isConnected.value) return; // 恢复使用 props.wsDeps
-    if (!currentSftpManager.value) return;
-    openActionModal('newFolder');
-};
-
-const handleNewFileContextMenuClick = () => {
-    if (!props.wsDeps.isConnected.value) return; // 恢复使用 props.wsDeps
-    if (!currentSftpManager.value) return;
-    openActionModal('newFile');
-};
-
-// +++ 复制、剪切、粘贴处理函数 +++
-const handleCopy = () => {
-    if (!currentSftpManager.value || selectedItems.value.size === 0) return;
-    const manager = currentSftpManager.value;
-    clipboardSourcePaths.value = Array.from(selectedItems.value)
-        .map(filename => manager.joinPath(manager.currentPath.value, filename));
-    clipboardState.value = { hasContent: true, operation: 'copy' };
-    clipboardSourceBaseDir.value = manager.currentPath.value; // 记录源目录
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Copied to clipboard:`, clipboardSourcePaths.value);
-    // 可选：添加 UI 通知
-};
-
-const handleCut = () => {
-    if (!currentSftpManager.value || selectedItems.value.size === 0) return;
-    const manager = currentSftpManager.value;
-    clipboardSourcePaths.value = Array.from(selectedItems.value)
-        .map(filename => manager.joinPath(manager.currentPath.value, filename));
-    clipboardState.value = { hasContent: true, operation: 'cut' };
-    clipboardSourceBaseDir.value = manager.currentPath.value; // 记录源目录
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Cut to clipboard:`, clipboardSourcePaths.value);
-    // 可选：添加 UI 通知
-};
-
-const handlePaste = () => {
-    if (!currentSftpManager.value || !clipboardState.value.hasContent || clipboardSourcePaths.value.length === 0) return;
-    const manager = currentSftpManager.value;
-    const destinationDir = manager.currentPath.value;
-    const operation = clipboardState.value.operation;
-    const sources = clipboardSourcePaths.value;
-    const sourceBaseDir = clipboardSourceBaseDir.value; // 获取源目录
-
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Pasting items. Operation: ${operation}, Sources: ${sources.join(', ')}, Destination: ${destinationDir}`);
-
-    if (operation === 'copy') {
-        // 调用 SFTP 管理器的 copyItems 方法 (稍后添加)
-        manager.copyItems(sources, destinationDir);
-    } else if (operation === 'cut') {
-        // 调用 SFTP 管理器的 moveItems 方法 (稍后添加)
-        // 检查是否在同一目录下剪切粘贴（无效操作）
-        if (sourceBaseDir === destinationDir) {
-             console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot cut and paste in the same directory.`);
-             // 可选：显示警告通知
-             return;
-        }
-        manager.moveItems(sources, destinationDir);
-        // 剪切后清空剪贴板
-        clipboardState.value = { hasContent: false };
-        clipboardSourcePaths.value = [];
-        clipboardSourceBaseDir.value = '';
-    }
-    // 粘贴后不清空复制的剪贴板，允许重复粘贴
-    // 清空选择可能不是最佳体验，用户可能想继续操作粘贴后的文件
-    // clearSelection();
-};
-
-
-// --- 文件上传触发器 (定义在此处，供 Composable 使用) ---
+// --- 核心操作与模态框管理 (Composable) ---
 const triggerFileUpload = () => { fileInputRef.value?.click(); };
 
-// --- 下载触发器 (定义在此处，供 Composable 使用) ---
-const triggerDownload = (items: FileListItem[]) => { // 修改：接受 FileListItem 数组
-    // 恢复使用 props.wsDeps.isConnected
-    if (!props.wsDeps.isConnected.value) {
-        return;
-    }
-    // connectionId 仍然从 props 获取
-    const currentConnectionId = props.dbConnectionId;
-    if (!currentConnectionId) {
-        console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot download: Missing connection ID.`);
-        return;
-    }
-    // 修改：简化检查
-    if (!currentSftpManager.value) {
-        console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot download: SFTP manager is not available.`);
-        return;
-    }
+const {
+  isActionModalVisible,
+  currentActionType,
+  actionItem,
+  actionItems,
+  actionInitialValue,
+  clipboardState,
+  clipboardSourcePaths,
+  clipboardSourceBaseDir,
+  openActionModal,
+  handleModalClose,
+  handleModalConfirm,
+  handleDeleteSelectedClick,
+  handleRenameContextMenuClick,
+  handleChangePermissionsContextMenuClick,
+  handleNewFolderContextMenuClick,
+  handleNewFileContextMenuClick,
+  handleCopy,
+  handleCut,
+  handlePaste,
+  handleCompress,
+  handleDecompress,
+  handleCopyPath,
+  triggerDownload: baseTriggerDownload,
+  triggerDownloadDirectory: baseTriggerDownloadDirectory,
+} = useFileManagerOperations({
+  currentSftpManager,
+  selectedItems,
+  isConnected: computed(() => props.wsDeps.isConnected.value),
+  showDeleteConfirmation: fileManagerShowDeleteConfirmationBoolean,
+  sessionId: props.sessionId,
+  instanceId: props.instanceId,
+  t,
+  notifySuccess: (msg) => uiNotificationsStore.showSuccess(msg),
+  notifyError: (msg) => uiNotificationsStore.showError(msg),
+});
 
-    // 遍历数组中的每个文件项
-    items.forEach(item => {
-        // 确保只下载文件
-        if (!item.attrs.isFile) {
-            console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Skipping download for non-file item: ${item.filename}`);
-            return;
-        }
-
-        const downloadPath = currentSftpManager.value!.joinPath(currentSftpManager.value!.currentPath.value, item.filename);
-        const downloadUrl = `/api/v1/sftp/download?connectionId=${currentConnectionId}&remotePath=${encodeURIComponent(downloadPath)}`;
-        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Triggering download for ${item.filename}: ${downloadUrl}`);
-
-        // 为每个文件创建一个链接并点击
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        // --- 修正：移除文件名中的双引号以兼容 Chrome ---
-        const safeFilename = item.filename.replace(/"/g, ''); // 移除所有双引号
-        link.setAttribute('download', safeFilename);
-        // --- 结束修正 ---
-        document.body.appendChild(link);
-        link.click();
-
-        // 稍微延迟移除链接，以确保下载开始
-        setTimeout(() => {
-            document.body.removeChild(link);
-        }, 100);
-    });
-};
-
-
-// +++ 文件夹下载触发器 +++
-const triggerDownloadDirectory = (item: FileListItem) => {
-    if (!props.wsDeps.isConnected.value) {
-        return;
-    }
-    const currentConnectionId = props.dbConnectionId;
-    if (!currentConnectionId) {
-        console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot download directory: Missing connection ID.`);
-        return;
-    }
-    if (!currentSftpManager.value) {
-        console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot download directory: SFTP manager is not available.`);
-        return;
-    }
-
-    // 确保是目录
-    if (!item.attrs.isDirectory) {
-        console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Skipping directory download for non-directory item: ${item.filename}`);
-        return;
-    }
-
-    const directoryPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
-    // 定义新的后端 API 端点 URL (稍后实现)
-    const downloadUrl = `/api/v1/sftp/download-directory?connectionId=${currentConnectionId}&remotePath=${encodeURIComponent(directoryPath)}`;
-
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Attempting directory download for ${item.filename}: ${downloadUrl}`);
-
-    // --- 修改：使用 fetch 尝试下载，并处理后端未实现的情况 ---
-    fetch(downloadUrl)
-        .then(async response => {
-            if (response.ok) {
-                // 后端实现成功，尝试触发下载
-                const blob = await response.blob();
-                // 从 Content-Disposition 头获取文件名 (需要后端设置)
-                const contentDisposition = response.headers.get('content-disposition');
-                let filename = `${item.filename}.zip`; // 默认文件名
-                if (contentDisposition) {
-                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
-                    if (filenameMatch && filenameMatch.length > 1) {
-                        filename = filenameMatch[1];
-                    }
-                }
-
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                // --- 修正：移除 ZIP 文件名中的双引号以兼容 Chrome ---
-                const safeZipFilename = filename.replace(/"/g, '');
-                link.setAttribute('download', safeZipFilename);
-                // --- 结束修正 ---
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(link.href); // 释放对象 URL
-                console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Directory download triggered for: ${filename}`);
-            } else {
-                // 处理错误，例如 404 Not Found
-                console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Directory download failed: ${response.status} ${response.statusText}`);
-                // 尝试读取错误信息体
-                let errorMsg = `Server responded with status ${response.status}`;
-                try {
-                    const errorData = await response.json(); // 假设后端返回 JSON 错误
-                    errorMsg = errorData.message || errorMsg;
-                } catch (e) {
-                    // 如果响应体不是 JSON 或读取失败
-                    try {
-                       const textError = await response.text();
-                       if (textError) errorMsg = textError;
-                    } catch (e2) { /* ignore */}
-                }
-
-            }
-        })
-        .catch(error => {
-            console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Network error during directory download:`, error);
-        });
-    
-};
-
-
-
-// +++ 压缩/解压处理函数 +++
-const handleCompress = (items: FileListItem[], format: CompressFormat) => {
-  if (!currentSftpManager.value) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot compress: SFTP manager not available.`);
-    // TODO: Show error notification
-    return;
-  }
-  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Requesting compression for ${items.length} items, format: ${format}`);
-  // 调用 SFTP 管理器上的新方法 (将在 useSftpActions.ts 中实现)
-  currentSftpManager.value.compressItems(items, format);
-};
-
-const handleDecompress = (item: FileListItem) => {
-  if (!currentSftpManager.value) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot decompress: SFTP manager not available.`);
-    // TODO: Show error notification
-    return;
-  }
-  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Requesting decompression for item: ${item.filename}`);
-  // 调用 SFTP 管理器上的新方法 (将在 useSftpActions.ts 中实现)
-  currentSftpManager.value.decompressItem(item);
-};
-
-
-// +++ 复制路径到剪贴板 +++
-const handleCopyPath = async (item: FileListItem) => {
-  if (!currentSftpManager.value) return;
-  const fullPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
-  try {
-    await navigator.clipboard.writeText(fullPath);
-    // 可选：显示成功通知
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Copied path to clipboard: ${fullPath}`);
-    uiNotificationsStore.showSuccess(t('fileManager.notifications.pathCopied', 'Path copied to clipboard'));
-  } catch (err) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to copy path: `, err);
-    // 可选：显示错误通知
-    uiNotificationsStore.showError(t('fileManager.errors.copyPathFailed', 'Failed to copy path'));
-  }
-};
+const triggerDownload = (items: FileListItem[]) => baseTriggerDownload(items, props.dbConnectionId);
+const triggerDownloadDirectory = (item: FileListItem) => baseTriggerDownloadDirectory(item, props.dbConnectionId);
 
 // --- 上下文菜单逻辑 (使用 Composable, 需要 Selection 和 Action Handlers) ---
 const {
@@ -1291,56 +824,7 @@ watch(showExternalDropOverlay, (isVisible) => {
   }
 });
 
-// --- 列宽调整逻辑 (保持不变) ---
-const getColumnKeyByIndex = (index: number): keyof typeof colWidths.value | null => {
-    const keys = Object.keys(colWidths.value) as Array<keyof typeof colWidths.value>;
-    return keys[index] ?? null;
-};
 
-const startResize = (event: MouseEvent, index: number) => {
-    event.stopPropagation();
-    event.preventDefault();
-    isResizing.value = true;
-    resizingColumnIndex.value = index;
-    startX.value = event.clientX;
-    const colKey = getColumnKeyByIndex(index);
-    if (colKey) {
-        startWidth.value = colWidths.value[colKey];
-    } else {
-        const thElement = (event.target as HTMLElement).closest('th');
-        startWidth.value = thElement?.offsetWidth ?? 100;
-    }
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', stopResize);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-};
-
-const handleResize = (event: MouseEvent) => {
-    if (!isResizing.value || resizingColumnIndex.value < 0) return;
-    const currentX = event.clientX;
-    const diffX = currentX - startX.value;
-    const newWidth = Math.max(30, startWidth.value + diffX);
-    const colKey = getColumnKeyByIndex(resizingColumnIndex.value);
-    if (colKey) {
-        colWidths.value[colKey] = newWidth;
-    }
-};
-
-const stopResize = () => {
-    if (isResizing.value) {
-        isResizing.value = false;
-        resizingColumnIndex.value = -1;
-        document.removeEventListener('mousemove', handleResize);
-        document.removeEventListener('mouseup', stopResize);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        // +++ 在调整结束后保存列宽 +++
-        // +++ 日志：记录触发保存 +++
-        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] stopResize triggered saveLayoutSettings.`);
-        saveLayoutSettings();
-    }
-};
 
 // --- 路径编辑逻辑 (包含路径历史) ---
 
@@ -1850,8 +1334,11 @@ const handleOpenEditorClick = () => {
       @keydown="handleKeydown"
       @wheel="handleWheel"
       @contextmenu.prevent="showContextMenu($event)"
+      :style="{
+        '--row-size-multiplier': rowSizeMultiplier,
+        '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
+      }"
       tabindex="0"
-      :style="{ '--row-size-multiplier': rowSizeMultiplier }"
     >
         <!-- 外部文件拖拽蒙版 -->
         <div
@@ -1958,9 +1445,9 @@ const handleOpenEditorClick = () => {
                 :data-filename="'..'"
                 >
               <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                <i class="fas fa-level-up-alt text-primary" :style="{ fontSize: `calc(1.1em * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }"></i>
+                <i class="fas fa-level-up-alt text-primary" :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
               </td>
-              <td class="border-b border-border align-middle" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">..</td>
+              <td class="border-b border-border align-middle" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">..</td>
               <td class="border-b border-border align-middle"></td>
               <td class="border-b border-border align-middle"></td>
               <td class="border-b border-border align-middle"></td>
@@ -1989,23 +1476,23 @@ const handleOpenEditorClick = () => {
                     ? 'fas fa-folder text-primary'
                     : item.attrs.isSymbolicLink
                       ? 'fas fa-link text-cyan-500'
-                      : `${getFileIconClassBase(item.filename)} text-text-secondary`,
+                      : `${getFileIconClass(item.filename)} text-text-secondary`,
                   {
                     'text-white': selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex)
                   }
                 ]"
-                :style="{ fontSize: `calc(1.1em * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }"></i>
+                :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
               </td>
-              <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ item.filename }}</td>
+              <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
               <td class="border-b border-border truncate align-middle" :class="[
                 selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ item.attrs.isFile ? formatSize(item.attrs.size) : '' }}</td> 
+              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
               <td class="border-b border-border truncate font-mono align-middle" :class="[
                 selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ formatMode(item.attrs.mode) }}</td>
+              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
               <td class="border-b border-border truncate align-middle" :class="[
                 selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * max(0.85, var(--row-size-multiplier) * 0.5 + 0.5))` }">{{ new Date(item.attrs.mtime).toLocaleString() }}</td> 
+              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
             </tr>
           </tbody>
         </table>

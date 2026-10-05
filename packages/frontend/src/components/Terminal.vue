@@ -255,7 +255,7 @@ onMounted(() => {
       scrollback: getScrollbackValue(terminalScrollbackLimitNumber.value), //  Use setting from store
       scrollOnUserInput: true, // 输入时滚动到底部
       ...props.options, // 合并外部传入的选项
-    });
+    } as any);
     
     // 注意: 终端数据的解码已在useSshTerminal.ts中进行处理
 
