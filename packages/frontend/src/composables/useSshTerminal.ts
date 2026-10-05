@@ -55,7 +55,8 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
             // console.log(`[会话 ${sessionId}][SSH终端模块] 发现 SessionState.pendingOutput，长度: ${currentSessionState.pendingOutput.length}。正在写入...`);
             currentSessionState.pendingOutput.forEach(data => {
-                term.write(data);
+                const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
+                term.write(normalizedData);
             });
             currentSessionState.pendingOutput = []; // 清空
             // console.log(`[会话 ${sessionId}][SSH终端模块] SessionState.pendingOutput 处理完毕。`);

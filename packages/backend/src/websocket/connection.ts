@@ -225,9 +225,10 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
                                     // 发送缓存日志块
                                     console.log('[SSH Suspend Backend] Log data to send to frontend:', result.logData);
+                                    const normalizedLogData = (result.logData || '').replace(/\r?\n/g, '\r\n');
                                     const logChunkResponse: SshOutputCachedChunk = {
                                         type: 'SSH_OUTPUT_CACHED_CHUNK',
-                                        payload: { frontendSessionId: newFrontendSessionId, data: result.logData, isLastChunk: true }
+                                        payload: { frontendSessionId: newFrontendSessionId, data: normalizedLogData, isLastChunk: true }
                                     };
                                     if (ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify(logChunkResponse));
@@ -363,8 +364,9 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
                                 // +++ 如果有 initialBuffer，先写入它 +++
                                 if (initialBuffer) {
-                                    // 确保 initialBuffer 后有一个换行符，以便后续日志在新行开始
-                                    const formattedInitialBuffer = initialBuffer.endsWith('\n') ? initialBuffer : `${initialBuffer}\n`;
+                                    // 确保换行符采用标准 CRLF (\r\n)，避免阶梯效应
+                                    const normalizedBuffer = initialBuffer.replace(/\r?\n/g, '\r\n');
+                                    const formattedInitialBuffer = normalizedBuffer.endsWith('\r\n') ? normalizedBuffer : `${normalizedBuffer}\r\n`;
                                     await temporaryLogStorageService.writeToLog(logPathSuffix, formattedInitialBuffer);
                                     console.log(`[SSH_MARK_FOR_SUSPEND] 已将初始缓冲区写入日志 (会话: ${sessionToMarkId})。`);
                                 }

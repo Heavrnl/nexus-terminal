@@ -92,15 +92,28 @@ export const requestStartSshSuspend = (sessionId: string): void => {
       }
 
       if (lastNonEmptyLineIndex !== -1) {
-        const lines = [];
+        let result = '';
         for (let i = 0; i <= lastNonEmptyLineIndex; i++) {
-          // 获取行内容，translateToString(true) 会移除行尾空白
-          lines.push(buffer.getLine(i)?.translateToString(true) || '');
+          const line = buffer.getLine(i);
+          if (!line) continue;
+
+          // 检查下一行是否是自动折行 (isWrapped)
+          const nextLine = i < lastNonEmptyLineIndex ? buffer.getLine(i + 1) : null;
+          const isNextWrapped = nextLine ? nextLine.isWrapped : false;
+
+          if (isNextWrapped) {
+            // 下一行由折行产生：当前行填满列宽，保留全部字符且不插入换行符
+            result += line.translateToString(false);
+          } else {
+            // 普通独立行：移除行尾空白，自然行之间使用标准 CRLF 换行
+            result += line.translateToString(true);
+            if (i < lastNonEmptyLineIndex) {
+              result += '\r\n';
+            }
+          }
         }
-        initialBuffer = lines.join('\n');
+        initialBuffer = result;
       }
-      // join('\n') 会在行间添加换行符，如果最后一行是空字符串，末尾不会有多余的 \n
-      // 如果最后一行非空，则自然以该行结束。
 
     } else {
       console.warn(`[${t('term.sshSuspend')}] 未能获取会话 ${sessionId} 的终端实例以提取初始缓冲区。`);
@@ -613,18 +626,24 @@ const handleSshSuspendResumedNotif = async (payload: SshSuspendResumedNotifPaylo
 const handleSshOutputCachedChunk = (payload: SshOutputCachedChunkPayload): void => {
   const session = sessions.value.get(payload.frontendSessionId) as SessionState | undefined;
   if (session && session.terminalManager) {
+    // 规范化换行符：确保回放数据中的换行使用标准 CRLF (\r\n)，避免由于缺失 \r 触发 VT100 阶梯效应
+    const rawData = payload.data;
+    const normalizedData = typeof rawData === 'string'
+      ? rawData.replace(/\r?\n/g, '\r\n')
+      : rawData;
+
     if (session.terminalManager.terminalInstance.value) {
       // 终端实例已就绪，直接写入
-      console.log('[SSH Suspend Frontend] Received cached chunk data (writing to terminal):', payload.data);
-      session.terminalManager.terminalInstance.value.write(payload.data);
+      console.log('[SSH Suspend Frontend] Received cached chunk data (writing to terminal):', normalizedData);
+      session.terminalManager.terminalInstance.value.write(normalizedData);
     } else {
       // 终端实例尚未就绪，暂存输出
       if (!session.pendingOutput) {
         session.pendingOutput = [];
       }
-      console.log('[SSH Suspend Frontend] Received cached chunk data (buffering):', payload.data);
-      session.pendingOutput.push(payload.data);
-      // console.log(`[${t('term.sshSuspend')}] (会话: ${payload.frontendSessionId}) 终端实例未就绪，已暂存数据块 (长度: ${payload.data.length})。当前暂存块数: ${session.pendingOutput.length}`);
+      console.log('[SSH Suspend Frontend] Received cached chunk data (buffering):', normalizedData);
+      session.pendingOutput.push(normalizedData);
+      // console.log(`[${t('term.sshSuspend')}] (会话: ${payload.frontendSessionId}) 终端实例未就绪，已暂存数据块 (长度: ${normalizedData.length})。当前暂存块数: ${session.pendingOutput.length}`);
     }
 
     // isLastChunk 逻辑应该在数据被处理（写入或暂存）后执行
