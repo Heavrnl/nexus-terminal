@@ -1017,11 +1017,15 @@ const {
 });
 
 
-// --- 重置选中索引和清空选择的 Watchers ---
-// 修改：监听 manager 的 currentPath
-watch(() => currentSftpManager.value?.currentPath.value, () => {
+// 监听 manager 的 currentPath：路径更换时自动重置选择和清空搜索栏
+watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
     selectedIndex.value = -1;
     clearSelection();
+    // 当识别到更换了路径后，自动清空搜索栏并收起搜索状态
+    if (newPath !== oldPath) {
+        searchQuery.value = '';
+        isSearchActive.value = false;
+    }
 });
 watch(searchQuery, () => {
     selectedIndex.value = -1;
