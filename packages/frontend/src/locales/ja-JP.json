@@ -338,6 +338,12 @@
     "installHintRemote": "リモートホストにDockerがインストールされ、実行されていることを確認してください。",
     "loading": "Dockerコンテナをロード中...",
     "noContainers": "リモートホストで実行中または停止中のコンテナは見つかりませんでした。",
+    "searchPlaceholder": "コンテナ名、イメージ、またはIDを検索...",
+    "noMatchingContainers": "一致するコンテナが見つかりません",
+    "noMatchingHint": "\"{query}\" に一致するコンテナは見つかりませんでした",
+    "clearSearch": "検索をクリア",
+    "containerCount": "全 {count} 件のコンテナ",
+    "filteredCount": "{total} 件中 {filtered} 件が一致",
     "notAvailable": "リモートホストのDockerは利用できません",
     "stats": {
       "blockIO": "ブロックI/O",

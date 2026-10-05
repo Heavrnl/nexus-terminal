@@ -1405,6 +1405,12 @@
       "sshNotConnected": "SSH 会话未连接。"
     },
     "noContainers": "在远程主机上未找到正在运行或已停止的容器。",
+    "searchPlaceholder": "搜索容器名称、镜像或 ID...",
+    "noMatchingContainers": "未找到匹配的容器",
+    "noMatchingHint": "未检索到包含 \"{query}\" 的容器",
+    "clearSearch": "清空搜索",
+    "containerCount": "共 {count} 个容器",
+    "filteredCount": "命中 {filtered} / {total} 个",
     "header": {
       "name": "名称",
       "image": "镜像",

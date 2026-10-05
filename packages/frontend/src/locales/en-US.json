@@ -1401,6 +1401,12 @@
       "sshNotConnected": "SSH session is not connected."
     },
     "noContainers": "No running or stopped containers found on remote host.",
+    "searchPlaceholder": "Search container name, image, or ID...",
+    "noMatchingContainers": "No matching containers found",
+    "noMatchingHint": "No containers found matching \"{query}\"",
+    "clearSearch": "Clear Search",
+    "containerCount": "{count} containers total",
+    "filteredCount": "Matched {filtered} of {total}",
     "header": {
       "name": "Name",
       "image": "Image",
