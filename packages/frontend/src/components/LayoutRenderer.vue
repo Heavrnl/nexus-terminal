@@ -93,6 +93,7 @@ const componentMap: Record<PaneName, Component> = {
   quickCommands: defineAsyncComponent(() => import('../views/QuickCommandsView.vue')),
   dockerManager: defineAsyncComponent(() => import('./DockerManager.vue')), // <--- 添加 dockerManager 映射
   suspendedSshSessions: defineAsyncComponent(() => import('../views/SuspendedSshSessionsView.vue')),
+  multiLineCommandInput: defineAsyncComponent(() => import('./MultiLineCommandInput.vue')),
 };
 
 // --- Computed ---
@@ -136,6 +137,7 @@ const paneLabels = computed(() => ({
   quickCommands: t('layout.pane.quickCommands', '快捷指令'),
   dockerManager: t('layout.pane.dockerManager', 'Docker 管理器'),
   suspendedSshSessions: t('layout.panes.suspendedSshSessions', '挂起会话管理'),
+  multiLineCommandInput: t('layout.pane.multiLineCommandInput', '多行命令输入'),
 }));
 
 
@@ -211,6 +213,7 @@ const componentProps = computed(() => {
        // 暂时不添加事件转发，等组件实现后再确定
      };
    case 'suspendedSshSessions':
+    case 'multiLineCommandInput':
      return {
        class: 'flex flex-col flex-grow h-full overflow-auto', // 与 quickCommands 类似
      };
@@ -358,7 +361,8 @@ const getIconClasses = (paneName: PaneName): string[] => {
     case 'dockerManager': return ['fab', 'fa-docker']; // Use 'fab' for Docker
     case 'editor': return ['fas', 'fa-file-alt'];
     case 'statusMonitor': return ['fas', 'fa-tachometer-alt'];
-    case 'suspendedSshSessions': return ['fas', 'fa-pause-circle']; // 图标：暂停圈
+    case 'suspendedSshSessions': return ['fas', 'fa-pause-circle'];
+    case 'multiLineCommandInput': return ['fas', 'fa-file-code']; // 图标：暂停圈
     // Add other specific icons here if needed
     default: return ['fas', 'fa-question-circle']; // Default icon
   }

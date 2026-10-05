@@ -85,7 +85,7 @@
     "terminalThemeColorEditorTitle": "终端主题颜色编辑器",
     "errorFixJsonBeforeSave": "请先修复 JSON 格式错误再保存。",
     "applyButton": "应用",
-    "previewButton":"预览",
+    "previewButton": "预览",
     "searchThemePlaceholder": "搜索主题名称...",
     "exportActiveThemeTooltip": "将当前激活的主题导出为 JSON 文件",
     "exportActiveTheme": "导出当前主题",
@@ -148,7 +148,7 @@
     "editAsNewTooltip": "编辑为新自定义主题",
     "presetTag": "预设",
     "customTag": "自定义",
-    "customHtmlResetSuccess":"自定义 HTML 已重置。",
+    "customHtmlResetSuccess": "自定义 HTML 已重置。",
     "textStrokeSettingsSaved": "文字描边设置已保存。",
     "textStrokeSettingsSaveFailed": "保存文字描边设置失败: {message}",
     "textShadowSettingsSaved": "文字阴影设置已保存。",
@@ -186,11 +186,11 @@
     "captchaPrompt": "请完成下方的验证：",
     "loginWithPasskey": "使用 Passkey 登录",
     "error": {
-        "captchaLoadFailed": "加载 CAPTCHA 失败，请尝试刷新页面。",
-        "captchaRequired": "请完成 CAPTCHA 验证。",
-        "usernameRequiredForPasskey": "使用 Passkey 需要输入用户名。",
-        "passkeyAuthOptionsFailed": "从服务器获取 Passkey 认证选项失败。",
-        "passkeyAuthFailed": "Passkey 认证失败。请重试或使用密码登录。"
+      "captchaLoadFailed": "加载 CAPTCHA 失败，请尝试刷新页面。",
+      "captchaRequired": "请完成 CAPTCHA 验证。",
+      "usernameRequiredForPasskey": "使用 Passkey 需要输入用户名。",
+      "passkeyAuthOptionsFailed": "从服务器获取 Passkey 认证选项失败。",
+      "passkeyAuthFailed": "Passkey 认证失败。请重试或使用密码登录。"
     },
     "recaptchaV3Notice": "此网站受 reCAPTCHA 保护，并适用 Google 隐私政策和服务条款。"
   },
@@ -208,8 +208,8 @@
       "lastConnected": "上次连接",
       "actions": "操作"
     },
-    "batchEdit":{
-      "toggleLabel":"批量修改",
+    "batchEdit": {
+      "toggleLabel": "批量修改",
       "selectAll": "全选",
       "deselectAll": "取消全选",
       "invertSelection": "反向选择",
@@ -224,7 +224,7 @@
       "errorMessage": "批量删除连接失败: {error}"
     },
     "actions": {
-      "testAllFiltered":"测试全部",
+      "testAllFiltered": "测试全部",
       "connect": "连接",
       "edit": "编辑",
       "delete": "删除",
@@ -282,7 +282,7 @@
       "testConnection": "测试连接",
       "testing": "测试中...",
       "sshKey": "SSH 密钥",
-      "noSshKey":"无 SSH 密钥",
+      "noSshKey": "无 SSH 密钥",
       "privateKeyDirect": "私钥内容",
       "keyUpdateNoteDirect": "编辑时将私钥和密码短语留空以保留现有密钥。",
       "keyUpdateNoteSelected": "编辑时选择其他密钥或使用直接输入来更改密钥。",
@@ -410,7 +410,7 @@
       "reconnectingMsg": "正在尝试重新连接..."
     }
   },
-"fileEditor": {
+  "fileEditor": {
     "title": "文件编辑器"
   },
   "fileManager": {
@@ -444,7 +444,7 @@
       "openEditor": "打开编辑器",
       "copyPath": "复制路径"
     },
-"contextMenu": {
+    "contextMenu": {
       "compress": "压缩",
       "compressZip": "压缩为 zip",
       "compressTarGz": "压缩为 tar.gz",
@@ -498,17 +498,17 @@
       "commandNotFoundDecompress": "服务器上缺少 '{command}' 命令，无法完成解压操作。",
       "genericCommandNotFound": "服务器上缺少 '{command}' 命令，无法完成 '{operation}' 操作。",
       "copyPathFailed": "复制路径失败"
-  },
-  "notifications": {
-    "copySuccess": "复制成功",
-    "moveSuccess": "移动成功",
-    "cdCommandSent": "CD 命令已发送到终端",
-    "compressSuccess": "压缩 {name} 成功",
-    "decompressSuccess": "解压 {name} 成功",
-    "pathCopied": "路径已复制到剪贴板"
-  },
-  "warnings": {
-        "moveSameDirectory": "不能在同一目录下剪切和粘贴。"
+    },
+    "notifications": {
+      "copySuccess": "复制成功",
+      "moveSuccess": "移动成功",
+      "cdCommandSent": "CD 命令已发送到终端",
+      "compressSuccess": "压缩 {name} 成功",
+      "decompressSuccess": "解压 {name} 成功",
+      "pathCopied": "路径已复制到剪贴板"
+    },
+    "warnings": {
+      "moveSameDirectory": "不能在同一目录下剪切和粘贴。"
     },
     "prompts": {
       "enterFolderName": "请输入新文件夹的名称:",
@@ -918,11 +918,11 @@
       "fileManagerShowDeleteConfirmationLabel": "删除文件或文件夹时显示确认提示框",
       "fileManagerDeleteConfirmSuccess": "文件管理器删除确认设置已保存。",
       "fileManagerDeleteConfirmError": "保存文件管理器删除确认设置失败。",
-"terminalRightClickPasteTitle": "终端右键粘贴",
-        "terminalEnableRightClickPasteLabel": "启用终端右键粘贴",
-        "terminalEnableRightClickPasteDescription": "允许在终端区域内使用鼠标右键粘贴剪贴板内容。",
-        "terminalRightClickPasteSuccess": "终端右键粘贴设置已保存。",
-        "terminalRightClickPasteError": "保存终端右键粘贴设置失败。"
+      "terminalRightClickPasteTitle": "终端右键粘贴",
+      "terminalEnableRightClickPasteLabel": "启用终端右键粘贴",
+      "terminalEnableRightClickPasteDescription": "允许在终端区域内使用鼠标右键粘贴剪贴板内容。",
+      "terminalRightClickPasteSuccess": "终端右键粘贴设置已保存。",
+      "terminalRightClickPasteError": "保存终端右键粘贴设置失败。"
     },
     "statusMonitorShowIp": {
       "title": "状态监视器显示IP地址",
@@ -972,26 +972,26 @@
       }
     },
     "captcha": {
-        "title": "CAPTCHA 设置",
-        "description": "为登录页面配置 CAPTCHA 验证，以防止自动化攻击。",
-        "enableLabel": "在登录页面启用 CAPTCHA",
-        "providerLabel": "CAPTCHA 提供商:",
-        "providerNone": "无 (禁用)",
-        "hcaptchaHint": "请从此网站获取:",
-        "recaptchaHint": "请从此网站获取:",
-        "siteKeyLabel": "站点密钥 (公开):",
-        "secretKeyLabel": "秘密密钥 (私有):",
-        "secretKeyHint": "请妥善保管此密钥，它将安全地存储在服务器上。",
-        "saveButton": "保存 CAPTCHA 设置",
-        "success": {
-            "saved": "CAPTCHA 设置已成功保存。"
-        },
-        "error": {
-            "saveFailed": "保存 CAPTCHA 设置失败。",
-            "hcaptchaKeysRequired": "hCaptcha Site Key 和 Secret Key 是必填项，以便进行验证。",
-            "recaptchaKeysRequired": "reCAPTCHA Site Key 和 Secret Key 是必填项，以便进行验证。",
-            "verificationFailed": "CAPTCHA 凭据验证失败。请检查您输入的 Site Key 和 Secret Key 是否正确。"
-        }
+      "title": "CAPTCHA 设置",
+      "description": "为登录页面配置 CAPTCHA 验证，以防止自动化攻击。",
+      "enableLabel": "在登录页面启用 CAPTCHA",
+      "providerLabel": "CAPTCHA 提供商:",
+      "providerNone": "无 (禁用)",
+      "hcaptchaHint": "请从此网站获取:",
+      "recaptchaHint": "请从此网站获取:",
+      "siteKeyLabel": "站点密钥 (公开):",
+      "secretKeyLabel": "秘密密钥 (私有):",
+      "secretKeyHint": "请妥善保管此密钥，它将安全地存储在服务器上。",
+      "saveButton": "保存 CAPTCHA 设置",
+      "success": {
+        "saved": "CAPTCHA 设置已成功保存。"
+      },
+      "error": {
+        "saveFailed": "保存 CAPTCHA 设置失败。",
+        "hcaptchaKeysRequired": "hCaptcha Site Key 和 Secret Key 是必填项，以便进行验证。",
+        "recaptchaKeysRequired": "reCAPTCHA Site Key 和 Secret Key 是必填项，以便进行验证。",
+        "verificationFailed": "CAPTCHA 凭据验证失败。请检查您输入的 Site Key 和 Secret Key 是否正确。"
+      }
     },
     "commandInputSync": {
       "title": "命令输入同步",
@@ -1006,7 +1006,6 @@
       "error": {
         "saveFailed": "保存同步目标失败。"
       }
-
     },
     "about": {
       "version": "版本",
@@ -1021,9 +1020,9 @@
       }
     },
     "exportConnections": {
-        "title": "导出连接数据",
-        "decryptKeyInfo": "解压密码是您 data/.env 文件中的 ENCRYPTION_KEY。请妥善保管此文件。",
-        "buttonText": "开始导出"
+      "title": "导出连接数据",
+      "decryptKeyInfo": "解压密码是您 data/.env 文件中的 ENCRYPTION_KEY。请妥善保管此文件。",
+      "buttonText": "开始导出"
     },
     "tabs": {
       "security": "安全",
@@ -1036,24 +1035,23 @@
     },
     "loading": "加载中..."
   },
-
-"notificationController": {
-      "errorFetchSettings": "获取通知设置失败",
-      "errorMissingFields": "缺少必要的通知设置字段 (channel_type, name, config)",
-      "errorCreateSetting": "创建通知设置失败",
-      "errorInvalidId": "无效的通知设置 ID",
-      "errorNoUpdateData": "没有提供要更新的数据",
-      "errorNotFound": "未找到 ID 为 {id} 的通知设置",
-      "errorUpdateSetting": "更新通知设置失败",
-      "errorDeleteNotFound": "删除 ID 为 {id} 的通知设置失败，可能已被删除",
-      "errorDeleteSetting": "删除通知设置失败",
-      "testMessageSaved": "为设置 ID {id} ({name}) 触发的测试",
-      "testEventTriggered": "测试通知事件已触发。请检查对应渠道的接收情况。",
-      "errorTriggerTest": "触发测试通知时发生内部错误",
-      "errorMissingTestInfo": "缺少必要的测试信息 (channel_type, config)",
-      "errorInvalidChannelType": "无效的渠道类型",
-      "testMessageUnsaved": "为未保存的 {channelType} 配置触发的测试"
-    },
+  "notificationController": {
+    "errorFetchSettings": "获取通知设置失败",
+    "errorMissingFields": "缺少必要的通知设置字段 (channel_type, name, config)",
+    "errorCreateSetting": "创建通知设置失败",
+    "errorInvalidId": "无效的通知设置 ID",
+    "errorNoUpdateData": "没有提供要更新的数据",
+    "errorNotFound": "未找到 ID 为 {id} 的通知设置",
+    "errorUpdateSetting": "更新通知设置失败",
+    "errorDeleteNotFound": "删除 ID 为 {id} 的通知设置失败，可能已被删除",
+    "errorDeleteSetting": "删除通知设置失败",
+    "testMessageSaved": "为设置 ID {id} ({name}) 触发的测试",
+    "testEventTriggered": "测试通知事件已触发。请检查对应渠道的接收情况。",
+    "errorTriggerTest": "触发测试通知时发生内部错误",
+    "errorMissingTestInfo": "缺少必要的测试信息 (channel_type, config)",
+    "errorInvalidChannelType": "无效的渠道类型",
+    "testMessageUnsaved": "为未保存的 {channelType} 配置触发的测试"
+  },
   "common": {
     "apply": "应用",
     "loading": "加载中...",
@@ -1083,14 +1081,14 @@
     "sortDescending": "降序",
     "restore": "还原",
     "minimize": "最小化",
-    "send":"发送",
+    "send": "发送",
     "copied": "已复制到剪贴板",
-    "ok":"确认",
-    "success":"成功",
-    "error":"失败",
-    "alert":"提示",
-    "confirm":"确认",
-    "updateSuccess":"更新成功"
+    "ok": "确认",
+    "success": "成功",
+    "error": "失败",
+    "alert": "提示",
+    "confirm": "确认",
+    "updateSuccess": "更新成功"
   },
   "layoutConfigurator": {
     "title": "布局管理器",
@@ -1131,41 +1129,41 @@
     },
     "paginationInfo": "第 {currentPage} 页 / 共 {totalPages} 页 (总计 {totalLogs} 条记录)",
     "actions": {
-        "LOGIN_SUCCESS": "登录成功",
-        "LOGIN_FAILURE": "登录失败",
-        "LOGOUT": "登出",
-        "PASSWORD_CHANGED": "密码已修改",
-        "2FA_ENABLED": "两步验证已启用",
-        "2FA_DISABLED": "两步验证已禁用",
-        "CONNECTION_CREATED": "连接已创建",
-        "CONNECTION_UPDATED": "连接已更新",
-        "CONNECTION_DELETED": "连接已删除",
-        "PROXY_CREATED": "代理已创建",
-        "PROXY_UPDATED": "代理已更新",
-        "PROXY_DELETED": "代理已删除",
-        "TAG_CREATED": "标签已创建",
-        "TAG_UPDATED": "标签已更新",
-        "TAG_DELETED": "标签已删除",
-        "SETTINGS_UPDATED": "设置已更新",
-        "IP_WHITELIST_UPDATED": "IP 白名单已更新",
-        "NOTIFICATION_SETTING_CREATED": "通知设置已创建",
-        "NOTIFICATION_SETTING_UPDATED": "通知设置已更新",
-        "NOTIFICATION_SETTING_DELETED": "通知设置已删除",
-        "SSH_CONNECT_SUCCESS": "SSH 连接成功",
-        "SSH_CONNECT_FAILURE": "SSH 连接失败",
-        "SSH_SHELL_FAILURE": "SSH Shell 打开失败",
-        "DATABASE_MIGRATION": "数据库迁移",
-        "ADMIN_SETUP_COMPLETE": "初始管理员设置完成",
-        "REMOTE_DESKTOP_CONNECTING": "远程桌面连接中",
-        "REMOTE_DESKTOP_CONNECTED": "远程桌面已连接",
-        "REMOTE_DESKTOP_DISCONNECTED": "远程桌面已断开",
-        "PASSKEY_REGISTERED": "Passkey 已注册",
-        "PASSKEY_AUTH_SUCCESS": "Passkey 认证成功",
-        "PASSKEY_AUTH_FAILURE": "Passkey 认证失败",
-        "PASSKEY_DELETED": "Passkey 已删除",
-        "PASSKEY_DELETE_UNAUTHORIZED": "Passkey 删除未授权",
-        "PASSKEY_NAME_UPDATED": "Passkey 名称已更新",
-        "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey 名称更新未授权"
+      "LOGIN_SUCCESS": "登录成功",
+      "LOGIN_FAILURE": "登录失败",
+      "LOGOUT": "登出",
+      "PASSWORD_CHANGED": "密码已修改",
+      "2FA_ENABLED": "两步验证已启用",
+      "2FA_DISABLED": "两步验证已禁用",
+      "CONNECTION_CREATED": "连接已创建",
+      "CONNECTION_UPDATED": "连接已更新",
+      "CONNECTION_DELETED": "连接已删除",
+      "PROXY_CREATED": "代理已创建",
+      "PROXY_UPDATED": "代理已更新",
+      "PROXY_DELETED": "代理已删除",
+      "TAG_CREATED": "标签已创建",
+      "TAG_UPDATED": "标签已更新",
+      "TAG_DELETED": "标签已删除",
+      "SETTINGS_UPDATED": "设置已更新",
+      "IP_WHITELIST_UPDATED": "IP 白名单已更新",
+      "NOTIFICATION_SETTING_CREATED": "通知设置已创建",
+      "NOTIFICATION_SETTING_UPDATED": "通知设置已更新",
+      "NOTIFICATION_SETTING_DELETED": "通知设置已删除",
+      "SSH_CONNECT_SUCCESS": "SSH 连接成功",
+      "SSH_CONNECT_FAILURE": "SSH 连接失败",
+      "SSH_SHELL_FAILURE": "SSH Shell 打开失败",
+      "DATABASE_MIGRATION": "数据库迁移",
+      "ADMIN_SETUP_COMPLETE": "初始管理员设置完成",
+      "REMOTE_DESKTOP_CONNECTING": "远程桌面连接中",
+      "REMOTE_DESKTOP_CONNECTED": "远程桌面已连接",
+      "REMOTE_DESKTOP_DISCONNECTED": "远程桌面已断开",
+      "PASSKEY_REGISTERED": "Passkey 已注册",
+      "PASSKEY_AUTH_SUCCESS": "Passkey 认证成功",
+      "PASSKEY_AUTH_FAILURE": "Passkey 认证失败",
+      "PASSKEY_DELETED": "Passkey 已删除",
+      "PASSKEY_DELETE_UNAUTHORIZED": "Passkey 删除未授权",
+      "PASSKEY_NAME_UPDATED": "Passkey 名称已更新",
+      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey 名称更新未授权"
     }
   },
   "workspaceConnectionList": {
@@ -1261,7 +1259,8 @@
       "commandHistory": "命令历史",
       "quickCommands": "快捷指令",
       "dockerManager": "Docker 管理器",
-      "suspendedSshSessions": "挂起会话管理"
+      "suspendedSshSessions": "挂起会话管理",
+      "multiLineCommandInput": "多行命令输入"
     },
     "panes": {
       "suspendedSshSessions": "挂起会话管理器"
@@ -1368,7 +1367,8 @@
       "terminalSearch": "终端内搜索",
       "connectionListSearch": "连接列表搜索",
       "fileEditorActive": "文件编辑器",
-      "fileManagerPathInput": "文件管理器路径编辑"
+      "fileManagerPathInput": "文件管理器路径编辑",
+      "multiLineCommandInput": "多行命令输入"
     },
     "confirmClose": "有未保存的更改，确定要关闭吗？",
     "shortcutPlaceholder": "例如 Alt+K",
@@ -1508,7 +1508,6 @@
       "remove": "移除",
       "exportLog": "导出日志"
     }
-
   },
   "transferProgressModal": {
     "title": "文件传输进度",
@@ -1614,7 +1613,7 @@
       "logExportError": "导出已挂起会话日志失败: {error}"
     }
   },
-"favoritePaths": {
+  "favoritePaths": {
     "addEditForm": {
       "validation": {
         "pathRequired": "路径不能为空。"
@@ -1652,5 +1651,29 @@
     "delete": "删除此条历史",
     "copiedSuccess": "路径已复制到剪贴板",
     "copiedError": "复制路径失败"
+  },
+  "multiLineCommandInput": {
+    "title": "多行命令输入",
+    "placeholder": "在此输入或粘贴多行命令/脚本...\n支持 Tab 缩进，按 Ctrl+Enter 快速发送",
+    "send": "发送命令",
+    "sendSelected": "发送选中",
+    "sendTooltip": "发送至当前终端 (快捷键: Ctrl+Enter)",
+    "copy": "复制全部或选中内容",
+    "copyBtn": "复制",
+    "paste": "从剪贴板粘贴",
+    "pasteBtn": "粘贴",
+    "clear": "清空输入框",
+    "clearBtn": "清空",
+    "copied": "已复制到剪贴板",
+    "noActiveSession": "请先连接终端会话再发送命令",
+    "lines": "行数",
+    "chars": "字符",
+    "pos": "光标",
+    "selectedHint": "已选 {len} 字符",
+    "appendEnter": "追加回车执行",
+    "appendEnterTooltip": "发送时在最后一行自动补齐换行回车，确保终端立即执行",
+    "clearAfterSend": "发送后清空",
+    "clearAfterSendTooltip": "命令成功发送后自动清空输入框草稿",
+    "addHint": "您可以在顶部标签栏的【配置布局】中添加多行命令输入面板"
   }
 }

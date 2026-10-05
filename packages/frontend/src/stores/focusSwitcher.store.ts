@@ -55,6 +55,7 @@ export const useFocusSwitcherStore = defineStore('focusSwitcher', () => {
     { id: 'connectionListSearch', label: t('focusSwitcher.input.connectionListSearch', '连接列表搜索') },
     { id: 'fileEditorActive', label: t('focusSwitcher.input.fileEditorActive', '文件编辑器') },
     { id: 'fileManagerPathInput', label: t('focusSwitcher.input.fileManagerPathInput', '文件管理器路径编辑') },
+    { id: 'multiLineCommandInput', label: t('focusSwitcher.input.multiLineCommandInput', '多行命令输入') },
   ]);
   const sequenceOrder = ref<string[]>([]); // +++ 存储顺序 +++
   const itemConfigs = ref<Record<string, FocusItemConfig>>({}); // +++ 存储所有配置 +++

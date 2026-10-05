@@ -1,7 +1,7 @@
 {
   "appName": "Nexus Terminal",
   "projectName": "Nexus Terminal",
-  "slogan":"Stir the stars, command the terminal.",
+  "slogan": "Stir the stars, command the terminal.",
   "nav": {
     "dashboard": "Dashboard",
     "terminal": "Terminal",
@@ -38,7 +38,7 @@
     "themeCreatedSuccess": "Theme created successfully.",
     "themeSaveFailed": "Failed to save theme.",
     "themeDeletedSuccess": "Theme deleted successfully.",
-"passkeyLoginButton": "Login with Passkey",
+    "passkeyLoginButton": "Login with Passkey",
     "themeDeleteFailed": "Failed to delete theme: {message}",
     "importSuccess": "Theme imported successfully.",
     "importFailed": "Theme import failed.",
@@ -86,7 +86,7 @@
     "terminalThemeColorEditorTitle": "Terminal Theme Color Editor",
     "errorFixJsonBeforeSave": "Please fix the JSON format errors before saving.",
     "applyButton": "Apply",
-    "previewButton":"Preview",
+    "previewButton": "Preview",
     "searchThemePlaceholder": "Search theme name...",
     "exportActiveThemeTooltip": "Export the currently active theme as a JSON file",
     "exportActiveTheme": "Export Active Theme",
@@ -140,7 +140,7 @@
     "errorPresetNameRequired": "Preset name cannot be empty.",
     "errorMissingDownloadUrl": "Remote theme download URL is missing.",
     "remotePresetApplyFailed": "Failed to apply remote HTML theme: {message}",
-    "customHtmlResetSuccess":"Custom HTML has been reset.",
+    "customHtmlResetSuccess": "Custom HTML has been reset.",
     "searchLocalThemesPlaceholder": "Search local themes...",
     "searchRemoteThemesPlaceholder": "Search remote themes...",
     "noMatchingLocalPresetsFound": "No matching local themes found",
@@ -185,11 +185,11 @@
     "loginWithPasskey": "Login with Passkey",
     "captchaPrompt": "Please complete the verification below:",
     "error": {
-        "captchaLoadFailed": "Failed to load CAPTCHA. Please try refreshing.",
-        "captchaRequired": "Please complete the CAPTCHA verification.",
-        "usernameRequiredForPasskey": "Username is required to use a passkey.",
-        "passkeyAuthOptionsFailed": "Failed to get passkey authentication options from the server.",
-        "passkeyAuthFailed": "Passkey authentication failed. Please try again or use your password."
+      "captchaLoadFailed": "Failed to load CAPTCHA. Please try refreshing.",
+      "captchaRequired": "Please complete the CAPTCHA verification.",
+      "usernameRequiredForPasskey": "Username is required to use a passkey.",
+      "passkeyAuthOptionsFailed": "Failed to get passkey authentication options from the server.",
+      "passkeyAuthFailed": "Passkey authentication failed. Please try again or use your password."
     },
     "recaptchaV3Notice": "This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply."
   },
@@ -207,15 +207,15 @@
       "lastConnected": "Last Connected",
       "actions": "Actions"
     },
-    "batchEdit":{
-      "toggleLabel":"Batch Edit",
+    "batchEdit": {
+      "toggleLabel": "Batch Edit",
       "selectAll": "Select All",
       "deselectAll": "Deselect All",
       "invertSelection": "Invert Selection",
       "title": "Batch Edit Connections",
       "editSelected": "Edit Selected",
-      "noChange":"No change",
-      "selectedItems":"{count} items selected",
+      "noChange": "No change",
+      "selectedItems": "{count} items selected",
       "deleteSelectedButton": "Delete Selected",
       "deleteSelectedTooltip": "Delete selected connections",
       "confirmMessage": "Are you sure you want to delete the selected {count} connections? This action cannot be undone.",
@@ -223,7 +223,7 @@
       "errorMessage": "Batch delete connections failed: {error}"
     },
     "actions": {
-      "testAllFiltered":"Test All",
+      "testAllFiltered": "Test All",
       "connect": "Connect",
       "edit": "Edit",
       "delete": "Delete",
@@ -248,7 +248,7 @@
       "confirm": "Confirm Add",
       "adding": "Adding...",
       "cancel": "Cancel",
-      "noSshKey":"No SSH Key",
+      "noSshKey": "No SSH Key",
       "errorRequiredFields": "Please fill in all required fields.",
       "errorPasswordRequired": "Password is required for password authentication.",
       "errorPrivateKeyRequired": "Private key is required for key authentication.",
@@ -335,13 +335,12 @@
       "scriptTagCreated": "Tag '{tagName}' created",
       "scriptErrorTagCreationFailed": "Failed to create tag '{tagName}'",
       "scriptModeAddingConnections": "Adding {count} connections in script mode...",
-"jumpHostsTitle": "Jump Host Chain Configuration",
-"jumpHostLabel": "Jump Host",
-"selectJumpHost": "Please select a jump host",
-"removeJumpHostTitle": "Remove this jump host",
-"addJumpHost": "Add Jump Host",
-"noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first."
-
+      "jumpHostsTitle": "Jump Host Chain Configuration",
+      "jumpHostLabel": "Jump Host",
+      "selectJumpHost": "Please select a jump host",
+      "removeJumpHostTitle": "Remove this jump host",
+      "addJumpHost": "Add Jump Host",
+      "noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first."
     },
     "test": {
       "success": "Connection test successful!",
@@ -410,7 +409,7 @@
       "reconnectingMsg": "Attempting to reconnect..."
     }
   },
-"fileEditor": {
+  "fileEditor": {
     "title": "File Editor"
   },
   "fileManager": {
@@ -444,7 +443,7 @@
       "openEditor": "Open Editor",
       "copyPath": "Copy Path"
     },
-"contextMenu": {
+    "contextMenu": {
       "compress": "Compress",
       "compressZip": "Compress to zip",
       "compressTarGz": "Compress to tar.gz",
@@ -498,17 +497,17 @@
       "commandNotFoundDecompress": "Command '{command}' not found on server, cannot complete decompression.",
       "genericCommandNotFound": "Command '{command}' not found on server, cannot complete '{operation}' operation.",
       "copyPathFailed": "Failed to copy path"
-  },
-  "notifications": {
-    "copySuccess": "Copy successful",
-    "moveSuccess": "Move successful",
-    "cdCommandSent": "CD command sent to terminal",
-    "compressSuccess": "Compressed {name} successfully",
-    "decompressSuccess": "Decompressed {name} successfully",
-    "pathCopied": "Path copied to clipboard"
-  },
-  "warnings": {
-        "moveSameDirectory": "Cannot cut and paste in the same directory."
+    },
+    "notifications": {
+      "copySuccess": "Copy successful",
+      "moveSuccess": "Move successful",
+      "cdCommandSent": "CD command sent to terminal",
+      "compressSuccess": "Compressed {name} successfully",
+      "decompressSuccess": "Decompressed {name} successfully",
+      "pathCopied": "Path copied to clipboard"
+    },
+    "warnings": {
+      "moveSameDirectory": "Cannot cut and paste in the same directory."
     },
     "prompts": {
       "enterFolderName": "Enter the name for the new folder:",
@@ -640,23 +639,22 @@
       "about": "About",
       "dataManagement": "Data Management"
     },
-      "exportConnections": {
-        "title": "Export Connection Data",
-        "decryptKeyInfo": "The decryption password is the ENCRYPTION_KEY in your data/.env file. Please keep this file secure.",
-        "buttonText": "Start Export"
+    "exportConnections": {
+      "title": "Export Connection Data",
+      "decryptKeyInfo": "The decryption password is the ENCRYPTION_KEY in your data/.env file. Please keep this file secure.",
+      "buttonText": "Start Export"
+    },
+    "timezone": {
+      "title": "Timezone Settings",
+      "selectLabel": "Select Timezone:",
+      "description": "Timestamps in notifications will be formatted according to this timezone.",
+      "success": {
+        "saved": "Timezone setting saved successfully."
       },
-    
-      "timezone": {
-        "title": "Timezone Settings",
-        "selectLabel": "Select Timezone:",
-        "description": "Timestamps in notifications will be formatted according to this timezone.",
-        "success": {
-          "saved": "Timezone setting saved successfully."
-        },
-        "error": {
-          "saveFailed": "Failed to save timezone setting."
-        }
-      },
+      "error": {
+        "saveFailed": "Failed to save timezone setting."
+      }
+    },
     "changePassword": {
       "title": "Change Password",
       "currentPassword": "Current Password:",
@@ -923,11 +921,11 @@
       "fileManagerShowDeleteConfirmationLabel": "Show confirmation dialog when deleting files or folders",
       "fileManagerDeleteConfirmSuccess": "File manager delete confirmation setting saved.",
       "fileManagerDeleteConfirmError": "Failed to save file manager delete confirmation setting.",
-"terminalRightClickPasteTitle": "Terminal Right Click Paste",
-        "terminalEnableRightClickPasteLabel": "Enable terminal right-click paste",
-        "terminalEnableRightClickPasteDescription": "Allows pasting clipboard content using the right mouse button within the terminal area.",
-        "terminalRightClickPasteSuccess": "Terminal right-click paste setting saved.",
-        "terminalRightClickPasteError": "Failed to save terminal right-click paste setting."
+      "terminalRightClickPasteTitle": "Terminal Right Click Paste",
+      "terminalEnableRightClickPasteLabel": "Enable terminal right-click paste",
+      "terminalEnableRightClickPasteDescription": "Allows pasting clipboard content using the right mouse button within the terminal area.",
+      "terminalRightClickPasteSuccess": "Terminal right-click paste setting saved.",
+      "terminalRightClickPasteError": "Failed to save terminal right-click paste setting."
     },
     "statusMonitorShowIp": {
       "title": "Status Monitor: Show IP Address",
@@ -977,26 +975,26 @@
       }
     },
     "captcha": {
-        "title": "CAPTCHA Settings",
-        "description": "Configure CAPTCHA verification for the login page to prevent automated attacks.",
-        "enableLabel": "Enable CAPTCHA on Login Page",
-        "providerLabel": "CAPTCHA Provider:",
-        "providerNone": "None (Disabled)",
-        "hcaptchaHint": "Get keys from",
-        "recaptchaHint": "Get keys from",
-        "siteKeyLabel": "Site Key (Public):",
-        "secretKeyLabel": "Secret Key (Private):",
-        "secretKeyHint": "Keep this secret. It is stored securely on the server.",
-        "saveButton": "Save CAPTCHA Settings",
-        "success": {
-            "saved": "CAPTCHA settings saved successfully."
-        },
-        "error": {
-            "saveFailed": "Failed to save CAPTCHA settings.",
-            "hcaptchaKeysRequired": "hCaptcha Site Key and Secret Key are required for verification.",
-            "recaptchaKeysRequired": "reCAPTCHA Site Key and Secret Key are required for verification.",
-            "verificationFailed": "CAPTCHA credential verification failed. Please check your Site Key and Secret Key."
-        }
+      "title": "CAPTCHA Settings",
+      "description": "Configure CAPTCHA verification for the login page to prevent automated attacks.",
+      "enableLabel": "Enable CAPTCHA on Login Page",
+      "providerLabel": "CAPTCHA Provider:",
+      "providerNone": "None (Disabled)",
+      "hcaptchaHint": "Get keys from",
+      "recaptchaHint": "Get keys from",
+      "siteKeyLabel": "Site Key (Public):",
+      "secretKeyLabel": "Secret Key (Private):",
+      "secretKeyHint": "Keep this secret. It is stored securely on the server.",
+      "saveButton": "Save CAPTCHA Settings",
+      "success": {
+        "saved": "CAPTCHA settings saved successfully."
+      },
+      "error": {
+        "saveFailed": "Failed to save CAPTCHA settings.",
+        "hcaptchaKeysRequired": "hCaptcha Site Key and Secret Key are required for verification.",
+        "recaptchaKeysRequired": "reCAPTCHA Site Key and Secret Key are required for verification.",
+        "verificationFailed": "CAPTCHA credential verification failed. Please check your Site Key and Secret Key."
+      }
     },
     "commandInputSync": {
       "title": "Command Input Sync",
@@ -1035,23 +1033,23 @@
     },
     "loading": "Loading..."
   },
-"notificationController": {
-      "errorFetchSettings": "Failed to fetch notification settings",
-      "errorMissingFields": "Missing required notification setting fields (channel_type, name, config)",
-      "errorCreateSetting": "Failed to create notification setting",
-      "errorInvalidId": "Invalid notification setting ID",
-      "errorNoUpdateData": "No data provided for update",
-      "errorNotFound": "Notification setting with ID {id} not found",
-      "errorUpdateSetting": "Failed to update notification setting",
-      "errorDeleteNotFound": "Failed to delete notification setting with ID {id}, it might have already been deleted",
-      "errorDeleteSetting": "Failed to delete notification setting",
-      "testMessageSaved": "Test triggered for setting ID {id} ({name})",
-      "testEventTriggered": "Test notification event triggered. Please check the corresponding channel for reception.",
-      "errorTriggerTest": "Internal error occurred while triggering test notification",
-      "errorMissingTestInfo": "Missing required test information (channel_type, config)",
-      "errorInvalidChannelType": "Invalid channel type",
-      "testMessageUnsaved": "Test triggered for unsaved {channelType} configuration"
-    },
+  "notificationController": {
+    "errorFetchSettings": "Failed to fetch notification settings",
+    "errorMissingFields": "Missing required notification setting fields (channel_type, name, config)",
+    "errorCreateSetting": "Failed to create notification setting",
+    "errorInvalidId": "Invalid notification setting ID",
+    "errorNoUpdateData": "No data provided for update",
+    "errorNotFound": "Notification setting with ID {id} not found",
+    "errorUpdateSetting": "Failed to update notification setting",
+    "errorDeleteNotFound": "Failed to delete notification setting with ID {id}, it might have already been deleted",
+    "errorDeleteSetting": "Failed to delete notification setting",
+    "testMessageSaved": "Test triggered for setting ID {id} ({name})",
+    "testEventTriggered": "Test notification event triggered. Please check the corresponding channel for reception.",
+    "errorTriggerTest": "Internal error occurred while triggering test notification",
+    "errorMissingTestInfo": "Missing required test information (channel_type, config)",
+    "errorInvalidChannelType": "Invalid channel type",
+    "testMessageUnsaved": "Test triggered for unsaved {channelType} configuration"
+  },
   "common": {
     "confirm": "Confirm",
     "ok": "OK",
@@ -1086,8 +1084,8 @@
     "sortDescending": "Descending",
     "restore": "Restore",
     "minimize": "Minimize",
-    "send":"Send",
-    "updateSuccess":"Update successful",
+    "send": "Send",
+    "updateSuccess": "Update successful",
     "copied": "Copied to clipboard"
   },
   "layoutConfigurator": {
@@ -1127,41 +1125,41 @@
     },
     "paginationInfo": "Page {currentPage} of {totalPages} ({totalLogs} total logs)",
     "actions": {
-        "LOGIN_SUCCESS": "Login Success",
-        "LOGIN_FAILURE": "Login Failure",
-        "LOGOUT": "Logout",
-        "PASSWORD_CHANGED": "Password Changed",
-        "2FA_ENABLED": "2FA Enabled",
-        "2FA_DISABLED": "2FA Disabled",
-        "CONNECTION_CREATED": "Connection Created",
-        "CONNECTION_UPDATED": "Connection Updated",
-        "CONNECTION_DELETED": "Connection Deleted",
-        "PROXY_CREATED": "Proxy Created",
-        "PROXY_UPDATED": "Proxy Updated",
-        "PROXY_DELETED": "Proxy Deleted",
-        "TAG_CREATED": "Tag Created",
-        "TAG_UPDATED": "Tag Updated",
-        "TAG_DELETED": "Tag Deleted",
-        "SETTINGS_UPDATED": "Settings Updated",
-        "IP_WHITELIST_UPDATED": "IP Whitelist Updated",
-        "NOTIFICATION_SETTING_CREATED": "Notification Setting Created",
-        "NOTIFICATION_SETTING_UPDATED": "Notification Setting Updated",
-        "NOTIFICATION_SETTING_DELETED": "Notification Setting Deleted",
-        "SSH_CONNECT_SUCCESS": "SSH Connection Successful",
-        "SSH_CONNECT_FAILURE": "SSH Connection Failed",
-        "SSH_SHELL_FAILURE": "SSH Shell Open Failed",
-        "DATABASE_MIGRATION": "Database Migration",
-        "ADMIN_SETUP_COMPLETE": "Initial Admin Setup Completed",
-        "REMOTE_DESKTOP_CONNECTING": "Remote Desktop Connecting",
-        "REMOTE_DESKTOP_CONNECTED": "Remote Desktop Connected",
-        "REMOTE_DESKTOP_DISCONNECTED": "Remote Desktop Disconnected",
-        "PASSKEY_REGISTERED": "Passkey Registered",
-        "PASSKEY_AUTH_SUCCESS": "Passkey Authentication Successful",
-        "PASSKEY_AUTH_FAILURE": "Passkey Authentication Failed",
-        "PASSKEY_DELETED": "Passkey Deleted",
-        "PASSKEY_DELETE_UNAUTHORIZED": "Passkey Deletion Unauthorized",
-        "PASSKEY_NAME_UPDATED": "Passkey Name Updated",
-        "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey Name Update Unauthorized"
+      "LOGIN_SUCCESS": "Login Success",
+      "LOGIN_FAILURE": "Login Failure",
+      "LOGOUT": "Logout",
+      "PASSWORD_CHANGED": "Password Changed",
+      "2FA_ENABLED": "2FA Enabled",
+      "2FA_DISABLED": "2FA Disabled",
+      "CONNECTION_CREATED": "Connection Created",
+      "CONNECTION_UPDATED": "Connection Updated",
+      "CONNECTION_DELETED": "Connection Deleted",
+      "PROXY_CREATED": "Proxy Created",
+      "PROXY_UPDATED": "Proxy Updated",
+      "PROXY_DELETED": "Proxy Deleted",
+      "TAG_CREATED": "Tag Created",
+      "TAG_UPDATED": "Tag Updated",
+      "TAG_DELETED": "Tag Deleted",
+      "SETTINGS_UPDATED": "Settings Updated",
+      "IP_WHITELIST_UPDATED": "IP Whitelist Updated",
+      "NOTIFICATION_SETTING_CREATED": "Notification Setting Created",
+      "NOTIFICATION_SETTING_UPDATED": "Notification Setting Updated",
+      "NOTIFICATION_SETTING_DELETED": "Notification Setting Deleted",
+      "SSH_CONNECT_SUCCESS": "SSH Connection Successful",
+      "SSH_CONNECT_FAILURE": "SSH Connection Failed",
+      "SSH_SHELL_FAILURE": "SSH Shell Open Failed",
+      "DATABASE_MIGRATION": "Database Migration",
+      "ADMIN_SETUP_COMPLETE": "Initial Admin Setup Completed",
+      "REMOTE_DESKTOP_CONNECTING": "Remote Desktop Connecting",
+      "REMOTE_DESKTOP_CONNECTED": "Remote Desktop Connected",
+      "REMOTE_DESKTOP_DISCONNECTED": "Remote Desktop Disconnected",
+      "PASSKEY_REGISTERED": "Passkey Registered",
+      "PASSKEY_AUTH_SUCCESS": "Passkey Authentication Successful",
+      "PASSKEY_AUTH_FAILURE": "Passkey Authentication Failed",
+      "PASSKEY_DELETED": "Passkey Deleted",
+      "PASSKEY_DELETE_UNAUTHORIZED": "Passkey Deletion Unauthorized",
+      "PASSKEY_NAME_UPDATED": "Passkey Name Updated",
+      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey Name Update Unauthorized"
     }
   },
   "workspaceConnectionList": {
@@ -1257,7 +1255,8 @@
       "commandHistory": "Command History",
       "quickCommands": "Quick Commands",
       "dockerManager": "Docker Manager",
-      "suspendedSshSessions": "Suspended Sessions Management"
+      "suspendedSshSessions": "Suspended Sessions Management",
+      "multiLineCommandInput": "Multi-line Command Input"
     },
     "panes": {
       "suspendedSshSessions": "Suspended Session Manager"
@@ -1364,7 +1363,8 @@
       "terminalSearch": "Terminal Search",
       "connectionListSearch": "Connection List Search",
       "fileEditorActive": "File Editor",
-      "fileManagerPathInput": "File Manager Path Input"
+      "fileManagerPathInput": "File Manager Path Input",
+      "multiLineCommandInput": "Multi-line Command Input"
     },
     "confirmClose": "You have unsaved changes. Are you sure you want to close?",
     "shortcutPlaceholder": "e.g., Alt+K",
@@ -1609,7 +1609,7 @@
     "transferInitiatedGeneric": "Transfer task created successfully.",
     "transferFailedError": "Failed to initiate transfer. Please try again."
   },
-"favoritePaths": {
+  "favoritePaths": {
     "addEditForm": {
       "validation": {
         "pathRequired": "Path is required."
@@ -1647,6 +1647,29 @@
     "delete": "Delete this history entry",
     "copiedSuccess": "Path copied to clipboard",
     "copiedError": "Failed to copy path"
+  },
+  "multiLineCommandInput": {
+    "title": "Multi-line Command Input",
+    "placeholder": "Type or paste multi-line commands/scripts here...\nSupports Tab indentation, press Ctrl+Enter to send",
+    "send": "Send Command",
+    "sendSelected": "Send Selected",
+    "sendTooltip": "Send to current terminal (Shortcut: Ctrl+Enter)",
+    "copy": "Copy all or selected text",
+    "copyBtn": "Copy",
+    "paste": "Paste from clipboard",
+    "pasteBtn": "Paste",
+    "clear": "Clear input",
+    "clearBtn": "Clear",
+    "copied": "Copied to clipboard",
+    "noActiveSession": "Please connect to a terminal session before sending",
+    "lines": "Lines",
+    "chars": "Chars",
+    "pos": "Cursor",
+    "selectedHint": "{len} chars selected",
+    "appendEnter": "Auto Append Enter",
+    "appendEnterTooltip": "Automatically appends a newline to the last line to execute in the terminal",
+    "clearAfterSend": "Clear After Send",
+    "clearAfterSendTooltip": "Automatically clears the draft after sending commands",
+    "addHint": "You can add the Multi-line Command Input panel via [Configure Layout] in the top tab bar"
   }
 }
-
