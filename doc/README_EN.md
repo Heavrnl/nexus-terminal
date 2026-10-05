@@ -180,7 +180,21 @@ You can right-click in the SSH tab to select "Suspend Session" (long-press on mo
 1. **On mobile devices, you can zoom in or out on the terminal font using a two-finger gesture.**
 2. To enable Passkey login, set the `RP_ID` and `RP_ORIGIN` environment variables in the `.env` file.
 
+## 📖 Engineering & Architecture Documentation
 
+Nexus Terminal comes with comprehensive technical documentation:
+
+*   **API & Protocols**:
+    *   [RESTful API Specification](../doc/api/rest-api.md)
+    *   [WebSocket Real-time Communication Protocols](../doc/api/websocket-spec.md)
+*   **Architecture & Design**:
+    *   [System Architecture & Topology](../doc/architecture/system-architecture.md)
+    *   [Database Design & Data Dictionary](../doc/architecture/database-design.md)
+    *   [Security Architecture & Credentials Encryption Whitepaper](../doc/architecture/security.md)
+*   **Developer Guides**:
+    *   [Local Development & Debugging Guide](../doc/DEVELOPMENT.md)
+    *   [Contributing Guide](../CONTRIBUTING.md)
+    *   [Changelog](../CHANGELOG.md)
 
 ## ⚠️ Notes
 
