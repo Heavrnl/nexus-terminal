@@ -13,19 +13,18 @@ import { useFileManagerContextMenu, type ClipboardState, type CompressFormat } f
 import { useFileManagerSelection } from '../composables/file-manager/useFileManagerSelection';
 import { useFileManagerDragAndDrop } from '../composables/file-manager/useFileManagerDragAndDrop';
 import { useFileManagerKeyboardNavigation } from '../composables/file-manager/useFileManagerKeyboardNavigation';
+import { useFileManagerVirtualScroll } from '../composables/file-manager/useFileManagerVirtualScroll';
+import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
+import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
+import FileManagerHeader from './FileManagerHeader.vue';
 import type { FileListItem } from '../types/sftp.types';
 import type { WebSocketMessage } from '../types/websocket.types';
-import PathHistoryDropdown from './PathHistoryDropdown.vue';
-import { usePathHistoryStore } from '../stores/pathHistory.store';
-import FavoritePathsModal from './FavoritePathsModal.vue';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
-import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
-import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 
 
 type SftpManagerInstance = ReturnType<typeof createSftpActionsManager>;
@@ -103,48 +102,31 @@ const {
 
 // 实例化其他 Stores
 const fileEditorStore = useFileEditorStore(); // 实例化 File Editor Store
-// const sessionStore = useSessionStore(); // 已在上面实例化
-const settingsStore = useSettingsStore(); // +++ 实例化 Settings Store +++
-const focusSwitcherStore = useFocusSwitcherStore(); // +++ 实例化焦点切换 Store +++
-const pathHistoryStore = usePathHistoryStore(); // +++ 实例化 PathHistoryStore +++
-const uiNotificationsStore = useUiNotificationsStore(); // +++ 实例化通知 store +++
+const settingsStore = useSettingsStore(); // 实例化 Settings Store
+const focusSwitcherStore = useFocusSwitcherStore(); // 实例化焦点切换 Store
+const uiNotificationsStore = useUiNotificationsStore(); // 实例化通知 store
  
- // 从 Settings Store 获取共享设置
+// 从 Settings Store 获取共享设置
 const {
   shareFileEditorTabsBoolean,
-  fileManagerRowSizeMultiplierNumber, // +++ 获取行大小 getter +++
-  fileManagerColWidthsObject, // +++ 获取列宽 getter +++
-  showPopupFileEditorBoolean, // +++ 获取弹窗设置状态 +++
-  fileManagerShowDeleteConfirmationBoolean, // +++ 获取删除确认设置状态 +++
-} = storeToRefs(settingsStore); // 使用 storeToRefs 保持响应性
- 
- 
+  fileManagerRowSizeMultiplierNumber,
+  fileManagerColWidthsObject,
+  showPopupFileEditorBoolean,
+  fileManagerShowDeleteConfirmationBoolean,
+} = storeToRefs(settingsStore);
 
-// --- UI 状态 Refs (Remain mostly the same) ---
+// --- UI 状态 Refs ---
+const headerRef = ref<InstanceType<typeof FileManagerHeader> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const sortKey = ref<keyof FileListItem | 'type' | 'size' | 'mtime'>('filename');
 const sortDirection = ref<'asc' | 'desc'>('asc');
-const isEditingPath = ref(false);
-const searchQuery = ref(''); // 搜索查询 ref
+const searchQuery = ref(''); // 搜索查询 ref (与 Header 双向绑定)
 const isMultiSelectMode = ref(false); // 多选模式状态 (主要用于移动端)
-const isSearchActive = ref(false); // 控制搜索框激活状态
-const searchInputRef = ref<HTMLInputElement | null>(null); // 搜索输入框 ref
-const pathInputRef = ref<HTMLInputElement | null>(null);
-const editablePath = ref('');
+const isSearchActive = ref(false); // 控制搜索框激活状态 (与 Header 双向绑定)
 const fileListContainerRef = ref<HTMLDivElement | null>(null); // 文件列表容器引用
-const dropOverlayRef = ref<HTMLDivElement | null>(null); // +++ 拖拽蒙版引用 +++
+const dropOverlayRef = ref<HTMLDivElement | null>(null); // 拖拽蒙版引用
 
-// +++ Favorite Paths Modal State +++
-const showFavoritePathsModal = ref(false);
-const favoritePathsButtonRef = ref<HTMLButtonElement | null>(null); // Ref for the trigger button
-
-// +++ Path History Refs +++
-const showPathHistoryDropdown = ref(false);
-const pathInputWrapperRef = ref<HTMLDivElement | null>(null); // Wrapper for path input and dropdown
-const pathHistoryDropdownRef = ref<InstanceType<typeof PathHistoryDropdown> | null>(null);
-const { selectedIndex: pathSelectedIndex, filteredHistory: filteredPathHistory } = storeToRefs(pathHistoryStore); // Reactive store state
-
-const rowSizeMultiplier = ref(1.0); // 行大小（字体）乘数, 默认值会被 store 覆盖
+const rowSizeMultiplier = ref(1.0); // 行大小乘数, 默认值会被 store 覆盖
 const tableRef = ref<HTMLTableElement | null>(null);
 
 // --- 列宽调整 Composable ---
@@ -536,17 +518,45 @@ const handleFileSelected = (event: Event) => {
     input.value = '';
 };
 
+// --- 虚拟滚动逻辑 (使用 Composable) ---
+const hasParentLink = computed(() => {
+  return Boolean(currentSftpManager.value && currentSftpManager.value.currentPath.value !== '/');
+});
+
+const {
+  visibleItems,
+  topPadding,
+  bottomPadding,
+  scrollToIndex: virtualScrollToIndex,
+} = useFileManagerVirtualScroll({
+  items: filteredFileList,
+  containerRef: fileListContainerRef,
+  rowSizeMultiplier,
+  hasParentLink,
+});
+
 // --- 键盘导航逻辑 (使用 Composable) ---
 const {
   selectedIndex, // 使用 Composable 返回的 selectedIndex
   handleKeydown, // 使用 Composable 返回的 handleKeydown
 } = useFileManagerKeyboardNavigation({
   filteredFileList: filteredFileList,
-  // 修改：传递 manager 的 currentPath ref
+  // 传递 manager 的 currentPath ref
   currentPath: computed(() => currentSftpManager.value?.currentPath.value ?? '/'),
   fileListContainerRef: fileListContainerRef,
   // 当 Enter 键按下时，模拟鼠标单击
   onEnterPress: (item) => handleItemClick(new MouseEvent('click'), item),
+  onScrollToIndex: (index) => {
+    if (hasParentLink.value) {
+      if (index === 0) {
+        if (fileListContainerRef.value) fileListContainerRef.value.scrollTop = 0;
+      } else {
+        virtualScrollToIndex(index - 1);
+      }
+    } else {
+      virtualScrollToIndex(index);
+    }
+  },
 });
 
 
@@ -729,7 +739,7 @@ watch(() => focusSwitcherStore.activateFileManagerSearchTrigger, (newValue, oldV
     // 目前假设搜索触发器对会话内的所有 FileManager 生效
     if (newValue > (oldValue ?? 0) && props.sessionId === sessionStore.activeSessionId) {
         console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Received search activation trigger for active session.`);
-        activateSearch(); // 调用组件内部的激活搜索方法
+        focusSearchInput();
     }
 }, { immediate: false }); // 添加 immediate: false 避免初始值为 0 时触发
 
@@ -737,8 +747,7 @@ watch(() => focusSwitcherStore.activateFileManagerSearchTrigger, (newValue, oldV
 // --- 监听 sessionId prop 的变化 ---
 watch(() => props.sessionId, (newSessionId, oldSessionId) => {
     if (newSessionId && newSessionId !== oldSessionId) {
-        closePathHistory(); // 关闭可能打开的路径历史下拉菜单
-        pathHistoryStore.setSearchTerm(''); // 清空搜索词
+        headerRef.value?.closePathHistory();
         // 1. 重新初始化 SFTP 管理器
         initializeSftpManager(newSessionId, props.instanceId);
 
@@ -746,273 +755,69 @@ watch(() => props.sessionId, (newSessionId, oldSessionId) => {
         clearSelection();
         searchQuery.value = '';
         isSearchActive.value = false;
-        isEditingPath.value = false;
         sortKey.value = 'filename'; // 重置排序
         sortDirection.value = 'asc';
     }
-}, { immediate: false }); // immediate: false 避免初始挂载时触发
-
-
+}, { immediate: false });
 
 // +++ 注册/注销自定义聚焦动作 +++
-let unregisterSearchFocusAction: (() => void) | null = null; // 搜索框注销函数
-let unregisterPathFocusAction: (() => void) | null = null; // 路径编辑框注销函数
+let unregisterSearchFocusAction: (() => void) | null = null;
+let unregisterPathFocusAction: (() => void) | null = null;
 
 onMounted(() => {
-  // 注册搜索框聚焦动作
   const focusSearchActionWrapper = async (): Promise<boolean | undefined> => {
     if (props.sessionId === sessionStore.activeSessionId) {
-      console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Executing search focus action for active session.`);
-      closePathHistory(); // Close path history if open
       return focusSearchInput();
-    } else {
-      console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Search focus action skipped for inactive session.`);
-      return undefined;
     }
+    return undefined;
   };
   unregisterSearchFocusAction = focusSwitcherStore.registerFocusAction('fileManagerSearch', focusSearchActionWrapper);
 
-  // 注册路径编辑框聚焦动作
   const focusPathActionWrapper = async (): Promise<boolean | undefined> => {
      if (props.sessionId === sessionStore.activeSessionId) {
-       console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Executing path edit focus action for active session.`);
-       // startPathEdit 本身不是 async，但注册时需要包装成 async 以匹配类型
-       startPathEdit(); // 调用暴露的方法
+       startPathEdit();
        return true;
-     } else {
-       console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Path edit focus action skipped for inactive session.`);
-       return undefined;
      }
+     return undefined;
   };
   unregisterPathFocusAction = focusSwitcherStore.registerFocusAction('fileManagerPathInput', focusPathActionWrapper);
-  document.addEventListener('click', handleClickOutsidePathInput);
 });
 
 onBeforeUnmount(() => {
- // 注销搜索框动作
  if (unregisterSearchFocusAction) {
    unregisterSearchFocusAction();
-   console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Unregistered search focus action on unmount.`);
  }
  unregisterSearchFocusAction = null;
 
- // 注销路径编辑框动作
  if (unregisterPathFocusAction) {
    unregisterPathFocusAction();
-   console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Unregistered path edit focus action on unmount.`);
  }
  unregisterPathFocusAction = null;
- document.removeEventListener('click', handleClickOutsidePathInput);
  sessionStore.removeSftpManager(props.sessionId, props.instanceId);
 });
 
 // +++ 监听蒙版可见性，动态调整高度 +++
 watch(showExternalDropOverlay, (isVisible) => {
   if (isVisible) {
-    nextTick(() => { // 确保 refs 可用且 scrollHeight 已计算
+    nextTick(() => {
       if (dropOverlayRef.value && fileListContainerRef.value) {
         const scrollHeight = fileListContainerRef.value.scrollHeight;
         dropOverlayRef.value.style.height = `${scrollHeight}px`;
       }
     });
   } else {
-    // 蒙版隐藏时重置高度
     if (dropOverlayRef.value) {
-      dropOverlayRef.value.style.height = ''; // 移除内联样式
-      // console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Overlay hidden. Resetting height.`);
+      dropOverlayRef.value.style.height = '';
     }
   }
 });
 
-
-
-// --- 路径编辑逻辑 (包含路径历史) ---
-
-const openPathHistory = () => {
-  showPathHistoryDropdown.value = true; // 总是尝试显示下拉框
-  // 如果列表为空，则尝试获取历史记录。
-  // pathHistoryStore.fetchHistory() 应该能够处理未连接时 apiClient 的失败。
-  if (pathHistoryStore.historyList.length === 0) {
-    pathHistoryStore.fetchHistory();
-  }
-  // 总是设置搜索词，以便即使历史记录是旧的或空的，也能基于当前输入进行过滤或显示。
-  pathHistoryStore.setSearchTerm(editablePath.value);
-};
-
-const closePathHistory = () => {
-  showPathHistoryDropdown.value = false;
-  pathHistoryStore.resetSelection();
-};
-
-const handlePathInputFocus = () => {
-  isEditingPath.value = true; // Keep existing behavior
-  if (!currentSftpManager.value || currentSftpManager.value.isLoading.value || !props.wsDeps.isConnected.value) return;
-  editablePath.value = currentSftpManager.value.currentPath.value; // Set editable path on focus
-  openPathHistory();
-  nextTick(() => {
-    pathInputRef.value?.select();
-  });
-};
-
-const handlePathInputChange = () => {
-  if (showPathHistoryDropdown.value) {
-    pathHistoryStore.setSearchTerm(editablePath.value);
-  }
-};
-
-const navigateToPath = async (path: string) => {
-  if (!currentSftpManager.value || !path || path.trim().length === 0) return;
-  const trimmedPath = path.trim();
-  isEditingPath.value = false;
-  closePathHistory();
-
-  if (trimmedPath === currentSftpManager.value.currentPath.value) {
-    return;
-  }
-
-  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 尝试导航到新路径: ${trimmedPath}`);
-  try {
-    await currentSftpManager.value.loadDirectory(trimmedPath);
-    // 如果 loadDirectory 没有抛出错误，我们认为它成功了
-    pathHistoryStore.addPath(trimmedPath); // 导航成功后添加到历史
-    editablePath.value = trimmedPath; // 更新输入框内容
-  } catch (error) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 导航到路径 ${trimmedPath} 失败:`, error);
-    // 导航失败，不添加到历史记录，也不更新输入框内容 (除非有特定需求)
-  }
-};
-
-const handlePathInputKeydown = (event: KeyboardEvent) => {
-  if (!showPathHistoryDropdown.value) {
-    if (event.key === 'Enter') {
-      navigateToPath(editablePath.value);
-    } else if (event.key === 'Escape') {
-      cancelPathEdit();
-    }
-    return;
-  }
-
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault();
-      pathHistoryStore.selectNextPath();
-      // Dropdown component handles scrolling
-      break;
-    case 'ArrowUp':
-      event.preventDefault();
-      pathHistoryStore.selectPreviousPath();
-      // Dropdown component handles scrolling
-      break;
-    case 'Enter':
-      event.preventDefault();
-      if (pathSelectedIndex.value >= 0 && filteredPathHistory.value[pathSelectedIndex.value]) {
-        navigateToPath(filteredPathHistory.value[pathSelectedIndex.value].path);
-      } else {
-        navigateToPath(editablePath.value);
-      }
-      closePathHistory();
-      break;
-    case 'Escape':
-      event.preventDefault();
-      closePathHistory();
-      // Keep isEditingPath true to allow user to continue editing or blur
-      break;
-  }
-};
-
-const handlePathSelectedFromDropdown = (path: string) => {
-  editablePath.value = path; // Update input field
-  navigateToPath(path); // Navigate and add to history
-  closePathHistory();
-};
-
-const startPathEdit = () => {
-    if (!currentSftpManager.value || currentSftpManager.value.isLoading.value || !props.wsDeps.isConnected.value) return;
-    editablePath.value = currentSftpManager.value.currentPath.value;
-    isEditingPath.value = true;
-    openPathHistory(); // 打开历史记录
-    nextTick(() => {
-        pathInputRef.value?.focus();
-        pathInputRef.value?.select();
-    });
-};
-
-// Modified to handle path history logic
-const handlePathInput = async (event?: Event | FocusEvent) => {
-    // This function is now primarily for blur handling or if Enter is pressed outside keydown.
-    // Most Enter logic is in handlePathInputKeydown.
-    if (event && event instanceof KeyboardEvent && event.key !== 'Enter') {
-      // If it's a key event but not Enter, it's handled by keydown or change.
-      return;
-    }
-
-    if (event && event.type === 'blur') {
-      setTimeout(() => {
-        const activeEl = document.activeElement;
-        const dropdownEl = pathHistoryDropdownRef.value?.$el;
-        if (dropdownEl && dropdownEl.contains(activeEl)) {
-          // Focus is within the dropdown, do nothing yet
-          return;
-        }
-        if (pathInputRef.value !== activeEl) { 
-            isEditingPath.value = false;
-            closePathHistory();
-        }
-      }, 150); 
-      return; 
-    }
-
-  
-    if (!currentSftpManager.value) return;
-
-    const newPath = editablePath.value.trim();
-    // Check if dropdown has a selection, if so, it should have been handled by Enter in keydown
-    if (pathSelectedIndex.value >= 0 && filteredPathHistory.value[pathSelectedIndex.value]) {
-        // This case should ideally not be hit if keydown is working correctly
-        navigateToPath(filteredPathHistory.value[pathSelectedIndex.value].path);
-    } else {
-        navigateToPath(newPath);
-    }
-    isEditingPath.value = false; // Ensure editing mode is exited
-    closePathHistory(); // Ensure dropdown is closed
-};
-
-
-const cancelPathEdit = () => {
-    isEditingPath.value = false;
-    closePathHistory();
-    // Optionally, revert editablePath to currentSftpManager.currentPath.value
-    if (currentSftpManager.value) {
-        editablePath.value = currentSftpManager.value.currentPath.value;
-    }
-};
-
-const handleClickOutsidePathInput = (event: MouseEvent) => {
-  if (pathInputWrapperRef.value && !pathInputWrapperRef.value.contains(event.target as Node)) {
-    if (isEditingPath.value || showPathHistoryDropdown.value) {
-        isEditingPath.value = false;
-        closePathHistory();
-    }
-  }
-};
-
-
-// --- 搜索框激活/取消逻辑 ---
-const activateSearch = () => {
-  isSearchActive.value = true;
-  nextTick(() => {
-    searchInputRef.value?.focus();
-  });
-};
-
-const deactivateSearch = () => {
-        isSearchActive.value = false;
-
-};
-
-const cancelSearch = () => {
-    searchQuery.value = ''; // 按 Esc 清空并失活
-    isSearchActive.value = false;
+// --- 返回上一级目录辅助函数 ---
+const handleGoParent = () => {
+  if (!currentSftpManager.value) return;
+  const current = currentSftpManager.value.currentPath.value;
+  const newPath = current === '/' ? '/' : current.substring(0, current.lastIndexOf('/')) || '/';
+  currentSftpManager.value.loadDirectory(newPath);
 };
 
 // --- 发送 CD 命令到终端的方法 ---
@@ -1027,299 +832,95 @@ const sendCdCommandToTerminal = () => {
     return;
   }
 
-  // 路径可能包含空格，需要用引号括起来以确保在各种 shell 中正确处理
   const escapedPath = `"${currentPath}"`;
-  // 添加换行符以模拟按下 Enter 键执行命令
   const command = `cd ${escapedPath}\n`;
 
   console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Sending command to terminal: ${command.trim()}`);
   try {
-    // 获取当前活动会话
     const activeSession = sessionStore.activeSession;
     if (!activeSession) {
       console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command: No active session found.`);
-      // 可选：添加 UI 通知
-      // uiNotificationsStore.addNotification({ message: t('fileManager.errors.noActiveSession', 'No active session found.'), type: 'error' });
       return;
     }
-    // 检查 terminalManager 是否存在
     if (!activeSession.terminalManager) {
-        console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command: Terminal manager not found for active session.`);
-        // 可选：添加 UI 通知
-        // uiNotificationsStore.addNotification({ message: t('fileManager.errors.terminalManagerNotFound', 'Terminal manager not found.'), type: 'error' });
-        return;
+      console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command: Terminal manager not found for active session.`);
+      return;
     }
-    // 使用 terminalManager 的 sendData 方法发送命令
     activeSession.terminalManager.sendData(command);
   } catch (error) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command to terminal:`, error);
   }
 };
 
-
 // --- 打开弹窗编辑器的方法 ---
 const openPopupEditor = () => {
   if (!props.sessionId) {
     console.error('[FileManager] Cannot open popup editor: Missing session ID.');
-    // 可以添加 UI 通知
     return;
   }
   console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Triggering popup editor without specific file.`);
-  fileEditorStore.triggerPopup('', props.sessionId); // 修复：使用空字符串触发空编辑器
+  fileEditorStore.triggerPopup('', props.sessionId);
 };
+
 // --- 行大小调整逻辑 ---
 const handleWheel = (event: WheelEvent) => {
     if (event.ctrlKey) {
-        event.preventDefault(); // 阻止页面默认滚动行为
-        const delta = event.deltaY > 0 ? -0.05 : 0.05; // 滚轮向下减小，向上增大
-        // 限制字体大小乘数在 0.5 到 2 之间
+        event.preventDefault();
+        const delta = event.deltaY > 0 ? -0.05 : 0.05;
         const newMultiplier = Math.max(0.5, Math.min(2, rowSizeMultiplier.value + delta));
         const oldMultiplier = rowSizeMultiplier.value;
-        rowSizeMultiplier.value = parseFloat(newMultiplier.toFixed(2)); // 保留两位小数避免浮点数问题
+        rowSizeMultiplier.value = parseFloat(newMultiplier.toFixed(2));
         if (rowSizeMultiplier.value !== oldMultiplier) {
-            // +++ 日志：记录触发保存 +++
             console.log(`[FileManager ${props.sessionId}-${props.instanceId}] handleWheel triggered saveLayoutSettings.`);
             saveLayoutSettings();
         }
     }
 };
 
-// +++ 聚焦搜索框的方法 +++
+// +++ 暴露给外部与焦点切换器的操作 +++
 const focusSearchInput = (): boolean => {
-  // 检查当前会话是否激活，防止后台实例响应
   if (props.sessionId !== sessionStore.activeSessionId) {
-      console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Ignoring focus request for inactive session.`);
-      return false;
+    return false;
   }
-
-  if (!isSearchActive.value) {
-    activateSearch(); // Activate search first
-    // nextTick 确保 DOM 更新后再聚焦
-    nextTick(() => {
-        if (searchInputRef.value) {
-            searchInputRef.value.focus();
-            console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Search activated and input focused.`);
-        } else {
-            console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Search activated but input ref not found after nextTick.`);
-        }
-    });
-    return true; // 假设会成功
-  } else if (searchInputRef.value) {
-    searchInputRef.value.focus();
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Search already active, input focused.`);
-    return true;
-  }
-  console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Could not focus search input.`);
-  return false;
+  return headerRef.value?.focusSearchInput() ?? false;
 };
-defineExpose({ focusSearchInput, startPathEdit });
 
-// --- 处理“打开编辑器”按钮点击 ---
-const handleOpenEditorClick = () => {
-  if (!props.sessionId) {
-    console.error(`[FileManager ${props.instanceId}] Cannot open editor: Missing session ID.`);
-    // TODO: Show error notification to user
-    return;
+const startPathEdit = () => {
+  if (props.sessionId === sessionStore.activeSessionId) {
+    headerRef.value?.startPathEdit();
   }
-  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Triggering popup editor directly.`);
-  fileEditorStore.triggerPopup('', props.sessionId); // 修复：传递空字符串而不是 null
- };
- 
- // +++ Favorite Paths Modal Logic +++
- const toggleFavoritePathsModal = () => {
-   showFavoritePathsModal.value = !showFavoritePathsModal.value;
-   console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Toggled FavoritePathsModal. Visible: ${showFavoritePathsModal.value}`);
- };
- 
- const handleNavigateToPathFromFavorites = (path: string) => {
-   if (currentSftpManager.value) {
-     currentSftpManager.value.loadDirectory(path);
-   }
-   showFavoritePathsModal.value = false; // Close modal after navigation
- };
- </script>
+};
+
+defineExpose({ focusSearchInput, startPathEdit });
+</script>
 
 <template>
   <div class="flex flex-col h-full overflow-hidden bg-background text-foreground text-sm font-sans">
-    <div class="flex items-center justify-between flex-wrap gap-2 p-2 bg-header  flex-shrink-0">
-        <!-- Wrapper for Path Actions and Path Bar -->
-        <div class="flex items-center gap-2 flex-grow min-w-0"> <!-- Added gap-2, flex-grow, min-w-0 -->
-            <!-- Path Actions -->
-            <div class="flex items-center flex-shrink-0"> <!-- Removed mr-auto -->
-              <!-- CD 到终端按钮 -->
-              <button
-                class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-                @click.stop="sendCdCommandToTerminal"
-                :disabled="!currentSftpManager || !props.wsDeps.isConnected.value || isEditingPath"
-                :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
-              >
-                <i class="fas fa-terminal text-base"></i>
-              </button>
-              <!-- 刷新按钮 -->
-              <button
-                class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-                @click.stop="currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
-                :disabled="!currentSftpManager || !props.wsDeps.isConnected.value || isEditingPath"
-                :title="t('fileManager.actions.refresh')"
-              >
-                <i class="fas fa-sync-alt text-base"></i>
-              </button>
-              <button
-                class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-                @click.stop="handleItemClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
-                :disabled="!currentSftpManager || !props.wsDeps.isConnected.value || currentSftpManager?.currentPath?.value === '/' || isEditingPath"
-                :title="t('fileManager.actions.parentDirectory')"
-              >
-                <i class="fas fa-arrow-up text-base"></i>
-              </button>
-             <!-- Search Area -->
-             <div class="flex items-center flex-shrink-0">
-                 <button
-                     v-if="!isSearchActive"
-                     class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-                     @click.stop="activateSearch"
-                     :disabled="!currentSftpManager || !props.wsDeps.isConnected.value"
-                     :title="t('fileManager.searchPlaceholder')"
-                 >
-                     <i class="fas fa-search text-base"></i>
-                 </button>
-                 <div v-else class="relative flex items-center min-w-[150px] flex-shrink">
-                     <i class="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none"></i>
-                     <input
-                         ref="searchInputRef"
-                         type="text"
-                         v-model="searchQuery"
-                         :placeholder="t('fileManager.searchPlaceholder')"
-                         class="flex-grow bg-background border border-border rounded pl-7 pr-2 py-1 text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary min-w-[10px] transition-colors duration-200"
-                         data-focus-id="fileManagerSearch"
-                         @blur="deactivateSearch"
-                         @keyup.esc="cancelSearch"
-                         @keydown.up.prevent="handleKeydown"
-                         @keydown.down.prevent="handleKeydown"
-                         @keydown.enter.prevent="handleKeydown"
-                     />
-                     <!-- Optional: Clear button -->
-                     <!-- <button @click="searchQuery = ''; searchInputRef?.focus()" v-if="searchQuery" class="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground">&times;</button> -->
-                 </div>
-             </div>
-             <div class="relative flex-shrink-0">
-              <!-- Favorite Paths Button -->
-              <button
-                  ref="favoritePathsButtonRef"
-                  class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 hover:enabled:bg-black/10 hover:enabled:text-foreground"
-                  @click="toggleFavoritePathsModal"
-              >
-                  <i class="fas fa-star text-base"></i>
-              </button>
-              <!-- Favorite Paths Modal -->
-              <FavoritePathsModal
-                :is-visible="showFavoritePathsModal"
-                :trigger-element="favoritePathsButtonRef"
-                @close="showFavoritePathsModal = false"
-                @navigate-to-path="handleNavigateToPathFromFavorites"
-              />
-            </div>
-            </div> 
+    <!-- 隐藏文件上传 input（由 Header 或拖拽触发） -->
+    <input type="file" ref="fileInputRef" @change="handleFileSelected" multiple class="hidden" />
 
-            
-
-           
-            <div ref="pathInputWrapperRef" class="relative flex items-center bg-background border border-border rounded px-1.5 py-0.5"
-                 :class="{ 'flex-grow min-w-0': isEditingPath || showPathHistoryDropdown, 'w-fit max-w-full': !isEditingPath && !showPathHistoryDropdown }">
-              <span v-show="!isEditingPath && !showPathHistoryDropdown" @click="startPathEdit" class="text-text-secondary pr-2 cursor-text truncate">
-                <strong
-                  :title="t('fileManager.editPathTooltip')"
-                  class="font-medium text-link px-1 rounded transition-colors duration-200"
-                  :class="{
-                    'hover:bg-black/5': currentSftpManager && props.wsDeps.isConnected.value,
-                    'opacity-60 cursor-not-allowed': !currentSftpManager || !props.wsDeps.isConnected.value
-                  }"
-                >
-                  {{ currentSftpManager?.currentPath?.value ?? '/' }}
-                </strong>
-              </span>
-              <input
-                v-show="isEditingPath || showPathHistoryDropdown"
-                ref="pathInputRef"
-                type="text"
-                v-model="editablePath"
-                class="flex-grow bg-transparent text-foreground p-0.5 outline-none min-w-[100px]"
-                data-focus-id="fileManagerPathInput"
-                @focus="handlePathInputFocus"
-                @input="handlePathInputChange"
-                @keydown="handlePathInputKeydown"
-                @blur="handlePathInput"
-              />
-              <PathHistoryDropdown
-                v-if="showPathHistoryDropdown"
-                ref="pathHistoryDropdownRef"
-                @pathSelected="handlePathSelectedFromDropdown"
-                @closeDropdown="closePathHistory"
-                class="left-0 right-0 top-full mt-1"
-              />
-            </div>
-        </div> <!-- End Wrapper -->
-       <!-- Main Actions Bar -->
-       <div class="flex items-center gap-2 flex-shrink-0">
-            <input type="file" ref="fileInputRef" @change="handleFileSelected" multiple class="hidden" />
-            <!-- 打开编辑器按钮 -->
-            <button
-              v-if="showPopupFileEditorBoolean"
-              @click="openPopupEditor"
-              :disabled="!currentSftpManager || !props.wsDeps.isConnected.value"
-              :title="t('fileManager.actions.openEditor', 'Open Popup Editor')"
-              class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-              :class="{ 'px-1.5': props.isMobile }"
-            >
-              <i class="far fa-edit text-sm"></i> <!-- 使用编辑图标 -->
-              <span v-if="!props.isMobile">{{ t('fileManager.actions.openEditor', 'Open Editor') }}</span> <!-- 添加 i18n key -->
-            </button>
-            <!-- 上传按钮 -->
-            <button
-              @click="triggerFileUpload"
-              :disabled="!currentSftpManager || !props.wsDeps.isConnected.value"
-              :title="t('fileManager.actions.uploadFile')"
-              class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-              :class="{ 'px-1.5': props.isMobile }"
-            >
-              <i class="fas fa-upload text-sm"></i>
-              <span v-if="!props.isMobile">{{ t('fileManager.actions.upload') }}</span>
-            </button>
-            <button
-              @click="handleNewFolderContextMenuClick"
-              :disabled="!currentSftpManager || !props.wsDeps.isConnected.value"
-              :title="t('fileManager.actions.newFolder')"
-              class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-              :class="{ 'px-1.5': props.isMobile }"
-            >
-              <i class="fas fa-folder-plus text-sm"></i>
-              <span v-if="!props.isMobile">{{ t('fileManager.actions.newFolder') }}</span>
-            </button>
-            <button
-              @click="handleNewFileContextMenuClick"
-              :disabled="!currentSftpManager || !props.wsDeps.isConnected.value"
-              :title="t('fileManager.actions.newFile')"
-              class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-              :class="{ 'px-1.5': props.isMobile }"
-            >
-              <i class="far fa-file-alt text-sm"></i>
-              <span v-if="!props.isMobile">{{ t('fileManager.actions.newFile') }}</span>
-            </button>
-            <!-- 多选模式切换按钮 (仅移动端) -->
-            <button
-              v-if="props.isMobile"
-              @click="toggleMultiSelectMode"
-              :title="isMultiSelectMode ? t('fileManager.actions.exitMultiSelect', 'Exit Multi-Select Mode') : t('fileManager.actions.multiSelect', 'Enter Multi-Select Mode')"
-              class="flex items-center gap-1 px-1.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              :class="{
-                'hover:bg-header hover:border-primary hover:text-primary': !isMultiSelectMode,
-                'bg-primary text-white border-primary': isMultiSelectMode
-              }"
-            >
-              <i class="fas fa-check-square text-sm"></i>
-            </button>
-         </div>
-     </div>
+    <!-- 顶部工具栏与路径导航组件 -->
+    <FileManagerHeader
+      ref="headerRef"
+      :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+      :is-connected="Boolean(props.wsDeps.isConnected.value)"
+      :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
+      :is-mobile="props.isMobile"
+      :is-multi-select-mode="isMultiSelectMode"
+      :show-popup-file-editor="showPopupFileEditorBoolean"
+      v-model:search-query="searchQuery"
+      v-model:is-search-active="isSearchActive"
+      @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
+      @cd-to-terminal="sendCdCommandToTerminal"
+      @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
+      @go-parent="handleGoParent"
+      @open-popup-editor="openPopupEditor"
+      @upload-files="triggerFileUpload"
+      @new-folder="handleNewFolderContextMenuClick"
+      @new-file="handleNewFileContextMenuClick"
+      @toggle-multi-select="toggleMultiSelectMode"
+      @keydown-search="handleKeydown"
+    />
 
 
     <!-- File List Container -->
@@ -1428,9 +1029,9 @@ const handleOpenEditorClick = () => {
           </tbody>
 
           <!-- File List State -->
-          <tbody v-else> <!-- Remove context menu handler from tbody -->
-            <!-- '..' Entry -->
-            <tr v-if="currentSftpManager?.currentPath.value !== '/'"
+          <tbody v-else>
+            <!-- '..' Entry (固定顶部，直观返回) -->
+            <tr v-if="hasParentLink"
                 class="transition-colors duration-150 cursor-pointer select-none"
                 :class="{
                     'bg-primary/10': selectedIndex === 0,
@@ -1452,16 +1053,22 @@ const handleOpenEditorClick = () => {
               <td class="border-b border-border align-middle"></td>
               <td class="border-b border-border align-middle"></td>
             </tr>
-            <!-- File Entries -->
-            <tr v-for="(item, index) in filteredFileList"
+
+            <!-- 虚拟滚动顶部垫片行 -->
+            <tr v-if="topPadding > 0" :style="{ height: `${topPadding}px` }">
+              <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+            </tr>
+
+            <!-- File Entries (虚拟切片渲染) -->
+            <tr v-for="({ item, index }) in visibleItems"
                 :key="item.filename"
                 :draggable="item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
                 @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
                 class="transition-colors duration-150 select-none"
                 :class="[
                     { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
-                    { 'bg-primary text-white': selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) },
-                    { 'hover:bg-header/50': !(selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex)) },
+                    { 'bg-primary text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) },
+                    { 'hover:bg-header/50': !(selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) },
                     { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                 ]"
                :data-filename="item.filename"
@@ -1478,21 +1085,26 @@ const handleOpenEditorClick = () => {
                       ? 'fas fa-link text-cyan-500'
                       : `${getFileIconClass(item.filename)} text-text-secondary`,
                   {
-                    'text-white': selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex)
+                    'text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)
                   }
                 ]"
                 :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
               </td>
               <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
               <td class="border-b border-border truncate align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
               ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
               <td class="border-b border-border truncate font-mono align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
               ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
               <td class="border-b border-border truncate align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (currentSftpManager?.currentPath.value !== '/' ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
               ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
+            </tr>
+
+            <!-- 虚拟滚动底部垫片行 -->
+            <tr v-if="bottomPadding > 0" :style="{ height: `${bottomPadding}px` }">
+              <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
             </tr>
           </tbody>
         </table>

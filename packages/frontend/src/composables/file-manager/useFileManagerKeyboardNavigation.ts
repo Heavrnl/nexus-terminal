@@ -10,6 +10,7 @@ export interface UseFileManagerKeyboardNavigationOptions {
 
   // 回调函数
   onEnterPress: (item: FileListItem) => void; // 按下 Enter 键时触发的回调
+  onScrollToIndex?: (index: number) => void; // 虚拟滚动对齐回调
 }
 
 export function useFileManagerKeyboardNavigation(options: UseFileManagerKeyboardNavigationOptions) {
@@ -18,6 +19,7 @@ export function useFileManagerKeyboardNavigation(options: UseFileManagerKeyboard
     currentPath,
     fileListContainerRef,
     onEnterPress,
+    onScrollToIndex,
   } = options;
 
   // --- 状态 Refs ---
@@ -31,22 +33,25 @@ export function useFileManagerKeyboardNavigation(options: UseFileManagerKeyboard
 
   // --- 滚动到选中项 ---
   const scrollToSelected = async () => {
+    if (selectedIndex.value < 0) return;
+    if (onScrollToIndex) {
+      onScrollToIndex(selectedIndex.value);
+      return;
+    }
+
     await nextTick();
-    if (selectedIndex.value < 0 || !fileListContainerRef.value) return;
+    if (!fileListContainerRef.value) return;
 
     const container = fileListContainerRef.value;
-    // 使用更通用的选择器获取所有数据行
-    const rows = container.querySelectorAll('tbody > tr'); // Changed selector
-    if (selectedIndex.value >= rows.length) return; // 索引超出范围
+    const rows = container.querySelectorAll('tbody > tr');
+    if (selectedIndex.value >= rows.length) return;
 
     const selectedRow = rows[selectedIndex.value] as HTMLElement;
-
     if (selectedRow) {
-        // 使用 scrollIntoView 使元素可见，滚动最小距离
-        selectedRow.scrollIntoView({
-            behavior: 'smooth', // 可以使用 'auto' 来实现即时滚动
-            block: 'nearest',
-        });
+      selectedRow.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
     }
   };
 
