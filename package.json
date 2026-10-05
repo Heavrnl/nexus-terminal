@@ -11,7 +11,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "pilot": "npm --prefix packages/frontend exec -- pilot"
   },
   "repository": {
     "type": "git",

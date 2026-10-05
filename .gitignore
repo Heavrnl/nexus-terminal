@@ -159,3 +159,7 @@ dist-scripts/
 /packages/backend/data
 electron-app/node_modules/
 electron-app/dist_electron/
+
+# vite-plugin-pilot runtime data
+.pilot/
+**/.pilot/
