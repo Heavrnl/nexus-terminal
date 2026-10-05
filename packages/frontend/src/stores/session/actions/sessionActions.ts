@@ -118,49 +118,58 @@ export const openNewSession = (
   console.log(`[SessionActions] 已创建新会话实例: ${newSessionId} for connection ${dbConnId}`);
 
   // +++ 在连接前设置 ssh:connected 处理器以更新 sessionId +++
-  const originalFrontendSessionIdForHandler = newSessionId; // 捕获初始ID给闭包
+  let currentSessionKey = newSessionId; // 动态跟踪当前会话的 Key
 
   const unregisterConnectedHandler = wsManager.onMessage('ssh:connected', (connectedPayload: any) => {
     const backendSID = connectedPayload.sessionId as string;
     const backendCID = String(connectedPayload.connectionId);
 
-    console.log(`[SessionActions/ssh:connected] 收到消息。前端初始SID: ${originalFrontendSessionIdForHandler}, 后端SID: ${backendSID}, 后端CID: ${backendCID}`);
+    console.log(`[SessionActions/ssh:connected] 收到消息。当前会话Key: ${currentSessionKey}, 后端SID: ${backendSID}, 后端CID: ${backendCID}`);
 
-    const sessionToUpdate = sessions.value.get(originalFrontendSessionIdForHandler);
+    // 优先通过当前记录的 key 查找；如果找不到，通过 wsManager 引用在 Map 中定位
+    let sessionToUpdate = sessions.value.get(currentSessionKey);
+    let matchedKey = currentSessionKey;
+
+    if (!sessionToUpdate) {
+      for (const [key, s] of sessions.value.entries()) {
+        if (s.wsManager === wsManager) {
+          sessionToUpdate = s;
+          matchedKey = key;
+          break;
+        }
+      }
+    }
 
     if (sessionToUpdate) {
       if (sessionToUpdate.connectionId !== backendCID) {
-        console.warn(`[SessionActions/ssh:connected] 后端CID ${backendCID} 与会话 ${originalFrontendSessionIdForHandler} 的期望CID ${sessionToUpdate.connectionId} 不匹配。终止SID更新。`);
+        console.warn(`[SessionActions/ssh:connected] 后端CID ${backendCID} 与会话 ${matchedKey} 的期望CID ${sessionToUpdate.connectionId} 不匹配。终止SID更新。`);
         return;
       }
 
-      if (backendSID && backendSID !== originalFrontendSessionIdForHandler) {
-        console.log(`[SessionActions/ssh:connected] 会话ID需要更新：从 ${originalFrontendSessionIdForHandler} 到 ${backendSID}。`);
+      if (backendSID && backendSID !== matchedKey) {
+        console.log(`[SessionActions/ssh:connected] 会话ID需要更新：从 ${matchedKey} 到 ${backendSID}。`);
         const currentSessions = new Map(sessions.value);
-        currentSessions.delete(originalFrontendSessionIdForHandler);
+        currentSessions.delete(matchedKey);
 
         sessionToUpdate.sessionId = backendSID; // 更新会话对象内部的sessionId
 
         currentSessions.set(backendSID, sessionToUpdate);
         sessions.value = currentSessions;
 
-        if (activeSessionId.value === originalFrontendSessionIdForHandler) {
+        if (activeSessionId.value === matchedKey) {
           activeSessionId.value = backendSID;
           console.log(`[SessionActions/ssh:connected] 活动会话ID已更新为 ${backendSID}。`);
         }
+        currentSessionKey = backendSID; // 更新闭包中的跟踪键，确保后续重连能继续正确定位
         console.log(`[SessionActions/ssh:connected] 会话存储已更新，新键为 ${backendSID}。`);
-      } else if (backendSID === originalFrontendSessionIdForHandler) {
-        console.log(`[SessionActions/ssh:connected] 后端SID ${backendSID} 与前端SID匹配。无需重新键控。`);
+      } else if (backendSID === matchedKey) {
+        console.log(`[SessionActions/ssh:connected] 后端SID ${backendSID} 与前端当前Key匹配。无需重新键控。`);
       } else {
         console.error(`[SessionActions/ssh:connected] 从后端收到的 ssh:connected 消息中缺少有效的sessionId。Payload:`, connectedPayload);
       }
     } else {
-      console.warn(`[SessionActions/ssh:connected] 当处理后端SID ${backendSID} 时，在存储中未找到对应的前端初始SID ${originalFrontendSessionIdForHandler} 的会话。`);
+      console.warn(`[SessionActions/ssh:connected] 当处理后端SID ${backendSID} 时，在存储中未找到对应的会话。`);
     }
-    // 此处理器主要用于初始的 sessionId 同步，通常在第一次收到 ssh:connected 后就可以注销，
-    // 以避免后续可能的意外重连消息再次触发此逻辑。
-    // 但如果 backendID 保证在 ssh:connected 时才首次确定，则保留可能也无害。
-    // 为简单起见，暂不在此处自动注销。注销将在 closeSession 中处理。
   });
 
   if (newSession.disposables) {

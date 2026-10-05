@@ -326,7 +326,18 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                 break;
                             }
 
-                            const activeSessionState = clientStates.get(sessionToMarkId);
+                            // 优先使用传入的 sessionToMarkId，若找不到则尝试使用当前连接绑定的 ws.sessionId 兜底
+                            let actualSessionId = sessionToMarkId;
+                            let activeSessionState = clientStates.get(actualSessionId);
+                            if ((!activeSessionState || !activeSessionState.sshClient || !activeSessionState.sshShellStream) && ws.sessionId) {
+                                const fallbackState = clientStates.get(ws.sessionId);
+                                if (fallbackState && fallbackState.sshClient && fallbackState.sshShellStream) {
+                                    console.log(`[SSH_MARK_FOR_SUSPEND] 传入的 ${sessionToMarkId} 未匹配到活动状态，自动回退到当前连接绑定的会话: ${ws.sessionId}`);
+                                    actualSessionId = ws.sessionId;
+                                    activeSessionState = fallbackState;
+                                }
+                            }
+
                             if (!activeSessionState || !activeSessionState.sshClient || !activeSessionState.sshShellStream) {
                                 console.error(`[SSH_MARK_FOR_SUSPEND] 找不到活动的SSH会话或其组件: ${sessionToMarkId}`);
                                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_MARKED_FOR_SUSPEND_ACK', payload: { sessionId: sessionToMarkId, success: false, error: '未找到要标记的活动SSH会话' } as SshMarkedForSuspendAck['payload'] }));
@@ -334,14 +345,14 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             }
 
                             if (activeSessionState.isMarkedForSuspend) {
-                                console.warn(`[SSH_MARK_FOR_SUSPEND] 会话 ${sessionToMarkId} 已被标记。`);
+                                console.warn(`[SSH_MARK_FOR_SUSPEND] 会话 ${actualSessionId} 已被标记。`);
                                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_MARKED_FOR_SUSPEND_ACK', payload: { sessionId: sessionToMarkId, success: true, error: '会话已被标记' } as SshMarkedForSuspendAck['payload'] }));
                                 break;
                             }
 
                             try {
                                 // 使用活动会话ID作为日志文件名的一部分
-                                const logPathSuffix = sessionToMarkId; // 使用原始 sessionId 作为日志文件名
+                                const logPathSuffix = actualSessionId; // 使用确定的 sessionId 作为日志文件名
                                 activeSessionState.isMarkedForSuspend = true;
                                 activeSessionState.suspendLogPath = logPathSuffix; // 存储日志标识符 (服务内部会拼接完整路径)
                                 
@@ -386,7 +397,17 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                 break;
                             }
 
-                            const activeSessionState = clientStates.get(sessionToUnmarkId);
+                            let actualSessionId = sessionToUnmarkId;
+                            let activeSessionState = clientStates.get(actualSessionId);
+                            if (!activeSessionState && ws.sessionId) {
+                                const fallbackState = clientStates.get(ws.sessionId);
+                                if (fallbackState) {
+                                    console.log(`[SSH_UNMARK_FOR_SUSPEND] 传入的 ${sessionToUnmarkId} 未匹配到活动状态，自动回退到当前连接绑定的会话: ${ws.sessionId}`);
+                                    actualSessionId = ws.sessionId;
+                                    activeSessionState = fallbackState;
+                                }
+                            }
+
                             if (!activeSessionState) {
                                 console.warn(`[SSH_UNMARK_FOR_SUSPEND] 未找到会话: ${sessionToUnmarkId}`);
                                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_UNMARKED_FOR_SUSPEND_ACK', payload: { ...ackPayloadBase, success: false, error: '未找到要取消标记的会话' } as SshUnmarkedForSuspendAck['payload'] }));
@@ -394,7 +415,7 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             }
 
                             if (!activeSessionState.isMarkedForSuspend) {
-                                console.warn(`[SSH_UNMARK_FOR_SUSPEND] 会话 ${sessionToUnmarkId} 并未被标记为待挂起。`);
+                                console.warn(`[SSH_UNMARK_FOR_SUSPEND] 会话 ${actualSessionId} 并未被标记为待挂起。`);
                                 // 即使未标记，也回复成功，因为最终状态是“未标记”
                                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_UNMARKED_FOR_SUSPEND_ACK', payload: { ...ackPayloadBase, success: true, error: '会话本就未标记' } as SshUnmarkedForSuspendAck['payload'] }));
                                 break;
