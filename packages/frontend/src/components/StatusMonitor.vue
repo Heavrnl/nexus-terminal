@@ -64,7 +64,7 @@
               :show-text="true"
               :text-inside="true"
               :format="formatPercentageText"
-              class="themed-progress flex-grow" :class="{ 'no-transition': isSwitchingSession }"
+              class="themed-progress flex-grow"
             />
             <!-- 移除 w-12 和 text-right 以实现左对齐 -->
           </div>
@@ -82,7 +82,7 @@
               :show-text="true"
               :text-inside="true"
               :format="formatPercentageText"
-              class="themed-progress flex-grow" :class="{ 'no-transition': isSwitchingSession }"
+              class="themed-progress flex-grow"
             />
             <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ memDisplay }}</span>
           </div>
@@ -100,7 +100,7 @@
               :show-text="true"
               :text-inside="true"
               :format="formatPercentageText"
-              class="themed-progress flex-grow" :class="{ 'no-transition': isSwitchingSession }"
+              class="themed-progress flex-grow"
             />
             <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ swapDisplay }}</span>
           </div>
@@ -118,7 +118,7 @@
               :show-text="true"
               :text-inside="true"
               :format="formatPercentageText"
-              class="themed-progress flex-grow" :class="{ 'no-transition': isSwitchingSession }"
+              class="themed-progress flex-grow"
             />
             <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ diskDisplay }}</span>
           </div>
@@ -169,7 +169,6 @@ const connectionsStore = useConnectionsStore(); // 实例化连接 store
 const uiNotificationsStore = useUiNotificationsStore(); // + 实例化通知 store
 const { sessions } = storeToRefs(sessionStore); // 获取响应式的 sessions
 const { statusMonitorShowIpBoolean } = storeToRefs(settingsStore); //  获取 IP 显示设置
-const isSwitchingSession = ref(false);
 
 const formatPercentageText = (percentage: number): string => `${Math.round(percentage)}%`;
 
@@ -247,15 +246,6 @@ watch(currentServerStatus, (newData) => {
     }
   }
 }, { immediate: true });
-
-// --- 监听 activeSessionId 变化以处理会话切换状态 ---
-watch(() => props.activeSessionId, async (newId, oldId) => {
-  if (newId !== oldId) {
-    isSwitchingSession.value = true;
-    await nextTick(); // 等待DOM更新（currentServerStatus已改变，displayPercent们会返回0）
-    isSwitchingSession.value = false;
-  }
-});
 
 // --- Computed properties for display ---
 const displayCpuModel = computed(() => {
@@ -354,9 +344,6 @@ const copyIpToClipboard = async (ipAddress: string | null) => {
 }
 ::v-deep(.themed-progress .el-progress-bar__inner) {
   transition: width 0.3s ease-in-out;
-}
-::v-deep(.themed-progress.no-transition .el-progress-bar__inner) {
-  transition: none !important;
 }
 ::v-deep(.el-progress-bar__innerText) {
   font-size: 10px;

@@ -121,17 +121,6 @@ const fitAndEmitResizeNow = (term: Terminal) => {
               const stableHeight = terminalRef.value.offsetHeight;
               emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight });
             }
-
-            
-            // 使用 nextTick 确保 fit() 的效果已反映，再触发 resize
-            nextTick(() => {
-                // 再次检查终端实例是否仍然存在
-                // terminalRef 现在指向内部容器
-                if (terminal && terminalRef.value) {
-                    console.log(`[Terminal ${props.sessionId}] Triggering window resize event after immediate fit.`);
-                    window.dispatchEvent(new Event('resize'));
-                }
-            });
         } else {
              console.log(`[Terminal ${props.sessionId}] Immediate fit skipped (container not visible or has no dimensions).`);
         }
@@ -354,18 +343,12 @@ onMounted(() => {
                 } catch (e) {
                      console.warn(`[Terminal ${props.sessionId}] Error observing element:`, e);
                 }
-                // Perform fit after a delay to ensure visibility and layout stability
+                // 在 DOM 更新后立即执行 fit 并聚焦，消除 50ms 延迟
                 nextTick(() => {
-                    setTimeout(() => {
-                        // 检查内部容器 terminalRef
-                        if (props.isActive && terminal && terminalRef.value && terminalRef.value.offsetHeight > 0) {
-                            fitAndEmitResizeNow(terminal);
-                            // Also ensure focus when becoming active
-                            terminal.focus();
-                        } else {
-                            console.log(`[Terminal ${props.sessionId}] Skipped delayed fit (inactive, destroyed, or not visible).`);
-                        }
-                    }, 50); // 50ms delay
+                    if (props.isActive && terminal && terminalRef.value && terminalRef.value.offsetHeight > 0) {
+                        fitAndEmitResizeNow(terminal);
+                        terminal.focus();
+                    }
                 });
             } else {
                 // --- Become Inactive ---
