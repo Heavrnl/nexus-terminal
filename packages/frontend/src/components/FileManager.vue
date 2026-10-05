@@ -1019,18 +1019,9 @@ defineExpose({ focusSearchInput, startPathEdit });
               </tr>
           </tbody>
 
-          <!-- Empty Directory State -->
-          <tbody v-else-if="filteredFileList.length === 0">
-               <tr>
-                   <td :colspan="5" class="px-4 py-6 text-center text-text-secondary italic">
-                     {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}
-                   </td>
-               </tr>
-          </tbody>
-
           <!-- File List State -->
           <tbody v-else>
-            <!-- '..' Entry (固定顶部，直观返回) -->
+            <!-- '..' Entry (固定顶部，直观返回：只要当前不是根目录，即便空文件夹也常驻保留) -->
             <tr v-if="hasParentLink"
                 class="transition-colors duration-150 cursor-pointer select-none"
                 :class="{
@@ -1054,58 +1045,67 @@ defineExpose({ focusSearchInput, startPathEdit });
               <td class="border-b border-border align-middle"></td>
             </tr>
 
-            <!-- 虚拟滚动顶部垫片行 -->
-            <tr v-if="topPadding > 0" :style="{ height: `${topPadding}px` }">
-              <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+            <!-- Empty Directory / No Search Results Row (空文件夹或搜索无结果时在 .. 之下展示提示) -->
+            <tr v-if="filteredFileList.length === 0">
+              <td :colspan="5" class="px-4 py-8 text-center text-text-secondary italic">
+                {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}
+              </td>
             </tr>
 
             <!-- File Entries (虚拟切片渲染) -->
-            <tr v-for="({ item, index }) in visibleItems"
-                :key="item.filename"
-                :draggable="item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
-                @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
-                class="transition-colors duration-150 select-none"
-                :class="[
-                    { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
-                    { 'bg-primary text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) },
-                    { 'hover:bg-header/50': !(selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) },
-                    { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
-                ]"
-               :data-filename="item.filename"
-               @contextmenu.prevent.stop="showContextMenu($event, item)"
-               @dragover.prevent="handleDragOverRow(item, $event)"
-               @dragleave="handleDragLeaveRow(item)"
-               @drop.prevent="handleDropOnRow(item, $event)">
-              <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                <i :class="[
-                  'transition-colors duration-150',
-                  item.attrs.isDirectory
-                    ? 'fas fa-folder text-primary'
-                    : item.attrs.isSymbolicLink
-                      ? 'fas fa-link text-cyan-500'
-                      : `${getFileIconClass(item.filename)} text-text-secondary`,
-                  {
-                    'text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)
-                  }
-                ]"
-                :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
-              </td>
-              <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
-              <td class="border-b border-border truncate align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
-              <td class="border-b border-border truncate font-mono align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
-              <td class="border-b border-border truncate align-middle" :class="[
-                selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-              ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
-            </tr>
+            <template v-else>
+              <!-- 虚拟滚动顶部垫片行 -->
+              <tr v-if="topPadding > 0" :style="{ height: `${topPadding}px` }">
+                <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+              </tr>
 
-            <!-- 虚拟滚动底部垫片行 -->
-            <tr v-if="bottomPadding > 0" :style="{ height: `${bottomPadding}px` }">
-              <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
-            </tr>
+              <tr v-for="({ item, index }) in visibleItems"
+                  :key="item.filename"
+                  :draggable="item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
+                  @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
+                  class="transition-colors duration-150 select-none"
+                  :class="[
+                      { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
+                      { 'bg-primary text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) },
+                      { 'hover:bg-header/50': !(selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) },
+                      { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
+                  ]"
+                 :data-filename="item.filename"
+                 @contextmenu.prevent.stop="showContextMenu($event, item)"
+                 @dragover.prevent="handleDragOverRow(item, $event)"
+                 @dragleave="handleDragLeaveRow(item)"
+                 @drop.prevent="handleDropOnRow(item, $event)">
+                <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
+                  <i :class="[
+                    'transition-colors duration-150',
+                    item.attrs.isDirectory
+                      ? 'fas fa-folder text-primary'
+                      : item.attrs.isSymbolicLink
+                        ? 'fas fa-link text-cyan-500'
+                        : `${getFileIconClass(item.filename)} text-text-secondary`,
+                    {
+                      'text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)
+                    }
+                  ]"
+                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
+                </td>
+                <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
+                <td class="border-b border-border truncate align-middle" :class="[
+                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
+                <td class="border-b border-border truncate font-mono align-middle" :class="[
+                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
+                <td class="border-b border-border truncate align-middle" :class="[
+                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
+              </tr>
+
+              <!-- 虚拟滚动底部垫片行 -->
+              <tr v-if="bottomPadding > 0" :style="{ height: `${bottomPadding}px` }">
+                <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+              </tr>
+            </template>
           </tbody>
         </table>
         <!-- Removed separate loading/empty divs -->
