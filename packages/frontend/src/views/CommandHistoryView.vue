@@ -7,7 +7,7 @@
         <input
           type="text"
           :placeholder="$t('commandHistory.searchPlaceholder', '搜索历史记录...')"
-          :value="searchTerm"
+          :value="localSearchTerm"
           data-focus-id="commandHistorySearch"
           @input="updateSearchTerm($event)"
           @keydown="handleSearchInputKeydown"
@@ -21,8 +21,8 @@
         </button>
       </div>
       <!-- List Area -->
-      <div class="flex-grow overflow-y-auto p-2">
-<!-- Loading State (Only show if loading AND no history is displayed yet) -->
+      <div class="flex-grow overflow-y-auto p-2" ref="scrollContainerRef" @scroll="handleListScroll">
+        <!-- Loading State (Only show if loading AND no history is displayed yet) -->
         <div v-if="isLoading && filteredHistory.length === 0" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
           <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
           <p>{{ $t('commandHistory.loading', '加载中...') }}</p>
@@ -35,7 +35,7 @@
         <!-- History List -->
         <ul ref="historyListRef" v-else class="list-none p-0 m-0">
           <li
-            v-for="(entry, index) in filteredHistory"
+            v-for="(entry, index) in displayedHistory"
             :key="entry.id"
             class="group flex justify-between items-center px-3 py-2.5 mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
             :class="{ 'bg-primary/20 font-medium': index === storeSelectedIndex }"
@@ -113,13 +113,25 @@ const commandHistoryContextMenuVisible = ref(false);
 const commandHistoryContextMenuPosition = ref({ x: 0, y: 0 });
 const commandHistoryContextTargetEntry = ref<CommandHistoryEntryFE | null>(null);
 
+const scrollContainerRef = ref<HTMLDivElement | null>(null);
+const localSearchTerm = ref(commandHistoryStore.searchTerm);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const displayLimit = ref(80);
+
 // --- 从 Store 获取状态和 Getter ---
 const searchTerm = computed(() => commandHistoryStore.searchTerm);
-// 使用 store 的 filteredHistory getter
 const filteredHistory = computed(() => commandHistoryStore.filteredHistory);
+const displayedHistory = computed(() => filteredHistory.value.slice(0, displayLimit.value));
 const isLoading = computed(() => commandHistoryStore.isLoading);
 const { selectedIndex: storeSelectedIndex } = storeToRefs(commandHistoryStore); // Get selectedIndex reactively
 
+// 监听搜索词变化重置分页限制
+watch(searchTerm, (newVal) => {
+  if (newVal !== localSearchTerm.value) {
+    localSearchTerm.value = newVal;
+  }
+  displayLimit.value = 80;
+});
 
 // --- 生命周期钩子 ---
 onMounted(() => {
@@ -135,6 +147,10 @@ onMounted(() => {
   unregisterFocus = focusSwitcherStore.registerFocusAction('commandHistorySearch', focusSearchInput);
 });
 onBeforeUnmount(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
   // +++ 调用保存的注销函数 +++
   if (unregisterFocus) {
     unregisterFocus();
@@ -143,11 +159,27 @@ onBeforeUnmount(() => {
 
 // --- 事件处理 ---
 
-// 更新搜索词
+// 更新搜索词（带 120ms 防抖，避免打字高频过滤主线程掉帧）
 const updateSearchTerm = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  commandHistoryStore.setSearchTerm(target.value);
-  // selectedIndex.value = -1; // REMOVED: Store handles resetting index
+  localSearchTerm.value = target.value;
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(() => {
+    commandHistoryStore.setSearchTerm(localSearchTerm.value);
+    searchDebounceTimer = null;
+  }, 120);
+};
+
+// 列表滚动到底部时自动增量加载更多历史 DOM
+const handleListScroll = (event: Event) => {
+  const el = event.target as HTMLElement;
+  if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+    if (displayLimit.value < filteredHistory.value.length) {
+      displayLimit.value += 50;
+    }
+  }
 };
 
 // 滚动到选中的项目
@@ -169,6 +201,9 @@ const scrollToSelected = async (index: number) => { // Accept index as argument
 
 // Watch for changes in the store's selectedIndex and scroll
 watch(storeSelectedIndex, (newIndex) => {
+  if (newIndex >= displayLimit.value) {
+    displayLimit.value = newIndex + 20;
+  }
   scrollToSelected(newIndex);
 });
 
@@ -190,6 +225,11 @@ const handleSearchInputKeydown = (event: KeyboardEvent) => {
       break;
     case 'Enter':
       event.preventDefault();
+      if (searchDebounceTimer) {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+        commandHistoryStore.setSearchTerm(localSearchTerm.value);
+      }
       if (storeSelectedIndex.value >= 0 && storeSelectedIndex.value < history.length) {
         executeCommand(history[storeSelectedIndex.value].command);
       }

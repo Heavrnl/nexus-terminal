@@ -42,6 +42,15 @@ const initAppearanceSettingsTable = async (db: Database): Promise<void> => {
 };
 
 
+const initCommandHistoryTable = async (db: Database): Promise<void> => {
+    try {
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_command_history_command ON command_history(command);`);
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_command_history_timestamp ON command_history(timestamp DESC);`);
+    } catch (err: any) {
+        console.error('[DB Init] 创建 command_history 索引失败:', err.message);
+    }
+};
+
 // --- Table Definitions Registry ---
 
 /**
@@ -71,7 +80,11 @@ export const tableDefinitions: TableDefinition[] = [
 
     // Other utilities
     { name: 'ip_blacklist', sql: schemaSql.createIpBlacklistTableSQL },
-    { name: 'command_history', sql: schemaSql.createCommandHistoryTableSQL },
+    {
+        name: 'command_history',
+        sql: schemaSql.createCommandHistoryTableSQL,
+        init: initCommandHistoryTable
+    },
     { name: 'path_history', sql: schemaSql.createPathHistoryTableSQL },
     { name: 'quick_commands', sql: schemaSql.createQuickCommandsTableSQL },
     { name: 'favorite_paths', sql: schemaSql.createFavoritePathsTableSQL }, // Added Favorite Paths table

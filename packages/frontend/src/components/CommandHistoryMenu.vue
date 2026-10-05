@@ -4,7 +4,7 @@
       <input
         type="text"
         :placeholder="$t('commandHistory.searchPlaceholder', '搜索历史记录...')"
-        :value="searchTerm"
+        :value="localSearchTerm"
         @input="updateSearchTerm($event)"
         class="flex-grow px-2 py-1 border border-border rounded-sm bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
       />
@@ -13,9 +13,9 @@
       </button>
     </div>
     <div class="max-h-80 overflow-y-auto" ref="listContainer"> <!-- Adjusted max-height -->
-      <ul v-if="filteredHistory.length > 0" class="list-none p-0 m-0">
+      <ul v-if="displayedHistory.length > 0" class="list-none p-0 m-0">
         <li
-          v-for="entry in filteredHistory"
+          v-for="entry in displayedHistory"
           :key="entry.id"
           class="group flex justify-between items-center px-3 py-2 cursor-pointer border-b border-border last:border-b-0 hover:bg-header/50 transition-colors duration-150"
           @mouseover="hoveredItemId = entry.id"
@@ -44,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useCommandHistoryStore, CommandHistoryEntryFE } from '../stores/commandHistory.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useI18n } from 'vue-i18n';
@@ -57,10 +57,20 @@ const { showConfirmDialog } = useConfirmDialog();
 const hoveredItemId = ref<number | null>(null);
 const listContainer = ref<HTMLElement | null>(null);
 
+const localSearchTerm = ref(commandHistoryStore.searchTerm);
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 // --- 从 Store 获取状态和 Getter ---
 const searchTerm = computed(() => commandHistoryStore.searchTerm);
 const filteredHistory = computed(() => commandHistoryStore.filteredHistory);
+const displayedHistory = computed(() => filteredHistory.value.slice(0, 60));
 const isLoading = computed(() => commandHistoryStore.isLoading);
+
+watch(searchTerm, (newVal) => {
+  if (newVal !== localSearchTerm.value) {
+    localSearchTerm.value = newVal;
+  }
+});
 
 // --- 事件定义 ---
 // 定义组件发出的事件
@@ -73,12 +83,26 @@ onMounted(() => {
   commandHistoryStore.fetchHistory(); // 组件挂载时获取历史记录
 });
 
+onBeforeUnmount(() => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+});
+
 // --- 事件处理 ---
 
-// 更新搜索词 (防抖可以后续优化)
+// 更新搜索词 (带 120ms 防抖)
 const updateSearchTerm = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  commandHistoryStore.setSearchTerm(target.value);
+  localSearchTerm.value = target.value;
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  searchDebounceTimer = setTimeout(() => {
+    commandHistoryStore.setSearchTerm(localSearchTerm.value);
+    searchDebounceTimer = null;
+  }, 120);
 };
 
 // 确认清空所有历史记录

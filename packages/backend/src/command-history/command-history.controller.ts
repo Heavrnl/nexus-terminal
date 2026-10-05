@@ -13,8 +13,13 @@ export const addCommand = async (req: Request, res: Response): Promise<void> => 
     }
 
     try {
-        const newId = await CommandHistoryService.addCommandHistory(command);
-        res.status(201).json({ id: newId, message: '命令已添加到历史记录' });
+        const entry = await CommandHistoryService.addCommandHistory(command);
+        res.status(201).json({
+            id: entry.id,
+            command: entry.command,
+            timestamp: entry.timestamp,
+            message: '命令已添加到历史记录'
+        });
     } catch (error: any) {
         console.error('添加命令历史记录控制器出错:', error);
         res.status(500).json({ message: error.message || '无法添加命令历史记录' });
@@ -26,7 +31,9 @@ export const addCommand = async (req: Request, res: Response): Promise<void> => 
  */
 export const getAllCommands = async (req: Request, res: Response): Promise<void> => {
     try {
-        const history = await CommandHistoryService.getAllCommandHistory();
+        const limitParam = req.query.limit ? parseInt(req.query.limit as string, 10) : 500;
+        const limit = isNaN(limitParam) || limitParam <= 0 ? 500 : Math.min(limitParam, 2000);
+        const history = await CommandHistoryService.getAllCommandHistory(limit);
         // 注意：前端要求最新在下，最旧在上。Repository 返回的是升序（旧->新），符合要求。
         res.status(200).json(history);
     } catch (error: any) {
