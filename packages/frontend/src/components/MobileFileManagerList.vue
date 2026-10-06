@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FileListItem } from '../types/sftp.types';
 import { getFileIconClass } from '../utils/fileIcons';
@@ -56,6 +56,36 @@ const containerHeight = ref(500);
 // 单行卡片基准高度 (px)：紧凑模式 42px，详细模式 58px
 const CARD_HEIGHT = computed(() => (props.isCompact ? 42 : 58));
 const BUFFER_SIZE = 8;
+
+// 正在进入的目标文件夹或上级目录（用于即时显示加载动画）
+const navigatingFolderName = ref<string | null>(null);
+const isNavigatingParent = ref(false);
+
+// 监听路径变动：重置滚动条至最顶部，并清除单项加载状态
+watch(
+  () => props.currentPath,
+  () => {
+    navigatingFolderName.value = null;
+    isNavigatingParent.value = false;
+    scrollTop.value = 0;
+    nextTick(() => {
+      if (containerRef.value) {
+        containerRef.value.scrollTop = 0;
+      }
+    });
+  }
+);
+
+// 监听全局加载结束：清除单项加载指示
+watch(
+  () => props.isLoading,
+  (loading) => {
+    if (!loading) {
+      navigatingFolderName.value = null;
+      isNavigatingParent.value = false;
+    }
+  }
+);
 
 const updateContainerDimensions = () => {
   if (containerRef.value) {
@@ -164,6 +194,12 @@ const handleTouchEnd = () => {
   }
 };
 
+const handleOpenParent = () => {
+  if (props.isLoading) return;
+  isNavigatingParent.value = true;
+  emit('open-parent');
+};
+
 // 点击条目
 const handleRowClick = (item: FileListItem) => {
   if (isLongPressTriggered) {
@@ -174,6 +210,7 @@ const handleRowClick = (item: FileListItem) => {
   if (props.isMultiSelectMode) {
     // 多选模式下：文件夹点击主体直接进入该目录，需要选择文件夹时轻触左侧复选框
     if (item.attrs.isDirectory) {
+      navigatingFolderName.value = item.filename;
       emit('item-click', item);
       return;
     }
@@ -182,6 +219,10 @@ const handleRowClick = (item: FileListItem) => {
     return;
   }
 
+  // 常规模式下：如果是文件夹，设置加载态
+  if (item.attrs.isDirectory) {
+    navigatingFolderName.value = item.filename;
+  }
   emit('item-click', item);
 };
 
@@ -221,24 +262,36 @@ const handleToggleSelectAll = () => {
         :class="[
           isCompact
             ? 'gap-2.5 px-3 py-1.5 rounded-lg bg-header/40 hover:bg-header/80 active:bg-primary/10'
-            : 'gap-3 px-3.5 py-2.5 rounded-xl bg-header/40 hover:bg-header/80 active:bg-primary/10'
+            : 'gap-3 px-3.5 py-2.5 rounded-xl bg-header/40 hover:bg-header/80 active:bg-primary/10',
+          { 'ring-1 ring-primary/40 bg-primary/10 opacity-80': isNavigatingParent }
         ]"
-        @click="emit('open-parent')"
+        @click="handleOpenParent"
       >
         <div
           class="rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0"
           :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
         >
-          <i class="fas fa-level-up-alt text-primary" :class="isCompact ? 'text-sm' : 'text-base'"></i>
+          <i
+            v-if="!isNavigatingParent"
+            class="fas fa-level-up-alt text-primary"
+            :class="isCompact ? 'text-sm' : 'text-base'"
+          ></i>
+          <i
+            v-else
+            class="fas fa-circle-notch fa-spin text-primary"
+            :class="isCompact ? 'text-xs' : 'text-sm'"
+          ></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-[13px] font-medium text-foreground tracking-tight leading-tight">
-            {{ t('fileManager.parentDirectory', '返回上一级') }}
+          <div class="text-[13px] font-medium text-foreground tracking-tight leading-tight flex items-center gap-1.5">
+            <span>{{ t('fileManager.parentDirectory', '返回上一级') }}</span>
+            <span v-if="isNavigatingParent" class="text-[10px] text-primary font-normal animate-pulse">进入中...</span>
           </div>
           <div v-if="!isCompact" class="text-[11px] text-text-secondary font-mono">..</div>
         </div>
         <div class="text-text-secondary/50 text-xs">
-          <i class="fas fa-chevron-up"></i>
+          <i v-if="!isNavigatingParent" class="fas fa-chevron-up"></i>
+          <i v-else class="fas fa-spinner fa-spin text-primary"></i>
         </div>
       </div>
 
@@ -264,105 +317,124 @@ const handleToggleSelectAll = () => {
         </p>
       </div>
 
-      <!-- 虚拟滚动顶部垫片 -->
-      <div v-if="virtualRange.topPadding > 0" :style="{ height: `${virtualRange.topPadding}px` }"></div>
+      <!-- 文件列表容器（切换目录时平滑入场） -->
+      <div :key="currentPath" class="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <!-- 虚拟滚动顶部垫片 -->
+        <div v-if="virtualRange.topPadding > 0" :style="{ height: `${virtualRange.topPadding}px` }"></div>
 
-      <!-- 文件与文件夹卡片流 -->
-      <div
-        v-for="({ item }) in virtualRange.visibleList"
-        :key="item.filename"
-        class="group w-full flex items-center transition-all duration-150 cursor-pointer border"
-        :class="[
-          isCompact ? 'gap-2.5 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl',
-          selectedItems.has(item.filename)
-            ? 'bg-primary/15 border-primary/50 text-foreground shadow-2xs'
-            : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground'
-        ]"
-        @click="handleRowClick(item)"
-        @touchstart="handleTouchStart(item, $event)"
-        @touchmove="handleTouchMove($event)"
-        @touchend="handleTouchEnd"
-        @touchcancel="handleTouchEnd"
-      >
-        <!-- 多选模式下的复选框 (加大独立触控热区，防误触) -->
+        <!-- 文件与文件夹卡片流 -->
         <div
-          v-if="isMultiSelectMode"
-          class="shrink-0 flex items-center justify-center w-8 h-8 -ml-1 cursor-pointer"
-          @click.stop="emit('toggle-select', item)"
-          title="选择此项"
+          v-for="({ item }) in virtualRange.visibleList"
+          :key="item.filename"
+          class="group w-full flex items-center transition-all duration-150 cursor-pointer border"
+          :class="[
+            isCompact ? 'gap-2.5 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl',
+            selectedItems.has(item.filename)
+              ? 'bg-primary/15 border-primary/50 text-foreground shadow-2xs'
+              : navigatingFolderName === item.filename
+                ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/40 text-foreground'
+                : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground'
+          ]"
+          @click="handleRowClick(item)"
+          @touchstart="handleTouchStart(item, $event)"
+          @touchmove="handleTouchMove($event)"
+          @touchend="handleTouchEnd"
+          @touchcancel="handleTouchEnd"
         >
+          <!-- 多选模式下的复选框 (加大独立触控热区，防误触) -->
           <div
-            class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all"
-            :class="selectedItems.has(item.filename) ? 'bg-primary border-primary text-white scale-105 shadow-xs' : 'border-border/80 bg-header/60'"
+            v-if="isMultiSelectMode"
+            class="shrink-0 flex items-center justify-center w-8 h-8 -ml-1 cursor-pointer"
+            @click.stop="emit('toggle-select', item)"
+            title="选择此项"
           >
-            <i v-if="selectedItems.has(item.filename)" class="fas fa-check text-[10px]"></i>
+            <div
+              class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all"
+              :class="selectedItems.has(item.filename) ? 'bg-primary border-primary text-white scale-105 shadow-xs' : 'border-border/80 bg-header/60'"
+            >
+              <i v-if="selectedItems.has(item.filename)" class="fas fa-check text-[10px]"></i>
+            </div>
           </div>
-        </div>
 
-        <!-- 文件/文件夹图标 -->
-        <div
-          class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0"
-          :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
-        >
-          <i
-            :class="[
-              item.attrs.isDirectory ? 'fas fa-folder text-amber-400' :
-              item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400' :
-              `${getFileIconClass(item.filename)}`,
-              isCompact ? (item.attrs.isDirectory ? 'text-base' : 'text-sm') : (item.attrs.isDirectory ? 'text-lg' : 'text-base')
-            ]"
-          ></i>
-        </div>
-
-        <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
-        <div class="min-w-0 flex-1 flex flex-col justify-center">
-          <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight">
-            {{ item.filename }}
-          </div>
-          <!-- 详细模式下显示的日期、权限与类型 -->
-          <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
-            <span v-if="item.attrs.isFile" class="font-mono text-text-secondary/90">
-              {{ formatFileSize(item.attrs.size) }}
-            </span>
-            <span v-else class="text-primary font-medium">
-              文件夹
-            </span>
-            <span class="text-text-secondary/40">•</span>
-            <span class="font-mono text-text-secondary/80">
-              {{ formatFileDate(item.attrs.mtime) }}
-            </span>
-            <span class="text-text-secondary/40">•</span>
-            <span class="font-mono text-text-secondary/70">
-              {{ formatFileMode(item.attrs.mode) }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 右侧：进入引导或更多操作按钮 -->
-        <div class="flex items-center shrink-0 gap-1.5">
-          <!-- 多选模式下文件夹右侧显示“进入”引导标签 -->
+          <!-- 文件/文件夹图标 -->
           <div
-            v-if="isMultiSelectMode && item.attrs.isDirectory"
-            class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium shrink-0 pointer-events-none"
+            class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0"
+            :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
           >
-            <span>进入</span>
-            <i class="fas fa-chevron-right text-[9px]"></i>
+            <i
+              v-if="navigatingFolderName === item.filename"
+              class="fas fa-circle-notch fa-spin text-amber-400"
+              :class="isCompact ? 'text-base' : 'text-lg'"
+            ></i>
+            <i
+              v-else
+              :class="[
+                item.attrs.isDirectory ? 'fas fa-folder text-amber-400' :
+                item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400' :
+                `${getFileIconClass(item.filename)}`,
+                isCompact ? (item.attrs.isDirectory ? 'text-base' : 'text-sm') : (item.attrs.isDirectory ? 'text-lg' : 'text-base')
+              ]"
+            ></i>
           </div>
 
-          <!-- 更多操作按钮 -->
-          <button
-            class="rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
-            :class="isCompact ? 'w-7 h-7' : 'w-8 h-8'"
-            :title="t('fileManager.moreActions', '操作菜单')"
-            @click="handleMoreClick(item, $event)"
-          >
-            <i class="fas fa-ellipsis-v text-xs"></i>
-          </button>
+          <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
+          <div class="min-w-0 flex-1 flex flex-col justify-center">
+            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight flex items-center gap-1.5">
+              <span class="truncate">{{ item.filename }}</span>
+              <span v-if="navigatingFolderName === item.filename" class="text-[10px] text-primary font-normal animate-pulse shrink-0">进入中...</span>
+            </div>
+            <!-- 详细模式下显示的日期、权限与类型 -->
+            <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
+              <span v-if="item.attrs.isFile" class="font-mono text-text-secondary/90">
+                {{ formatFileSize(item.attrs.size) }}
+              </span>
+              <span v-else class="text-primary font-medium">
+                文件夹
+              </span>
+              <span class="text-text-secondary/40">•</span>
+              <span class="font-mono text-text-secondary/80">
+                {{ formatFileDate(item.attrs.mtime) }}
+              </span>
+              <span class="text-text-secondary/40">•</span>
+              <span class="font-mono text-text-secondary/70">
+                {{ formatFileMode(item.attrs.mode) }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 右侧：进入引导或更多操作按钮 -->
+          <div class="flex items-center shrink-0 gap-1.5">
+            <!-- 正在进入的加载指示器 -->
+            <div v-if="navigatingFolderName === item.filename" class="w-6 h-6 flex items-center justify-center text-primary">
+              <i class="fas fa-spinner fa-spin text-xs"></i>
+            </div>
+
+            <template v-else>
+              <!-- 多选模式下文件夹右侧显示“进入”引导标签 -->
+              <div
+                v-if="isMultiSelectMode && item.attrs.isDirectory"
+                class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium shrink-0 pointer-events-none"
+              >
+                <span>进入</span>
+                <i class="fas fa-chevron-right text-[9px]"></i>
+              </div>
+
+              <!-- 更多操作按钮 -->
+              <button
+                class="rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
+                :class="isCompact ? 'w-7 h-7' : 'w-8 h-8'"
+                :title="t('fileManager.moreActions', '操作菜单')"
+                @click="handleMoreClick(item, $event)"
+              >
+                <i class="fas fa-ellipsis-v text-xs"></i>
+              </button>
+            </template>
+          </div>
         </div>
+
+        <!-- 虚拟滚动底部垫片 -->
+        <div v-if="virtualRange.bottomPadding > 0" :style="{ height: `${virtualRange.bottomPadding}px` }"></div>
       </div>
-
-      <!-- 虚拟滚动底部垫片 -->
-      <div v-if="virtualRange.bottomPadding > 0" :style="{ height: `${virtualRange.bottomPadding}px` }"></div>
     </div>
 
     <!-- 底部悬浮多选工具坞 (Floating Selection Dock) -->
@@ -461,21 +533,18 @@ const handleToggleSelectAll = () => {
             <div class="text-xs font-semibold text-foreground truncate leading-tight">
               {{ clipboardOperation === 'cut' ? '已剪切' : '已复制' }} {{ clipboardCount || 1 }} 个项目
             </div>
-            <div class="text-[10px] text-text-secondary truncate font-mono mt-0.5 leading-tight">
-              轻触「粘贴至此」完成写入
-            </div>
           </div>
         </div>
 
-        <!-- 右侧动作：粘贴至此与取消 -->
+        <!-- 右侧动作：粘贴与取消 -->
         <div class="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
-            class="h-8 px-3 rounded-xl bg-primary text-white text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-md cursor-pointer"
+            class="h-8 px-3.5 rounded-xl bg-primary text-white text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-md cursor-pointer"
             @click="emit('batch-paste')"
           >
             <i class="fas fa-paste text-xs"></i>
-            <span>粘贴至此</span>
+            <span>粘贴</span>
           </button>
           <button
             type="button"

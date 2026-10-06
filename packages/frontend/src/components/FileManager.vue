@@ -526,6 +526,12 @@ const handleMobileSingleDelete = (item: FileListItem) => {
   handleDeleteSelectedClick();
 };
 
+// 移动端执行粘贴：执行粘贴后清空剪贴板，自动关闭底部剪贴坞
+const handleMobilePaste = async () => {
+  await handlePaste();
+  clearClipboard();
+};
+
 const handleMobileCdTerminal = (path: string) => {
   const command = `cd "${path}"\n`;
   const activeSession = sessionStore.activeSession;
@@ -1114,7 +1120,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         @batch-download="handleMobileBatchDownload"
         @batch-copy="handleMobileBatchCopy"
         @batch-cut="handleMobileBatchCut"
-        @batch-paste="handlePaste"
+        @batch-paste="handleMobilePaste"
         @batch-delete="handleDeleteSelectedClick"
         @cancel-clipboard="clearClipboard"
         @exit-multi-select="() => { isMultiSelectMode = false; clearSelection(); }"
