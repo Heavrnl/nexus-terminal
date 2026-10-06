@@ -11,6 +11,8 @@ import QuickCommandsModal from './QuickCommandsModal.vue';
 import CommandHistoryModal from './CommandHistoryModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
 import MobileToolbarConfigModal from './MobileToolbarConfigModal.vue';
+import MobileStatusMonitorModal from './MobileStatusMonitorModal.vue';
+import MobileDockerManagerModal from './MobileDockerManagerModal.vue';
 import { useMobileToolbarConfig } from '../composables/useMobileToolbarConfig';
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useLayoutStore } from '../stores/layout.store';
@@ -67,6 +69,8 @@ const showQuickCommands = ref(false); // +++ Add state for modal visibility +++
 const showCommandHistoryModal = ref(false); // +++ Add state for command history modal +++
 const showSuspendedSshSessionsModal = ref(false); // +++ Add state for suspended SSH sessions modal +++
 const showToolbarConfigModal = ref(false); // +++ 移动端自定义工具栏抽屉可见性 +++
+const showMobileStatusMonitorModal = ref(false); // +++ 移动端状态监视器抽屉可见性 +++
+const showMobileDockerManagerModal = ref(false); // +++ 移动端 Docker 管理器抽屉可见性 +++
 
 const { activeItemIds } = useMobileToolbarConfig();
 
@@ -507,6 +511,26 @@ const getBarButtonClass = (isActive: boolean = false) => {
           <i class="fas fa-edit text-base"></i>
         </button>
 
+        <!-- 状态监视器 -->
+        <button
+          v-else-if="itemId === 'statusMonitor'"
+          @click="showMobileStatusMonitorModal = true"
+          :class="getBarButtonClass(showMobileStatusMonitorModal)"
+          :title="t('statusMonitor.title', '状态监视')"
+        >
+          <i class="fas fa-tachometer-alt text-base"></i>
+        </button>
+
+        <!-- Docker 管理器 -->
+        <button
+          v-else-if="itemId === 'dockerManager'"
+          @click="showMobileDockerManagerModal = true"
+          :class="getBarButtonClass(showMobileDockerManagerModal)"
+          :title="t('dockerManager.title', 'Docker 管理器')"
+        >
+          <i class="fab fa-docker text-base"></i>
+        </button>
+
         <!-- 显隐导航栏 -->
         <button
           v-else-if="itemId === 'toggleHeader'"
@@ -677,6 +701,19 @@ const getBarButtonClass = (isActive: boolean = false) => {
     v-if="props.isMobile"
     :is-visible="showToolbarConfigModal"
     @close="showToolbarConfigModal = false"
+  />
+  <!-- +++ Mobile Status Monitor Modal Instance +++ -->
+  <MobileStatusMonitorModal
+    v-if="props.isMobile"
+    :is-visible="showMobileStatusMonitorModal"
+    :active-session-id="activeSessionId"
+    @close="showMobileStatusMonitorModal = false"
+  />
+  <!-- +++ Mobile Docker Manager Modal Instance +++ -->
+  <MobileDockerManagerModal
+    v-if="props.isMobile"
+    :is-visible="showMobileDockerManagerModal"
+    @close="showMobileDockerManagerModal = false"
   />
   <!-- File Manager Modal is now handled by a listener for 'fileManager:openModalRequest' event -->
 </template>

@@ -1413,6 +1413,7 @@
     "altSwitchHint": "提示：按下 Alt 键可在配置的输入源之间快速切换焦点。"
   },
   "dockerManager": {
+    "title": "Docker 管理器",
     "loading": "正在加载 Docker 容器...",
     "notAvailable": "远程主机 Docker 不可用",
     "installHintRemote": "请确保远程主机上已安装并运行 Docker。",
