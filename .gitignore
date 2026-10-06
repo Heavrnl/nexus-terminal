@@ -163,3 +163,10 @@ electron-app/dist_electron/
 # vite-plugin-pilot runtime data
 .pilot/
 **/.pilot/
+
+# Documentation notes and progress tracking (Local only)
+/doc/DEVELOPMENT.md
+/doc/PILOT_GUIDE.md
+/doc/PROJECT_PROGRESS.md
+/doc/architecture/
+/doc/api/
