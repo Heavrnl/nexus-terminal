@@ -160,8 +160,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         console.log(`[会话 ${sessionId}][SSH终端模块] SSH 会话已连接。 Payload:`, payload, 'Full message:', message); // 更详细的日志
         isSshConnected.value = true; // 更新状态
-        // 连接成功后聚焦终端
-        terminalInstance.value?.focus();
+        // 连接成功后聚焦终端 (仅桌面端自动聚焦，避免手机端自动弹出输入法)
+        const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (!isMobileDevice) {
+            terminalInstance.value?.focus();
+        }
 
         if (terminalInstance.value) {
             const currentDimensions = { cols: terminalInstance.value.cols, rows: terminalInstance.value.rows };

@@ -347,7 +347,10 @@ onMounted(() => {
                 nextTick(() => {
                     if (props.isActive && terminal && terminalRef.value && terminalRef.value.offsetHeight > 0) {
                         fitAndEmitResizeNow(terminal);
-                        terminal.focus();
+                        // 移动端不自动聚焦，避免每次激活会话自动弹起输入法
+                        if (!isMobile.value) {
+                            terminal.focus();
+                        }
                     }
                 });
             } else {
@@ -466,8 +469,8 @@ onMounted(() => {
         }
     });
 
-    // 聚焦终端 (添加 null check)
-    if (terminal) {
+    // 聚焦终端 (仅桌面端自动聚焦，避免手机端打开新会话时自动弹出输入法)
+    if (terminal && !isMobile.value) {
         terminal.focus();
     }
 
@@ -754,6 +757,13 @@ const handleTerminalDrop = (event: DragEvent) => {
     terminal?.focus();
   }
 };
+
+// 移动端：用户主动点击终端画面时才聚焦并唤起软键盘
+const handleTerminalClick = () => {
+  if (isMobile.value && terminal) {
+    terminal.focus();
+  }
+};
 </script>
 
 <template>
@@ -761,6 +771,7 @@ const handleTerminalDrop = (event: DragEvent) => {
     ref="terminalOuterWrapperRef"
     class="terminal-outer-wrapper transition-all duration-150 relative"
     :class="{ 'ring-2 ring-primary ring-inset': isDraggingOverTerminal }"
+    @click="handleTerminalClick"
     @dragenter="handleTerminalDragEnter"
     @dragover="handleTerminalDragOver"
     @dragleave="handleTerminalDragLeave"
