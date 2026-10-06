@@ -489,7 +489,7 @@ const handleQuickCommandExecute = (command: string) => {
     <!-- 移动端多行命令输入组件展开区域 (点击上方图标展开/再次点击收回) -->
     <div
       v-if="props.isMobile && isMobileMultiLineOpen"
-      class="w-full h-48 p-1.5 bg-background border-t border-border/50 shrink-0"
+      class="w-full max-h-[38vh] h-44 p-1.5 bg-background border-t border-border/50 shrink-0"
     >
       <MultiLineCommandInput :is-mobile="props.isMobile" class="h-full w-full" />
     </div>

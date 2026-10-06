@@ -75,29 +75,60 @@
   /* 字体 */
   --font-family-sans-serif: sans-serif; /* 默认字体 */
 
-  /* 其他 */
+  /* 视口高度变量（由 useVisualViewport 动态更新） */
+  --visual-viewport-height: 100dvh;
+  --visual-viewport-width: 100vw;
+
+  /* 基础内边距与外边距 */
   --base-padding: 1rem;          /* 基础内边距 */
   --base-margin: 0.5rem;         /* 基础外边距 */
 }
 
 /* 应用基础样式与移动端全屏视口锁定 */
-html,
-body,
-#app {
+html {
   width: 100%;
   height: 100%;
-  height: 100dvh;
+  height: var(--visual-viewport-height, 100dvh);
   margin: 0;
   padding: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  height: var(--visual-viewport-height, 100dvh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
   font-family: var(--font-family-sans-serif);
   background-color: var(--app-bg-color);
   color: var(--text-color);
   line-height: 1.6;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  height: var(--visual-viewport-height, 100dvh);
+  max-height: var(--visual-viewport-height, 100dvh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 当软键盘弹起时，底部安全区归零，避免键盘上方产生冗余空白缝隙 */
+html.keyboard-open .mobile-command-bar,
+html.keyboard-open .mobile-virtual-keyboard {
+  padding-bottom: 0 !important;
 }
 
 /* 全局链接样式 */

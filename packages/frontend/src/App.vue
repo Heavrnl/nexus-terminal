@@ -4,6 +4,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from './stores/auth.store';
 import { useDeviceDetection } from './composables/useDeviceDetection';
+import { useVisualViewport } from './composables/useVisualViewport';
 import { useSettingsStore } from './stores/settings.store';
 import { useAppearanceStore } from './stores/appearance.store';
 import { useLayoutStore } from './stores/layout.store';
@@ -84,6 +85,10 @@ onMounted(() => {
   
   // +++ 加载 Header 可见性状态 +++
   layoutStore.loadHeaderVisibility();
+
+  // +++ 初始化移动端视觉视口与防滚动锁定 +++
+  const { initVisualViewport } = useVisualViewport();
+  initVisualViewport();
 
 });
 
@@ -372,7 +377,8 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  height: 100dvh;
+  height: var(--visual-viewport-height, 100dvh);
+  max-height: var(--visual-viewport-height, 100dvh);
   overflow: hidden;
   font-family: var(--font-family-sans-serif);
 }
