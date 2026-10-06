@@ -10,6 +10,8 @@ import { useCommandHistoryStore } from '../stores/commandHistory.store';
 import QuickCommandsModal from './QuickCommandsModal.vue'; 
 import CommandHistoryModal from './CommandHistoryModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
+import MobileToolbarConfigModal from './MobileToolbarConfigModal.vue';
+import { useMobileToolbarConfig } from '../composables/useMobileToolbarConfig';
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useLayoutStore } from '../stores/layout.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
@@ -64,9 +66,15 @@ const searchTerm = ref('');
 const showQuickCommands = ref(false); // +++ Add state for modal visibility +++
 const showCommandHistoryModal = ref(false); // +++ Add state for command history modal +++
 const showSuspendedSshSessionsModal = ref(false); // +++ Add state for suspended SSH sessions modal +++
-// *** 移除本地的搜索结果 ref ***
-// const searchResultCount = ref(0);
-// const currentSearchResultIndex = ref(0);
+const showToolbarConfigModal = ref(false); // +++ 移动端自定义工具栏抽屉可见性 +++
+
+const { activeItemIds } = useMobileToolbarConfig();
+
+const scrollToBottom = () => {
+  if (activeSessionId.value) {
+    emitWorkspaceEvent('terminal:scrollToBottomRequest', { sessionId: activeSessionId.value });
+  }
+};
 
 // +++ 计算属性，用于获取和设置当前活动会话的命令输入 +++
 const currentSessionCommandInput = computed({
@@ -415,7 +423,139 @@ const getBarButtonClass = (isActive: boolean = false) => {
 
 <template>
   <div :class="[$attrs.class, 'flex flex-col', props.isMobile ? 'bg-header border-t border-border/20' : 'bg-background border-t border-border/30']">
-    <div class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full overflow-x-auto no-scrollbar">
+    
+    <!-- ==================== 移动端工具栏 ==================== -->
+    <div v-if="props.isMobile" class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full">
+      <!-- 动态按钮横向滚动区 (严格按照自定义排序和启用列表渲染) -->
+      <div class="flex items-center gap-1 overflow-x-auto no-scrollbar flex-grow min-w-0 pr-1">
+        <template v-for="itemId in activeItemIds" :key="itemId">
+          <!-- 清空终端 -->
+          <button
+            v-if="itemId === 'clearTerminal'"
+            @click="emitWorkspaceEvent('terminal:clear')"
+            :class="getBarButtonClass()"
+            :title="t('commandInputBar.clearTerminal', '清空终端')"
+          >
+            <i class="fas fa-eraser text-base"></i>
+          </button>
+
+          <!-- 快捷指令 -->
+          <button
+            v-else-if="itemId === 'quickCommands'"
+            @click="toggleQuickCommandsModal"
+            :class="getBarButtonClass(showQuickCommands)"
+            :title="t('quickCommands.title', '快捷指令')"
+          >
+            <i class="fas fa-bolt text-base"></i>
+          </button>
+
+          <!-- 命令历史 -->
+          <button
+            v-else-if="itemId === 'commandHistory'"
+            @click="toggleCommandHistoryModal"
+            :class="getBarButtonClass(showCommandHistoryModal)"
+            :title="t('commandHistory.title', '命令历史')"
+          >
+            <i class="fas fa-history text-base"></i>
+          </button>
+
+          <!-- 多行命令输入 -->
+          <button
+            v-else-if="itemId === 'multiLine'"
+            @click="toggleMobileMultiLine"
+            :class="getBarButtonClass(isMobileMultiLineOpen)"
+            :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
+          >
+            <i class="fas fa-terminal text-base"></i>
+          </button>
+
+          <!-- 挂起会话 -->
+          <button
+            v-else-if="itemId === 'suspendedSessions'"
+            @click="toggleSuspendedSshSessionsModal"
+            :class="getBarButtonClass(showSuspendedSshSessionsModal)"
+            :title="t('suspendedSshSessions.title', '挂起会话')"
+          >
+            <i class="fas fa-pause-circle text-base"></i>
+          </button>
+
+          <!-- 虚拟按键 -->
+          <button
+            v-else-if="itemId === 'virtualKeyboard'"
+            @click="emit('toggle-virtual-keyboard')"
+            :class="getBarButtonClass(props.isVirtualKeyboardVisible)"
+            :title="props.isVirtualKeyboardVisible ? t('commandInputBar.hideKeyboard', '隐藏虚拟键盘') : t('commandInputBar.showKeyboard', '显示虚拟键盘')"
+          >
+            <i class="fas fa-keyboard text-base" :class="{ 'opacity-50': !props.isVirtualKeyboardVisible }"></i>
+          </button>
+
+          <!-- 文件管理 -->
+          <button
+            v-else-if="itemId === 'fileManager'"
+            @click="openFileManagerModal"
+            :class="getBarButtonClass()"
+            :title="t('fileManager.modalTitle', '文件管理器')"
+          >
+            <i class="fas fa-folder text-base"></i>
+          </button>
+
+          <!-- 文件编辑 -->
+          <button
+            v-else-if="itemId === 'fileEditor'"
+            @click="openFileEditorModal"
+            :class="getBarButtonClass()"
+            :title="t('fileEditor.title', '文件编辑')"
+          >
+            <i class="fas fa-edit text-base"></i>
+          </button>
+
+          <!-- 切换导航栏 -->
+          <button
+            v-else-if="itemId === 'toggleHeader'"
+            @click="toggleHeader"
+            :class="getBarButtonClass(!isHeaderVisible)"
+            :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
+          >
+            <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
+          </button>
+
+          <!-- 传输进度 -->
+          <button
+            v-else-if="itemId === 'transferProgress'"
+            @click="openTransferProgressModal"
+            :class="getBarButtonClass()"
+            :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
+          >
+            <i class="fas fa-tasks text-base"></i>
+          </button>
+
+          <!-- 滚到底部 -->
+          <button
+            v-else-if="itemId === 'scrollBottom'"
+            @click="scrollToBottom"
+            :class="getBarButtonClass()"
+            :title="t('commandInputBar.scrollToBottom', '滚到底部')"
+          >
+            <i class="fas fa-arrow-down text-base"></i>
+          </button>
+        </template>
+      </div>
+
+      <!-- 移动端专属：自定义工具栏编辑按钮 (最右侧吸附，样式独特一眼识别) -->
+      <div class="flex-shrink-0 pl-1 border-l border-border/40 flex items-center">
+        <button
+          @click="showToolbarConfigModal = true"
+          class="flex-shrink-0 flex items-center justify-center gap-1 px-2.5 h-8 rounded-lg border border-dashed border-primary/70 bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer"
+          :title="t('mobileToolbar.title', '自定义工具栏')"
+        >
+          <i class="fas fa-sliders-h text-xs"></i>
+          <span class="text-xs font-semibold tracking-tight">编辑</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 桌面端工具栏 (100% 保持原有布局) ==================== -->
+    <div v-else class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full overflow-x-auto no-scrollbar">
       <!-- Clear Terminal Button -->
       <button
         @click="emitWorkspaceEvent('terminal:clear')"
@@ -424,27 +564,8 @@ const getBarButtonClass = (isActive: boolean = false) => {
       >
         <i class="fas fa-eraser text-base"></i>
       </button>
-       <!-- +++ Quick Commands Button (Mobile only) +++ -->
-       <button
-        v-if="props.isMobile"
-        @click="toggleQuickCommandsModal"
-        :class="getBarButtonClass(showQuickCommands)"
-        :title="t('quickCommands.title', '快捷指令')"
-      >
-        <i class="fas fa-bolt text-base"></i>
-      </button>
-       <!-- +++ Command History Button (Mobile only) +++ -->
-       <button
-        v-if="props.isMobile"
-        @click="toggleCommandHistoryModal"
-        :class="getBarButtonClass(showCommandHistoryModal)"
-        :title="t('commandHistory.title', '命令历史')"
-      >
-        <i class="fas fa-history text-base"></i>
-      </button>
       <!-- Focus Switcher Config Button (Hide on mobile) -->
       <button
-        v-if="!props.isMobile"
         @click="focusSwitcherStore.toggleConfigurator(true)"
         :class="getBarButtonClass()"
         :title="t('commandInputBar.configureFocusSwitch', '配置焦点切换')"
@@ -453,7 +574,6 @@ const getBarButtonClass = (isActive: boolean = false) => {
       </button>
       <!-- Desktop: Command Input -->
       <input
-        v-if="!props.isMobile"
         type="text"
         v-model="currentSessionCommandInput"
         :placeholder="t('commandInputBar.placeholder')"
@@ -468,19 +588,9 @@ const getBarButtonClass = (isActive: boolean = false) => {
         @blur="handleCommandInputBlur"
       />
 
-      <!-- Mobile: 命令输入按钮 (仅图标，点击展开/收回多行输入框) -->
-      <button
-        v-else
-        @click="toggleMobileMultiLine"
-        :class="getBarButtonClass(isMobileMultiLineOpen)"
-        :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
-      >
-        <i class="fas fa-terminal text-base"></i>
-      </button>
-
       <!-- Desktop: Search Input (Show when searching) -->
       <input
-        v-if="isSearching && !props.isMobile"
+        v-if="isSearching"
         type="text"
         v-model="searchTerm"
         :placeholder="t('commandInputBar.searchPlaceholder')"
@@ -495,28 +605,8 @@ const getBarButtonClass = (isActive: boolean = false) => {
 
       <!-- Search Controls -->
       <div class="flex items-center gap-1 flex-shrink-0">
-        <!-- +++ Toggle Virtual Keyboard Button (Moved here, Mobile only) +++ -->
-        <!-- +++ Suspended SSH Sessions Button (Mobile only, new position) +++ -->
-        <button
-          v-if="props.isMobile"
-          @click="toggleSuspendedSshSessionsModal"
-          :class="getBarButtonClass(showSuspendedSshSessionsModal)"
-          :title="t('suspendedSshSessions.title', '挂起会话')"
-        >
-          <i class="fas fa-pause-circle text-base"></i>
-        </button>
-        <!-- +++ Toggle Virtual Keyboard Button (Mobile only) +++ -->
-        <button
-          v-if="props.isMobile"
-          @click="emit('toggle-virtual-keyboard')"
-          :class="getBarButtonClass(props.isVirtualKeyboardVisible)"
-          :title="props.isVirtualKeyboardVisible ? t('commandInputBar.hideKeyboard', '隐藏虚拟键盘') : t('commandInputBar.showKeyboard', '显示虚拟键盘')"
-        >
-          <i class="fas fa-keyboard text-base" :class="{ 'opacity-50': !props.isVirtualKeyboardVisible }"></i>
-        </button>
         <!-- Search Toggle Button -->
         <button
-          v-if="!props.isMobile"
           @click="toggleSearch"
           :class="getBarButtonClass(isSearching)"
           :title="isSearching ? t('commandInputBar.closeSearch') : t('commandInputBar.openSearch')"
@@ -525,8 +615,8 @@ const getBarButtonClass = (isActive: boolean = false) => {
           <i v-else class="fas fa-times text-base"></i>
         </button>
 
-        <!-- Search navigation buttons (Hide on mobile when searching) -->
-        <template v-if="isSearching && !props.isMobile"> <!-- +++ Add !props.isMobile condition +++ -->
+        <!-- Search navigation buttons -->
+        <template v-if="isSearching">
           <button
             @click="findPrevious"
             class="flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
@@ -544,7 +634,7 @@ const getBarButtonClass = (isActive: boolean = false) => {
         </template>
         <!-- File Manager Button -->
         <button
-          v-if="showPopupFileManagerBoolean || props.isMobile"
+          v-if="showPopupFileManagerBoolean"
           @click="openFileManagerModal"
           :class="getBarButtonClass()"
         >
@@ -552,32 +642,13 @@ const getBarButtonClass = (isActive: boolean = false) => {
         </button>
         <!-- File Editor Button -->
         <button
-          v-if="showPopupFileEditorBoolean || props.isMobile"
+          v-if="showPopupFileEditorBoolean"
           @click="openFileEditorModal"
           :class="getBarButtonClass()"
           :title="t('fileEditor.title', '文件编辑')"
         >
           <i class="fas fa-edit text-base"></i>
         </button>
-        <!-- +++ Header Toggle Button (Mobile only) +++ -->
-        <button
-          v-if="props.isMobile"
-          @click="toggleHeader"
-          :class="getBarButtonClass(!isHeaderVisible)"
-          :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
-        >
-          <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
-        </button>
-        <!-- +++ Transfer Progress Button (Mobile only) +++ -->
-        <button
-          v-if="props.isMobile"
-          @click="openTransferProgressModal"
-          :class="getBarButtonClass()"
-          :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
-        >
-          <i class="fas fa-tasks text-base"></i>
-        </button>
-        <!-- Note: On mobile, when searching, only the close button (inside toggleSearch button logic) will be effectively visible in this control group -->
       </div>
     </div>
 
@@ -605,6 +676,12 @@ const getBarButtonClass = (isActive: boolean = false) => {
   <SuspendedSshSessionsModal
     :is-visible="showSuspendedSshSessionsModal"
     @close="closeSuspendedSshSessionsModal"
+  />
+  <!-- +++ Mobile Toolbar Config Modal Instance +++ -->
+  <MobileToolbarConfigModal
+    v-if="props.isMobile"
+    :is-visible="showToolbarConfigModal"
+    @close="showToolbarConfigModal = false"
   />
   <!-- File Manager Modal is now handled by a listener for 'fileManager:openModalRequest' event -->
 </template>
