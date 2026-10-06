@@ -424,134 +424,129 @@ const getBarButtonClass = (isActive: boolean = false) => {
 <template>
   <div :class="[$attrs.class, 'flex flex-col', props.isMobile ? 'bg-header border-t border-border/20' : 'bg-background border-t border-border/30']">
     
-    <!-- ==================== 移动端工具栏 ==================== -->
-    <div v-if="props.isMobile" class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full">
-      <!-- 动态按钮横向滚动区 (严格按照自定义排序和启用列表渲染) -->
-      <div class="flex items-center gap-1 overflow-x-auto no-scrollbar flex-grow min-w-0 pr-1">
-        <template v-for="itemId in activeItemIds" :key="itemId">
-          <!-- 清空终端 -->
-          <button
-            v-if="itemId === 'clearTerminal'"
-            @click="emitWorkspaceEvent('terminal:clear')"
-            :class="getBarButtonClass()"
-            :title="t('commandInputBar.clearTerminal', '清空终端')"
-          >
-            <i class="fas fa-eraser text-base"></i>
-          </button>
-
-          <!-- 快捷指令 -->
-          <button
-            v-else-if="itemId === 'quickCommands'"
-            @click="toggleQuickCommandsModal"
-            :class="getBarButtonClass(showQuickCommands)"
-            :title="t('quickCommands.title', '快捷指令')"
-          >
-            <i class="fas fa-bolt text-base"></i>
-          </button>
-
-          <!-- 命令历史 -->
-          <button
-            v-else-if="itemId === 'commandHistory'"
-            @click="toggleCommandHistoryModal"
-            :class="getBarButtonClass(showCommandHistoryModal)"
-            :title="t('commandHistory.title', '命令历史')"
-          >
-            <i class="fas fa-history text-base"></i>
-          </button>
-
-          <!-- 多行命令输入 -->
-          <button
-            v-else-if="itemId === 'multiLine'"
-            @click="toggleMobileMultiLine"
-            :class="getBarButtonClass(isMobileMultiLineOpen)"
-            :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
-          >
-            <i class="fas fa-terminal text-base"></i>
-          </button>
-
-          <!-- 挂起会话 -->
-          <button
-            v-else-if="itemId === 'suspendedSessions'"
-            @click="toggleSuspendedSshSessionsModal"
-            :class="getBarButtonClass(showSuspendedSshSessionsModal)"
-            :title="t('suspendedSshSessions.title', '挂起会话')"
-          >
-            <i class="fas fa-pause-circle text-base"></i>
-          </button>
-
-          <!-- 虚拟按键 -->
-          <button
-            v-else-if="itemId === 'virtualKeyboard'"
-            @click="emit('toggle-virtual-keyboard')"
-            :class="getBarButtonClass(props.isVirtualKeyboardVisible)"
-            :title="props.isVirtualKeyboardVisible ? t('commandInputBar.hideKeyboard', '隐藏虚拟键盘') : t('commandInputBar.showKeyboard', '显示虚拟键盘')"
-          >
-            <i class="fas fa-keyboard text-base" :class="{ 'opacity-50': !props.isVirtualKeyboardVisible }"></i>
-          </button>
-
-          <!-- 文件管理 -->
-          <button
-            v-else-if="itemId === 'fileManager'"
-            @click="openFileManagerModal"
-            :class="getBarButtonClass()"
-            :title="t('fileManager.modalTitle', '文件管理器')"
-          >
-            <i class="fas fa-folder text-base"></i>
-          </button>
-
-          <!-- 文件编辑 -->
-          <button
-            v-else-if="itemId === 'fileEditor'"
-            @click="openFileEditorModal"
-            :class="getBarButtonClass()"
-            :title="t('fileEditor.title', '文件编辑')"
-          >
-            <i class="fas fa-edit text-base"></i>
-          </button>
-
-          <!-- 切换导航栏 -->
-          <button
-            v-else-if="itemId === 'toggleHeader'"
-            @click="toggleHeader"
-            :class="getBarButtonClass(!isHeaderVisible)"
-            :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
-          >
-            <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
-          </button>
-
-          <!-- 传输进度 -->
-          <button
-            v-else-if="itemId === 'transferProgress'"
-            @click="openTransferProgressModal"
-            :class="getBarButtonClass()"
-            :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
-          >
-            <i class="fas fa-tasks text-base"></i>
-          </button>
-
-          <!-- 滚到底部 -->
-          <button
-            v-else-if="itemId === 'scrollBottom'"
-            @click="scrollToBottom"
-            :class="getBarButtonClass()"
-            :title="t('commandInputBar.scrollToBottom', '滚到底部')"
-          >
-            <i class="fas fa-arrow-down text-base"></i>
-          </button>
-        </template>
-      </div>
-
-      <!-- 移动端专属：自定义工具栏编辑按钮 (最右侧吸附，样式独特一眼识别) -->
-      <div class="flex-shrink-0 pl-1 border-l border-border/40 flex items-center">
+    <!-- ==================== 移动端工具栏 (扁平单层滚动，编辑按钮置于最右侧) ==================== -->
+    <div v-if="props.isMobile" class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full overflow-x-auto no-scrollbar">
+      <template v-for="itemId in activeItemIds" :key="itemId">
+        <!-- 清空终端 -->
         <button
-          @click="showToolbarConfigModal = true"
-          class="flex-shrink-0 flex items-center justify-center gap-1 px-2.5 h-8 rounded-lg border border-dashed border-primary/70 bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer"
-          :title="t('mobileToolbar.title', '自定义工具栏')"
+          v-if="itemId === 'clearTerminal'"
+          @click="emitWorkspaceEvent('terminal:clear')"
+          :class="getBarButtonClass()"
+          :title="t('commandInputBar.clearTerminal', '清空终端')"
         >
-          <i class="fas fa-sliders-h text-xs"></i>
-          <span class="text-xs font-semibold tracking-tight">编辑</span>
+          <i class="fas fa-eraser text-base"></i>
         </button>
-      </div>
+
+        <!-- 快捷指令 -->
+        <button
+          v-else-if="itemId === 'quickCommands'"
+          @click="toggleQuickCommandsModal"
+          :class="getBarButtonClass(showQuickCommands)"
+          :title="t('quickCommands.title', '快捷指令')"
+        >
+          <i class="fas fa-bolt text-base"></i>
+        </button>
+
+        <!-- 命令历史 -->
+        <button
+          v-else-if="itemId === 'commandHistory'"
+          @click="toggleCommandHistoryModal"
+          :class="getBarButtonClass(showCommandHistoryModal)"
+          :title="t('commandHistory.title', '命令历史')"
+        >
+          <i class="fas fa-history text-base"></i>
+        </button>
+
+        <!-- 多行命令输入 -->
+        <button
+          v-else-if="itemId === 'multiLine'"
+          @click="toggleMobileMultiLine"
+          :class="getBarButtonClass(isMobileMultiLineOpen)"
+          :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
+        >
+          <i class="fas fa-terminal text-base"></i>
+        </button>
+
+        <!-- 挂起会话 -->
+        <button
+          v-else-if="itemId === 'suspendedSessions'"
+          @click="toggleSuspendedSshSessionsModal"
+          :class="getBarButtonClass(showSuspendedSshSessionsModal)"
+          :title="t('suspendedSshSessions.title', '挂起会话')"
+        >
+          <i class="fas fa-pause-circle text-base"></i>
+        </button>
+
+        <!-- 虚拟按键 -->
+        <button
+          v-else-if="itemId === 'virtualKeyboard'"
+          @click="emit('toggle-virtual-keyboard')"
+          :class="getBarButtonClass(props.isVirtualKeyboardVisible)"
+          :title="props.isVirtualKeyboardVisible ? t('commandInputBar.hideKeyboard', '隐藏虚拟键盘') : t('commandInputBar.showKeyboard', '显示虚拟键盘')"
+        >
+          <i class="fas fa-keyboard text-base" :class="{ 'opacity-50': !props.isVirtualKeyboardVisible }"></i>
+        </button>
+
+        <!-- 文件管理 -->
+        <button
+          v-else-if="itemId === 'fileManager'"
+          @click="openFileManagerModal"
+          :class="getBarButtonClass()"
+          :title="t('fileManager.modalTitle', '文件管理器')"
+        >
+          <i class="fas fa-folder text-base"></i>
+        </button>
+
+        <!-- 文件编辑 -->
+        <button
+          v-else-if="itemId === 'fileEditor'"
+          @click="openFileEditorModal"
+          :class="getBarButtonClass()"
+          :title="t('fileEditor.title', '文件编辑')"
+        >
+          <i class="fas fa-edit text-base"></i>
+        </button>
+
+        <!-- 显隐导航栏 -->
+        <button
+          v-else-if="itemId === 'toggleHeader'"
+          @click="toggleHeader"
+          :class="getBarButtonClass(!isHeaderVisible)"
+          :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
+        >
+          <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
+        </button>
+
+        <!-- 传输进度 -->
+        <button
+          v-else-if="itemId === 'transferProgress'"
+          @click="openTransferProgressModal"
+          :class="getBarButtonClass()"
+          :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
+        >
+          <i class="fas fa-tasks text-base"></i>
+        </button>
+
+        <!-- 滚到底部 -->
+        <button
+          v-else-if="itemId === 'scrollBottom'"
+          @click="scrollToBottom"
+          :class="getBarButtonClass()"
+          :title="t('commandInputBar.scrollToBottom', '滚到底部')"
+        >
+          <i class="fas fa-arrow-down text-base"></i>
+        </button>
+      </template>
+
+      <!-- 专属样式的编辑按钮：置于工具栏内最右侧，样式独特一眼识别 -->
+      <button
+        @click="showToolbarConfigModal = true"
+        class="flex-shrink-0 flex items-center justify-center gap-1 px-2.5 h-8 rounded-lg border border-dashed border-primary/70 bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all shadow-xs cursor-pointer ml-0.5"
+        :title="t('mobileToolbar.title', '自定义工具栏')"
+      >
+        <i class="fas fa-sliders-h text-xs"></i>
+        <span class="text-xs font-semibold tracking-tight">编辑</span>
+      </button>
     </div>
 
     <!-- ==================== 桌面端工具栏 (100% 保持原有布局) ==================== -->

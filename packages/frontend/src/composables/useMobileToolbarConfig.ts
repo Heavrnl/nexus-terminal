@@ -68,7 +68,7 @@ export const ALL_TOOLBAR_ITEMS: Record<string, ToolbarItemDefinition> = {
   },
   toggleHeader: {
     id: 'toggleHeader',
-    name: '切换导航',
+    name: '显隐导航',
     i18nKey: 'terminalTabBar.hideHeaderTooltip',
     icon: 'fas fa-eye-slash',
     description: '快速隐藏或显示顶部系统导航栏',

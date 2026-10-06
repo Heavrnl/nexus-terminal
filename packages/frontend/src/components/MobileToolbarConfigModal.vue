@@ -19,72 +19,121 @@ const {
   addToActive,
   removeFromActive,
   moveActiveItem,
-  moveItemLeft,
-  moveItemRight,
   resetToDefault,
 } = useMobileToolbarConfig();
 
-// 拖拽状态跟踪
-const draggedItemId = ref<string | null>(null);
-const draggedSourceType = ref<'active' | 'warehouse' | null>(null);
-const dragOverActiveIndex = ref<number | null>(null);
+// ==================== 拖拽与长按状态管理 ====================
+const touchDraggedItemId = ref<string | null>(null);
+const touchDraggedIndex = ref<number | null>(null);
+const isLongPressActive = ref(false);
 
-// 开始拖动
-const handleDragStart = (item: ToolbarItemDefinition, sourceType: 'active' | 'warehouse', index?: number) => {
-  draggedItemId.value = item.id;
-  draggedSourceType.value = sourceType;
-};
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let startTouchX = 0;
+let startTouchY = 0;
 
-// 拖拽经过上方有效槽位
-const handleDragOverActiveSlot = (index: number) => {
-  dragOverActiveIndex.value = index;
-};
+// 1. 触控按下：启动长按判定 (240ms)
+const handleCardTouchStart = (e: TouchEvent, item: ToolbarItemDefinition, index: number) => {
+  const touch = e.touches[0];
+  if (!touch) return;
 
-// 拖拽离开
-const handleDragLeaveActiveSlot = () => {
-  dragOverActiveIndex.value = null;
-};
+  startTouchX = touch.clientX;
+  startTouchY = touch.clientY;
+  touchDraggedItemId.value = item.id;
+  touchDraggedIndex.value = index;
 
-// 放置到上方工具栏区域
-const handleDropOnActiveSlot = (targetIndex: number) => {
-  if (!draggedItemId.value) return;
+  if (longPressTimer) clearTimeout(longPressTimer);
 
-  if (draggedSourceType.value === 'active') {
-    const fromIndex = activeItemIds.value.indexOf(draggedItemId.value);
-    if (fromIndex !== -1 && fromIndex !== targetIndex) {
-      moveActiveItem(fromIndex, targetIndex);
+  longPressTimer = setTimeout(() => {
+    isLongPressActive.value = true;
+    // 触发触觉反馈
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(30);
     }
-  } else if (draggedSourceType.value === 'warehouse') {
-    addToActive(draggedItemId.value);
-    const newIndex = activeItemIds.value.length - 1;
-    if (newIndex !== targetIndex) {
-      moveActiveItem(newIndex, targetIndex);
+  }, 240);
+};
+
+// 2. 触控滑动：判断是否长按拖拽中
+const handleCardTouchMove = (e: TouchEvent) => {
+  const touch = e.touches[0];
+  if (!touch) return;
+
+  // 若尚未触发长按，发生较大位移则视为正常滚动页面，取消长按
+  if (!isLongPressActive.value) {
+    const diffX = Math.abs(touch.clientX - startTouchX);
+    const diffY = Math.abs(touch.clientY - startTouchY);
+    if (diffX > 10 || diffY > 10) {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      touchDraggedItemId.value = null;
+      touchDraggedIndex.value = null;
     }
+    return;
   }
 
-  draggedItemId.value = null;
-  draggedSourceType.value = null;
-  dragOverActiveIndex.value = null;
-};
+  // 长按已激活：阻止页面滚动，执行实时位置探测与交换排序
+  e.preventDefault();
 
-// 放置到仓库区域（从上方拖拽至仓库即为移除）
-const handleDropOnWarehouse = () => {
-  if (draggedItemId.value && draggedSourceType.value === 'active') {
-    removeFromActive(draggedItemId.value);
+  const element = document.elementFromPoint(touch.clientX, touch.clientY);
+  if (!element) return;
+
+  // 向上查找带 data-active-index 的目标卡片
+  const targetCard = element.closest('[data-active-index]') as HTMLElement | null;
+  if (targetCard && targetCard.dataset.activeIndex !== undefined) {
+    const targetIdx = parseInt(targetCard.dataset.activeIndex, 10);
+    if (!isNaN(targetIdx) && touchDraggedIndex.value !== null && targetIdx !== touchDraggedIndex.value) {
+      const fromIdx = touchDraggedIndex.value;
+      moveActiveItem(fromIdx, targetIdx);
+      touchDraggedIndex.value = targetIdx;
+      // 轻微震动提示换位成功
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(15);
+      }
+    }
   }
-  draggedItemId.value = null;
-  draggedSourceType.value = null;
-  dragOverActiveIndex.value = null;
 };
 
-// 拖拽结束重置
-const handleDragEnd = () => {
-  draggedItemId.value = null;
-  draggedSourceType.value = null;
-  dragOverActiveIndex.value = null;
+// 3. 触控结束/取消：清除定时器并复位
+const handleCardTouchEnd = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  isLongPressActive.value = false;
+  touchDraggedItemId.value = null;
+  touchDraggedIndex.value = null;
+};
+
+// ==================== HTML5 桌面拖拽兜底 ====================
+const html5DraggedItemId = ref<string | null>(null);
+const html5DragOverIndex = ref<number | null>(null);
+
+const handleHtml5DragStart = (item: ToolbarItemDefinition, index: number) => {
+  html5DraggedItemId.value = item.id;
+};
+
+const handleHtml5DragOverSlot = (index: number) => {
+  html5DragOverIndex.value = index;
+};
+
+const handleHtml5Drop = (targetIndex: number) => {
+  if (!html5DraggedItemId.value) return;
+  const fromIndex = activeItemIds.value.indexOf(html5DraggedItemId.value);
+  if (fromIndex !== -1 && fromIndex !== targetIndex) {
+    moveActiveItem(fromIndex, targetIndex);
+  }
+  html5DraggedItemId.value = null;
+  html5DragOverIndex.value = null;
+};
+
+const handleHtml5DragEnd = () => {
+  html5DraggedItemId.value = null;
+  html5DragOverIndex.value = null;
 };
 
 const handleClose = () => {
+  handleCardTouchEnd();
   emit('close');
 };
 </script>
@@ -147,92 +196,79 @@ const handleClose = () => {
 
           <!-- 帮助提示胶囊条 -->
           <div class="px-4 py-2 bg-header/30 border-b border-border/30 flex items-center gap-2 text-[11px] text-text-secondary shrink-0">
-            <i class="fas fa-lightbulb text-primary text-xs shrink-0"></i>
-            <span>{{ t('mobileToolbar.tip', '点击卡片右上角 +/- 快速增删，或点击箭头/拖拽调整先后排序') }}</span>
+            <i class="fas fa-hand-pointer text-primary text-xs shrink-0"></i>
+            <span>{{ t('mobileToolbar.tip', '长按上方卡片可拖拽调序，点击右上角 +/- 快速增删') }}</span>
           </div>
 
           <!-- 可滚动内容区：分上下两层 -->
-          <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-5 overscroll-contain">
-            
+          <div
+            class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-5 overscroll-contain"
+            :class="{ 'touch-none overflow-hidden': isLongPressActive }"
+          >
             <!-- 上层区域：当前工具栏 (已启用并显示的按钮) -->
             <section class="space-y-2.5">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
                   <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                   <h4 class="text-xs font-semibold text-foreground uppercase tracking-wider">
-                    {{ t('mobileToolbar.activeAreaTitle', '当前工具栏显示区') }}
+                    {{ t('mobileToolbar.activeAreaTitle', '当前工具栏显示区 (长按拖拽排序)') }}
                   </h4>
                   <span class="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400 font-mono font-medium">
                     {{ activeItems.length }}
                   </span>
                 </div>
                 <span class="text-[11px] text-text-secondary/70">
-                  {{ t('mobileToolbar.activeAreaHint', '向右横向展示') }}
+                  {{ isLongPressActive ? '拖动卡片交换位置' : '横向按序展示' }}
                 </span>
               </div>
 
               <!-- 当前工具栏卡片网格 -->
               <div
-                class="grid grid-cols-3 sm:grid-cols-4 gap-2.5 min-h-[96px] p-2 rounded-xl bg-header/20 border border-border/40"
+                class="grid grid-cols-3 sm:grid-cols-4 gap-2.5 min-h-[96px] p-2 rounded-xl bg-header/20 border border-border/40 relative"
                 @dragover.prevent
               >
                 <div
                   v-for="(item, idx) in activeItems"
                   :key="item.id"
+                  :data-active-index="idx"
                   draggable="true"
-                  @dragstart="handleDragStart(item, 'active', idx)"
-                  @dragover.prevent="handleDragOverActiveSlot(idx)"
-                  @dragleave="handleDragLeaveActiveSlot"
-                  @drop="handleDropOnActiveSlot(idx)"
-                  @dragend="handleDragEnd"
-                  class="relative flex flex-col items-center justify-between p-2 rounded-xl bg-background border border-border/60 hover:border-primary/50 shadow-xs transition-all select-none group cursor-grab active:cursor-grabbing"
+                  @touchstart="handleCardTouchStart($event, item, idx)"
+                  @touchmove="handleCardTouchMove($event)"
+                  @touchend="handleCardTouchEnd"
+                  @touchcancel="handleCardTouchEnd"
+                  @dragstart="handleHtml5DragStart(item, idx)"
+                  @dragover.prevent="handleHtml5DragOverSlot(idx)"
+                  @drop="handleHtml5Drop(idx)"
+                  @dragend="handleHtml5DragEnd"
+                  class="relative flex flex-col items-center justify-center p-3 rounded-xl bg-background border border-border/60 hover:border-primary/50 shadow-xs transition-transform duration-150 select-none cursor-grab active:cursor-grabbing"
                   :class="{
-                    'ring-2 ring-primary ring-offset-1 border-primary': dragOverActiveIndex === idx,
-                    'opacity-50': draggedItemId === item.id
+                    'scale-105 shadow-2xl ring-2 ring-primary border-primary z-20 bg-background/95 opacity-90': touchDraggedItemId === item.id && isLongPressActive,
+                    'ring-2 ring-primary/60 border-primary': html5DragOverIndex === idx && html5DraggedItemId !== item.id,
+                    'opacity-40': html5DraggedItemId === item.id
                   }"
                 >
                   <!-- 移除按钮（右上角红色减号） -->
                   <button
                     type="button"
                     @click.stop="removeFromActive(item.id)"
-                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] shadow-sm hover:scale-110 active:scale-95 transition-transform cursor-pointer z-10"
+                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] shadow-sm hover:scale-110 active:scale-90 transition-transform cursor-pointer z-10"
                     :title="t('common.remove', '移除至仓库')"
                   >
                     <i class="fas fa-minus"></i>
                   </button>
 
-                  <!-- 按钮图标与名称 -->
-                  <div class="flex flex-col items-center justify-center py-1 gap-1 w-full text-center">
-                    <div class="w-8 h-8 rounded-lg bg-header/60 text-primary flex items-center justify-center">
-                      <i :class="item.icon" class="text-sm"></i>
+                  <!-- 按钮图标与名称 (垂直居中大视觉) -->
+                  <div class="flex flex-col items-center justify-center py-0.5 gap-1.5 w-full text-center pointer-events-none">
+                    <div class="w-9 h-9 rounded-xl bg-header/60 text-primary flex items-center justify-center">
+                      <i :class="item.icon" class="text-base"></i>
                     </div>
                     <span class="text-xs font-medium text-foreground tracking-tight truncate w-full px-1">
                       {{ item.name }}
                     </span>
                   </div>
 
-                  <!-- 底部排序微调控件 (左右微移) -->
-                  <div class="flex items-center justify-between w-full pt-1 border-t border-border/30 mt-1">
-                    <button
-                      type="button"
-                      @click.stop="moveItemLeft(idx)"
-                      :disabled="idx === 0"
-                      class="w-5 h-5 rounded flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-border/40 disabled:opacity-20 disabled:pointer-events-none transition-colors"
-                      :title="t('common.moveLeft', '左移')"
-                    >
-                      <i class="fas fa-chevron-left text-[9px]"></i>
-                    </button>
-                    <span class="text-[9px] font-mono text-text-secondary/60">{{ idx + 1 }}</span>
-                    <button
-                      type="button"
-                      @click.stop="moveItemRight(idx)"
-                      :disabled="idx === activeItems.length - 1"
-                      class="w-5 h-5 rounded flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-border/40 disabled:opacity-20 disabled:pointer-events-none transition-colors"
-                      :title="t('common.moveRight', '右移')"
-                    >
-                      <i class="fas fa-chevron-right text-[9px]"></i>
-                    </button>
-                  </div>
+                  <!-- 长按拖拽手柄微指示点 -->
+                  <div class="w-5 h-1 bg-border/60 rounded-full mt-1 opacity-60 pointer-events-none"></div>
                 </div>
 
                 <!-- 空状态 -->
@@ -257,11 +293,7 @@ const handleClose = () => {
             </div>
 
             <!-- 下层区域：功能备选仓库 (未启用按钮) -->
-            <section
-              class="space-y-2.5"
-              @dragover.prevent
-              @drop="handleDropOnWarehouse"
-            >
+            <section class="space-y-2.5">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
                   <span class="w-2 h-2 rounded-full bg-blue-500"></span>
@@ -282,9 +314,6 @@ const handleClose = () => {
                 <div
                   v-for="item in warehouseItems"
                   :key="item.id"
-                  draggable="true"
-                  @dragstart="handleDragStart(item, 'warehouse')"
-                  @dragend="handleDragEnd"
                   @click="addToActive(item.id)"
                   class="relative flex flex-col items-center justify-center p-2.5 rounded-xl bg-background/80 hover:bg-background border border-border/50 hover:border-primary/50 shadow-xs transition-all select-none cursor-pointer active:scale-95 group"
                 >
@@ -292,14 +321,14 @@ const handleClose = () => {
                   <button
                     type="button"
                     @click.stop="addToActive(item.id)"
-                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] shadow-sm hover:scale-110 active:scale-95 transition-transform cursor-pointer z-10"
+                    class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] shadow-sm hover:scale-110 active:scale-90 transition-transform cursor-pointer z-10"
                     :title="t('common.add', '添加至工具栏')"
                   >
                     <i class="fas fa-plus"></i>
                   </button>
 
-                  <div class="w-8 h-8 rounded-lg bg-header/40 text-text-secondary group-hover:text-primary flex items-center justify-center transition-colors">
-                    <i :class="item.icon" class="text-sm"></i>
+                  <div class="w-9 h-9 rounded-xl bg-header/40 text-text-secondary group-hover:text-primary flex items-center justify-center transition-colors">
+                    <i :class="item.icon" class="text-base"></i>
                   </div>
                   <span class="text-xs font-medium text-foreground tracking-tight truncate w-full text-center px-1 mt-1">
                     {{ item.name }}
