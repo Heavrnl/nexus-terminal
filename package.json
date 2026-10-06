@@ -43,7 +43,7 @@
     "patch-package": "^8.0.0",
     "qrcode": "^1.5.4",
     "speakeasy": "^2.0.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^6.0.1"
   },
   "overrides": {
     "esbuild": "^0.25.0",
