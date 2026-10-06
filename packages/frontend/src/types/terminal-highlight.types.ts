@@ -1,7 +1,7 @@
 /**
- * 终端高亮匹配模式 (UI 首选模式)
+ * Matcher 类型：内置语义分类 / 关键词 / 正则表达式
  */
-export type HighlightMatchType = 'builtin' | 'keywords' | 'regex' | 'mixed';
+export type MatcherItemType = 'builtin' | 'keyword' | 'regex';
 
 /**
  * 内置语义分类 Matcher 类型
@@ -24,8 +24,25 @@ export type BuiltinMatcherType =
 export type HighlightPriority = 1 | 2 | 3;
 
 /**
+ * 单个 Matcher 规则定义
+ */
+export interface HighlightMatcherItem {
+  id: string;
+  type: MatcherItemType;
+  // 内置分类关联 (type === 'builtin')
+  builtinType?: BuiltinMatcherType;
+  // 关键词文本及词边界选项 (type === 'keyword')
+  keyword?: string;
+  wholeWord?: boolean; // 默认 true (全词匹配)
+  caseSensitive?: boolean; // 默认 false (大小写敏感)
+  // 正则表达式文本及标志 (type === 'regex')
+  pattern?: string;
+  flags?: string; // 默认 'g'
+}
+
+/**
  * 终端高亮语义分组卡片定义 (统一内置与自定义卡片的数据模型)
- * 一个分组可以拥有多种 Matcher 组合：可同时包含内置分类、关键词列表与正则表达式
+ * 一个分组下可添加任意数量、任意类型的 Matcher，所有 Matcher 共享该分组的样式与优先级
  */
 export interface TerminalHighlightGroup {
   id: string;
@@ -38,21 +55,18 @@ export interface TerminalHighlightGroup {
   bold?: boolean;
   underline?: boolean;
   priority: HighlightPriority;
-  
-  // UI 模式标记 (兼容)
-  matchType?: HighlightMatchType;
 
-  // 内置分类关联 (可选)
+  // 核心：统一的 Matcher 规则条目列表 (可混合内置、关键词、正则表达式)
+  matchers: HighlightMatcherItem[];
+
+  // 兼容辅助字段
+  matchType?: string;
+  keywords?: string[];
+  patterns?: string[];
   builtinType?: BuiltinMatcherType;
-
-  // 关键词列表及匹配边界设置
-  keywords: string[]; // 关键词列表，如 ['container', 'docker', 'podman']
-  keywordWholeWord?: boolean; // 是否全词匹配 (默认 true)
-  keywordCaseSensitive?: boolean; // 是否大小写敏感 (默认 false)
-
-  // 正则表达式列表
-  patterns: string[]; // 正则表达式列表，如 ['exit code \\d+']
-  flags?: string;     // 正则 flags，如 'g' 或 'gi'
+  keywordWholeWord?: boolean;
+  keywordCaseSensitive?: boolean;
+  flags?: string;
 }
 
 /**

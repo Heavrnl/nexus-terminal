@@ -99,7 +99,30 @@ export function buildAnsiStyleTokens(group: Partial<TerminalHighlightGroup>): { 
 }
 
 /**
- * 预编译分组列表为 Matcher 集合 (一个分组可同时拥有关键词和正则)
+ * 内置语义分类默认模式库
+ */
+export function getBuiltinDefaultPatterns(type?: string): string[] {
+  switch (type) {
+    case 'date':
+      return [
+        '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
+        '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
+      ];
+    case 'ip':
+      return [
+        '\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\\d{1,5})?\\b',
+      ];
+    case 'url':
+      return ['https?:\\/\\/[^\\s/$.?#].[^\\s]*'];
+    case 'error':
+      return ['\\bexit code [1-9]\\d*\\b', '\\bcontainer .*? exited\\b'];
+    default:
+      return [];
+  }
+}
+
+/**
+ * 预编译分组列表为 Matcher 集合 (全面支持 matchers 列表多规则混配)
  */
 export function compileHighlightGroups(groups: TerminalHighlightGroup[]): CompiledMatcher[] {
   const matchers: CompiledMatcher[] = [];
@@ -113,64 +136,109 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
     const priority = group.priority || 2;
     const flags = group.flags && group.flags.includes('g') ? group.flags : `${group.flags || ''}g`;
 
-    // 确定当前分组的特异性基线
-    const groupSpecificity = group.builtinType && SPECIFICITY_WEIGHTS[group.builtinType]
-      ? SPECIFICITY_WEIGHTS[group.builtinType]
-      : SPECIFICITY_WEIGHTS.regex;
-
-    // 1. 编译关键词规则 (支持严格连字符词边界与大小写选项)
-    if (Array.isArray(group.keywords) && group.keywords.length > 0) {
-      const validKeywords = group.keywords
-        .map((k) => (typeof k === 'string' ? k.trim() : ''))
-        .filter((k) => k.length > 0);
-
-      if (validKeywords.length > 0) {
-        // 按长度降序排，避免前缀抢占
-        validKeywords.sort((a, b) => b.length - a.length);
-
-        const isWholeWord = group.keywordWholeWord !== false; // 默认全词匹配
-        const isCaseSensitive = !!group.keywordCaseSensitive;
-        const kwFlags = (isCaseSensitive ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`));
-
-        // 连字符/下划线感知的严格词边界: (?<![a-zA-Z0-9_-])word(?![a-zA-Z0-9_-])
-        // 这样可以彻底避免 docker 误伤 docker-compose 或 mydockerapp
-        const escapedList = validKeywords.map((k) => escapeRegExp(k));
-        const patternBody = escapedList.join('|');
-
-        let fullPattern: string;
-        if (isWholeWord) {
-          fullPattern = `(?<![a-zA-Z0-9_-])(?:${patternBody})(?![a-zA-Z0-9_-])`;
-        } else {
-          fullPattern = `(?:${patternBody})`;
-        }
-
-        try {
-          const kwRegex = new RegExp(fullPattern, kwFlags);
-          matchers.push({
-            groupId: group.id,
-            regex: kwRegex,
-            priority,
-            specificity: isWholeWord ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
-            prefix,
-            suffix,
-          });
-        } catch (e) {
-          console.warn(`[Highlighter] 关键词规则编译失败 (${group.name}):`, e);
+    // 1. 编译 matchers 列表中的每一项规则 (支持任意数量、任意类型)
+    if (Array.isArray(group.matchers) && group.matchers.length > 0) {
+      for (const item of group.matchers) {
+        if (item.type === 'keyword' && item.keyword) {
+          const kw = item.keyword.trim();
+          if (!kw) continue;
+          const isWhole = item.wholeWord !== false;
+          const isCase = !!item.caseSensitive;
+          const kwFlags = isCase ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`);
+          const esc = escapeRegExp(kw);
+          const pat = isWhole ? `(?<![a-zA-Z0-9_-])(?:${esc})(?![a-zA-Z0-9_-])` : `(?:${esc})`;
+          try {
+            matchers.push({
+              groupId: group.id,
+              regex: new RegExp(pat, kwFlags),
+              priority,
+              specificity: isWhole ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
+              prefix,
+              suffix,
+            });
+          } catch (e) {
+            console.warn(`[Highlighter] 关键词匹配项编译失败 (${group.name}: ${kw}):`, e);
+          }
+        } else if (item.type === 'regex' && item.pattern) {
+          try {
+            matchers.push({
+              groupId: group.id,
+              regex: new RegExp(item.pattern, flags),
+              priority,
+              specificity: SPECIFICITY_WEIGHTS.regex,
+              prefix,
+              suffix,
+            });
+          } catch (e) {
+            console.warn(`[Highlighter] 正则匹配项编译失败 (${group.name}: ${item.pattern}):`, e);
+          }
+        } else if (item.type === 'builtin' && item.builtinType) {
+          const patterns = getBuiltinDefaultPatterns(item.builtinType);
+          const spec = SPECIFICITY_WEIGHTS[item.builtinType] || SPECIFICITY_WEIGHTS.regex;
+          for (const p of patterns) {
+            try {
+              matchers.push({
+                groupId: group.id,
+                regex: new RegExp(p, flags),
+                priority,
+                specificity: spec,
+                prefix,
+                suffix,
+              });
+            } catch (e) {
+              console.warn(`[Highlighter] 内置匹配项编译失败 (${group.name}: ${item.builtinType}):`, e);
+            }
+          }
         }
       }
     }
 
-    // 2. 编译正则表达式列表
-    if (Array.isArray(group.patterns) && group.patterns.length > 0) {
-      for (const pattern of group.patterns) {
-        if (!pattern || typeof pattern !== 'string') continue;
+    // 2. 兼容顶层 keywords 列表
+    if (Array.isArray(group.keywords) && group.keywords.length > 0) {
+      // 避免与 matchers 重复编译
+      const existingKw = new Set(
+        (group.matchers || []).filter((m) => m.type === 'keyword' && m.keyword).map((m) => m.keyword!.toLowerCase())
+      );
+      const validKeywords = group.keywords
+        .map((k) => (typeof k === 'string' ? k.trim() : ''))
+        .filter((k) => k.length > 0 && !existingKw.has(k.toLowerCase()));
+
+      if (validKeywords.length > 0) {
+        validKeywords.sort((a, b) => b.length - a.length);
+        const isWhole = group.keywordWholeWord !== false;
+        const isCase = !!group.keywordCaseSensitive;
+        const kwFlags = isCase ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`);
+        const escapedList = validKeywords.map((k) => escapeRegExp(k));
+        const patternBody = escapedList.join('|');
+        const fullPattern = isWhole ? `(?<![a-zA-Z0-9_-])(?:${patternBody})(?![a-zA-Z0-9_-])` : `(?:${patternBody})`;
         try {
-          const pRegex = new RegExp(pattern, flags);
           matchers.push({
             groupId: group.id,
-            regex: pRegex,
+            regex: new RegExp(fullPattern, kwFlags),
             priority,
-            specificity: groupSpecificity,
+            specificity: isWhole ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
+            prefix,
+            suffix,
+          });
+        } catch (e) {
+          console.warn(`[Highlighter] 关键词组编译失败 (${group.name}):`, e);
+        }
+      }
+    }
+
+    // 3. 兼容顶层 patterns 列表
+    if (Array.isArray(group.patterns) && group.patterns.length > 0) {
+      const existingPatterns = new Set(
+        (group.matchers || []).filter((m) => m.type === 'regex' && m.pattern).map((m) => m.pattern!)
+      );
+      for (const pattern of group.patterns) {
+        if (!pattern || typeof pattern !== 'string' || existingPatterns.has(pattern)) continue;
+        try {
+          matchers.push({
+            groupId: group.id,
+            regex: new RegExp(pattern, flags),
+            priority,
+            specificity: SPECIFICITY_WEIGHTS.regex,
             prefix,
             suffix,
           });

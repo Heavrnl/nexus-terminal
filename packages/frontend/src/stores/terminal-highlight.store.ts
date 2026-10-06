@@ -63,7 +63,14 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
               bold: !!customRule.bold,
               underline: !!customRule.underline,
               priority: 2,
-              matchType: 'regex',
+              matchers: [
+                {
+                  id: `m_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  type: 'regex',
+                  pattern: customRule.pattern,
+                  flags: customRule.flags || 'g',
+                },
+              ],
               keywords: [],
               patterns: [customRule.pattern],
               flags: customRule.flags || 'g',

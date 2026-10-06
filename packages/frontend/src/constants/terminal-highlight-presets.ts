@@ -1,8 +1,8 @@
 import type { TerminalHighlightGroup } from '../types/terminal-highlight.types';
 
 /**
- * 经典终端高亮语义分组预设列表 (内置语义分类卡片)
- * 每个分组都可以自由组合：内置分类、关键词列表与正则表达式
+ * 经典终端高亮语义分组预设列表
+ * 每个 Group 内部都是一套 matchers 列表，支持混配内置规则、多个关键词和多个正则表达式
  */
 export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   {
@@ -14,14 +14,24 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     color: '#94a3b8', // 石板灰蓝
     bold: false,
     underline: false,
-    priority: 3, // 高优先级锁定
-    builtinType: 'date',
+    priority: 3,
+    matchers: [
+      {
+        id: 'date_iso',
+        type: 'builtin',
+        builtinType: 'date',
+        pattern: '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
+      },
+      {
+        id: 'date_syslog',
+        type: 'builtin',
+        builtinType: 'date',
+        pattern: '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
+      },
+    ],
     keywords: [],
-    keywordWholeWord: true,
     patterns: [
-      // ISO 8601 及常见日期时间 (支持点号与逗号毫秒、Z 以及带或不带冒号的时区偏移)
       '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
-      // Syslog 传统日期时间格式 (例如: Oct  6 19:36:39 或 Oct 16 19:36:39.123)
       '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
     ],
   },
@@ -35,30 +45,21 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    builtinType: 'error',
-    keywordWholeWord: true,
-    keywordCaseSensitive: false,
-    keywords: [
-      'ERROR',
-      'FATAL',
-      'CRITICAL',
-      'FAIL',
-      'FAILED',
-      'failure',
-      'Exited',
-      'dead',
-      'unhealthy',
-      'stopped',
-      'down',
-      'refused',
-      'denied',
-      'invalid',
-      'inactive',
+    matchers: [
+      { id: 'err_builtin', type: 'builtin', builtinType: 'error' },
+      { id: 'err_kw_1', type: 'keyword', keyword: 'ERROR', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_2', type: 'keyword', keyword: 'FATAL', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_3', type: 'keyword', keyword: 'CRITICAL', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_4', type: 'keyword', keyword: 'FAIL', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_5', type: 'keyword', keyword: 'FAILED', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_6', type: 'keyword', keyword: 'Exited', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_7', type: 'keyword', keyword: 'refused', wholeWord: true, caseSensitive: false },
+      { id: 'err_kw_8', type: 'keyword', keyword: 'unhealthy', wholeWord: true, caseSensitive: false },
+      { id: 'err_regex_exitcode', type: 'regex', pattern: '\\bexit code [1-9]\\d*\\b' },
+      { id: 'err_regex_container', type: 'regex', pattern: '\\bcontainer .*? exited\\b' },
     ],
-    patterns: [
-      '\\bexit code [1-9]\\d*\\b',
-      '\\bcontainer .*? exited\\b',
-    ],
+    keywords: ['ERROR', 'FATAL', 'CRITICAL', 'FAIL', 'FAILED', 'Exited', 'refused', 'unhealthy'],
+    patterns: ['\\bexit code [1-9]\\d*\\b', '\\bcontainer .*? exited\\b'],
     flags: 'gi',
   },
   {
@@ -71,10 +72,16 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    builtinType: 'warning',
-    keywordWholeWord: true,
-    keywordCaseSensitive: false,
-    keywords: ['WARN', 'WARNING', 'ALERT', 'caution', 'timeout', 'retry', 'pending', 'degraded'],
+    matchers: [
+      { id: 'warn_builtin', type: 'builtin', builtinType: 'warning' },
+      { id: 'warn_kw_1', type: 'keyword', keyword: 'WARN', wholeWord: true, caseSensitive: false },
+      { id: 'warn_kw_2', type: 'keyword', keyword: 'WARNING', wholeWord: true, caseSensitive: false },
+      { id: 'warn_kw_3', type: 'keyword', keyword: 'ALERT', wholeWord: true, caseSensitive: false },
+      { id: 'warn_kw_4', type: 'keyword', keyword: 'timeout', wholeWord: true, caseSensitive: false },
+      { id: 'warn_kw_5', type: 'keyword', keyword: 'retry', wholeWord: true, caseSensitive: false },
+      { id: 'warn_kw_6', type: 'keyword', keyword: 'pending', wholeWord: true, caseSensitive: false },
+    ],
+    keywords: ['WARN', 'WARNING', 'ALERT', 'timeout', 'retry', 'pending'],
     patterns: [],
     flags: 'gi',
   },
@@ -88,10 +95,16 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    builtinType: 'success',
-    keywordWholeWord: true,
-    keywordCaseSensitive: false,
-    keywords: ['Up', 'running', 'healthy', 'SUCCESS', 'OK', 'active', 'enabled', 'connected', 'PASSED', 'true'],
+    matchers: [
+      { id: 'succ_builtin', type: 'builtin', builtinType: 'success' },
+      { id: 'succ_kw_1', type: 'keyword', keyword: 'Up', wholeWord: true, caseSensitive: false },
+      { id: 'succ_kw_2', type: 'keyword', keyword: 'running', wholeWord: true, caseSensitive: false },
+      { id: 'succ_kw_3', type: 'keyword', keyword: 'healthy', wholeWord: true, caseSensitive: false },
+      { id: 'succ_kw_4', type: 'keyword', keyword: 'SUCCESS', wholeWord: true, caseSensitive: false },
+      { id: 'succ_kw_5', type: 'keyword', keyword: 'OK', wholeWord: true, caseSensitive: false },
+      { id: 'succ_kw_6', type: 'keyword', keyword: 'active', wholeWord: true, caseSensitive: false },
+    ],
+    keywords: ['Up', 'running', 'healthy', 'SUCCESS', 'OK', 'active'],
     patterns: [],
   },
   {
@@ -104,10 +117,14 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: false,
     underline: false,
     priority: 1,
-    builtinType: 'info',
-    keywordWholeWord: true,
-    keywordCaseSensitive: false,
-    keywords: ['INFO', 'NOTICE', 'DEBUG', 'TRACE', 'VERBOSE'],
+    matchers: [
+      { id: 'info_builtin', type: 'builtin', builtinType: 'info' },
+      { id: 'info_kw_1', type: 'keyword', keyword: 'INFO', wholeWord: true, caseSensitive: false },
+      { id: 'info_kw_2', type: 'keyword', keyword: 'NOTICE', wholeWord: true, caseSensitive: false },
+      { id: 'info_kw_3', type: 'keyword', keyword: 'DEBUG', wholeWord: true, caseSensitive: false },
+      { id: 'info_kw_4', type: 'keyword', keyword: 'TRACE', wholeWord: true, caseSensitive: false },
+    ],
+    keywords: ['INFO', 'NOTICE', 'DEBUG', 'TRACE'],
     patterns: [],
   },
   {
@@ -119,9 +136,15 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     color: '#c084fc', // 亮紫色
     bold: false,
     underline: false,
-    priority: 3, // 高优先级区间
-    builtinType: 'ip',
-    keywordWholeWord: true,
+    priority: 3,
+    matchers: [
+      {
+        id: 'ip_builtin',
+        type: 'builtin',
+        builtinType: 'ip',
+        pattern: '\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\\d{1,5})?\\b',
+      },
+    ],
     keywords: [],
     patterns: [
       '\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\\d{1,5})?\\b',
@@ -136,8 +159,15 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     color: '#38bdf8', // 天蓝色
     bold: false,
     underline: true,
-    priority: 3, // 高优先级区间
-    builtinType: 'url',
+    priority: 3,
+    matchers: [
+      {
+        id: 'url_builtin',
+        type: 'builtin',
+        builtinType: 'url',
+        pattern: 'https?:\\/\\/[^\\s/$.?#].[^\\s]*',
+      },
+    ],
     keywords: [],
     patterns: ['https?:\\/\\/[^\\s/$.?#].[^\\s]*'],
   },
