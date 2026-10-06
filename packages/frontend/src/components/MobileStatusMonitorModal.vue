@@ -110,16 +110,21 @@ const formatBytesPerSecond = (bytes?: number) => {
 };
 
 // 格式化容量
-const formatKBtoGB = (kb?: number) => {
-  if (kb === undefined || kb === null) return '--';
-  const gb = kb / (1024 * 1024);
-  return `${gb.toFixed(1)} GB`;
+const formatDiskSize = (kb?: number) => {
+  if (kb === undefined || kb === null || isNaN(kb)) return '--';
+  const mb = kb / 1024;
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  const gb = mb / 1024;
+  if (gb < 1000) return `${gb.toFixed(1)} GB`;
+  const tb = gb / 1024;
+  return `${tb.toFixed(2)} TB`;
 };
 
-const formatMB = (mb?: number) => {
+const formatMemorySize = (mb?: number) => {
   if (mb === undefined || mb === null || isNaN(mb)) return '--';
-  if (mb < 1024) return `${mb.toFixed(0)} MB`;
-  return `${(mb / 1024).toFixed(1)} GB`;
+  if (mb < 1024) return `${Math.round(mb)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(1)} GB`;
 };
 
 // 复制 IP 地址
@@ -219,11 +224,11 @@ const handleClose = () => {
             <!-- Case 4: 正常数据展示 -->
             <template v-else>
               <!-- 主机概览卡片 -->
-              <div class="rounded-xl bg-header/30 border border-border/50 p-3 space-y-2 shadow-2xs">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 truncate">
+              <div class="rounded-xl bg-header/30 border border-border/50 p-3 space-y-2.5 shadow-2xs">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="fas fa-server text-primary text-xs shrink-0"></i>
-                    <span class="text-xs font-semibold text-foreground truncate">
+                    <span class="text-xs font-bold text-foreground truncate">
                       {{ sessionConnectionName }}
                     </span>
                   </div>
@@ -231,7 +236,7 @@ const handleClose = () => {
                   <button
                     v-if="sessionIpAddress && statusMonitorShowIpBoolean"
                     @click="copyIpToClipboard(sessionIpAddress)"
-                    class="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border/60 text-[11px] font-mono text-text-secondary hover:text-primary active:scale-95 transition-all cursor-pointer"
+                    class="shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-background border border-border/60 text-[11px] font-mono text-text-secondary hover:text-primary active:scale-95 transition-all cursor-pointer shadow-2xs"
                     title="点击复制 IP"
                   >
                     <span>{{ sessionIpAddress }}</span>
@@ -239,14 +244,27 @@ const handleClose = () => {
                   </button>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-border/30">
-                  <div class="flex items-center gap-1.5 text-text-secondary truncate">
-                    <span class="shrink-0 text-text-secondary/70">系统:</span>
-                    <span class="font-medium text-foreground truncate" :title="displayOsName">{{ displayOsName }}</span>
+                <!-- 系统与 CPU 详细信息条目：垂直分行全宽舒展展示，杜绝横向挤压截断 -->
+                <div class="space-y-1.5 pt-2 border-t border-border/30 text-xs">
+                  <!-- 系统条目 -->
+                  <div class="flex items-start gap-1.5 leading-snug">
+                    <span class="shrink-0 text-text-secondary/70 flex items-center gap-1 min-w-[44px]">
+                      <i class="fab fa-linux text-[11px] text-text-secondary"></i>
+                      <span>系统:</span>
+                    </span>
+                    <span class="font-medium text-foreground break-words flex-1">
+                      {{ displayOsName }}
+                    </span>
                   </div>
-                  <div class="flex items-center gap-1.5 text-text-secondary truncate">
-                    <span class="shrink-0 text-text-secondary/70">CPU:</span>
-                    <span class="font-medium text-foreground truncate" :title="displayCpuModel">{{ displayCpuModel }}</span>
+                  <!-- CPU 条目 -->
+                  <div class="flex items-start gap-1.5 leading-snug">
+                    <span class="shrink-0 text-text-secondary/70 flex items-center gap-1 min-w-[44px]">
+                      <i class="fas fa-microchip text-[11px] text-sky-400"></i>
+                      <span>CPU:</span>
+                    </span>
+                    <span class="font-medium text-foreground break-words flex-1 font-mono text-[11px]">
+                      {{ displayCpuModel }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -256,12 +274,22 @@ const handleClose = () => {
                 <!-- CPU 卡片 -->
                 <div class="rounded-xl bg-header/20 border border-border/50 p-3 space-y-2 shadow-2xs flex flex-col justify-between">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-text-secondary">CPU 使用率</span>
+                    <span class="text-xs font-semibold text-text-secondary">CPU 使用率</span>
                     <i class="fas fa-microchip text-xs text-sky-400"></i>
                   </div>
-                  <div class="flex items-baseline gap-1">
+                  <div class="flex items-baseline justify-between">
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.cpuPercent ?? 0) }}%
+                    </span>
+                    <span
+                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+                      :class="[
+                        (currentServerStatus.cpuPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
+                        (currentServerStatus.cpuPercent ?? 0) > 60 ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-emerald-500/10 text-emerald-400'
+                      ]"
+                    >
+                      {{ (currentServerStatus.cpuPercent ?? 0) > 85 ? '高负荷' : (currentServerStatus.cpuPercent ?? 0) > 60 ? '中负荷' : '正常' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -276,20 +304,32 @@ const handleClose = () => {
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.cpuPercent ?? 0))}%` }"
                     ></div>
                   </div>
+                  <!-- 底部数值独占一行 -->
+                  <div class="flex items-center justify-between text-[10px] font-mono text-text-secondary pt-0.5">
+                    <span class="text-text-secondary/70">当前占用</span>
+                    <span class="text-text-secondary/90 font-medium">{{ (currentServerStatus.cpuPercent ?? 0).toFixed(1) }}%</span>
+                  </div>
                 </div>
 
                 <!-- 内存卡片 -->
                 <div class="rounded-xl bg-header/20 border border-border/50 p-3 space-y-2 shadow-2xs flex flex-col justify-between">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-text-secondary">物理内存</span>
+                    <span class="text-xs font-semibold text-text-secondary">物理内存</span>
                     <i class="fas fa-memory text-xs text-emerald-400"></i>
                   </div>
-                  <div class="flex items-baseline gap-1">
+                  <div class="flex items-baseline justify-between">
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.memPercent ?? 0) }}%
                     </span>
-                    <span class="text-[10px] text-text-secondary font-mono truncate">
-                      {{ formatMB(currentServerStatus.memUsed) }} / {{ formatMB(currentServerStatus.memTotal) }}
+                    <span
+                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+                      :class="[
+                        (currentServerStatus.memPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
+                        (currentServerStatus.memPercent ?? 0) > 65 ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-emerald-500/10 text-emerald-400'
+                      ]"
+                    >
+                      {{ (currentServerStatus.memPercent ?? 0) > 85 ? '吃紧' : (currentServerStatus.memPercent ?? 0) > 65 ? '适中' : '充足' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -304,20 +344,32 @@ const handleClose = () => {
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.memPercent ?? 0))}%` }"
                     ></div>
                   </div>
+                  <!-- 底部数值独占一行：已用 / 总量两端对齐，彻底杜绝截断 -->
+                  <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
+                    <span>已用 {{ formatMemorySize(currentServerStatus.memUsed) }}</span>
+                    <span>共 {{ formatMemorySize(currentServerStatus.memTotal) }}</span>
+                  </div>
                 </div>
 
                 <!-- Swap 交换区卡片 -->
                 <div class="rounded-xl bg-header/20 border border-border/50 p-3 space-y-2 shadow-2xs flex flex-col justify-between">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-text-secondary">SWAP 交换区</span>
+                    <span class="text-xs font-semibold text-text-secondary">SWAP 交换区</span>
                     <i class="fas fa-exchange-alt text-xs text-amber-400"></i>
                   </div>
-                  <div class="flex items-baseline gap-1">
+                  <div class="flex items-baseline justify-between">
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.swapPercent ?? 0) }}%
                     </span>
-                    <span class="text-[10px] text-text-secondary font-mono truncate">
-                      {{ formatMB(currentServerStatus.swapUsed) }} / {{ formatMB(currentServerStatus.swapTotal) }}
+                    <span
+                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+                      :class="[
+                        (currentServerStatus.swapPercent ?? 0) > 75 ? 'bg-rose-500/10 text-rose-400' :
+                        (currentServerStatus.swapPercent ?? 0) > 0 ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-neutral-500/10 text-neutral-400'
+                      ]"
+                    >
+                      {{ (currentServerStatus.swapPercent ?? 0) > 75 ? '偏高' : (currentServerStatus.swapPercent ?? 0) > 0 ? '占用中' : '无占用' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -332,20 +384,32 @@ const handleClose = () => {
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.swapPercent ?? 0))}%` }"
                     ></div>
                   </div>
+                  <!-- 底部数值独占一行 -->
+                  <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
+                    <span>已用 {{ (currentServerStatus.swapTotal ?? 0) > 0 ? formatMemorySize(currentServerStatus.swapUsed) : '0 MB' }}</span>
+                    <span>{{ (currentServerStatus.swapTotal ?? 0) > 0 ? `共 ${formatMemorySize(currentServerStatus.swapTotal)}` : '未启用' }}</span>
+                  </div>
                 </div>
 
                 <!-- 磁盘空间卡片 -->
                 <div class="rounded-xl bg-header/20 border border-border/50 p-3 space-y-2 shadow-2xs flex flex-col justify-between">
                   <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-text-secondary">根磁盘空间</span>
+                    <span class="text-xs font-semibold text-text-secondary">根磁盘空间</span>
                     <i class="fas fa-hdd text-xs text-purple-400"></i>
                   </div>
-                  <div class="flex items-baseline gap-1">
+                  <div class="flex items-baseline justify-between">
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.diskPercent ?? 0) }}%
                     </span>
-                    <span class="text-[10px] text-text-secondary font-mono truncate">
-                      {{ formatKBtoGB(currentServerStatus.diskUsed) }} / {{ formatKBtoGB(currentServerStatus.diskTotal) }}
+                    <span
+                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+                      :class="[
+                        (currentServerStatus.diskPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
+                        (currentServerStatus.diskPercent ?? 0) > 70 ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-emerald-500/10 text-emerald-400'
+                      ]"
+                    >
+                      {{ (currentServerStatus.diskPercent ?? 0) > 85 ? '告急' : (currentServerStatus.diskPercent ?? 0) > 70 ? '注意' : '充裕' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -359,6 +423,11 @@ const handleClose = () => {
                       ]"
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.diskPercent ?? 0))}%` }"
                     ></div>
+                  </div>
+                  <!-- 底部数值独占一行：已用 / 总量两端对齐，彻底杜绝截断 -->
+                  <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
+                    <span>已用 {{ formatDiskSize(currentServerStatus.diskUsed) }}</span>
+                    <span>共 {{ formatDiskSize(currentServerStatus.diskTotal) }}</span>
                   </div>
                 </div>
               </div>
