@@ -17,7 +17,6 @@ const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
   (e: 'cd-to-terminal'): void;
-  (e: 'refresh'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
   (e: 'new-folder'): void;
@@ -86,17 +85,6 @@ defineExpose({
         :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
       >
         <i class="fas fa-terminal text-xs"></i>
-      </button>
-
-      <!-- 刷新按钮 -->
-      <button
-        type="button"
-        class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground"
-        @click.stop="emit('refresh')"
-        :disabled="!isConnected || isLoading"
-        :title="t('fileManager.actions.refresh')"
-      >
-        <i class="fas fa-sync-alt text-xs" :class="{ 'fa-spin': isLoading }"></i>
       </button>
 
       <!-- 分隔微线 -->
