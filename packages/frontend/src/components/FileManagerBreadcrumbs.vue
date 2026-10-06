@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import type { FileListItem } from '../types/sftp.types';
 import type { SftpManagerInstance } from '../composables/useSftpActions';
 import PathHistoryDropdown from './PathHistoryDropdown.vue';
+import MobilePathHistoryDrawer from './MobilePathHistoryDrawer.vue';
 import FavoritePathsModal from './FavoritePathsModal.vue';
 import { usePathHistoryStore } from '../stores/pathHistory.store';
 import { copyToClipboard } from '../utils/clipboard';
@@ -33,6 +34,7 @@ const editablePath = ref('');
 const pathInputRef = ref<HTMLInputElement | null>(null);
 const pathHistoryDropdownRef = ref<InstanceType<typeof PathHistoryDropdown> | null>(null);
 const showPathHistoryDropdown = ref(false);
+const showMobilePathHistoryDrawer = ref(false);
 
 // --- 常用路径收藏夹状态 ---
 const showFavoritePathsModal = ref(false);
@@ -114,6 +116,16 @@ const navigateTo = (targetPath: string) => {
 const startEdit = () => {
   if (props.isLoading || !props.isConnected) return;
   closeDirDropdown();
+
+  // 移动端特化：打开底部大触控历史路径与跳转抽屉，不开启挤压变形的内联输入框
+  if (props.isMobile) {
+    showMobilePathHistoryDrawer.value = true;
+    if (pathHistoryStore.historyList.length === 0) {
+      pathHistoryStore.fetchHistory();
+    }
+    return;
+  }
+
   isEditing.value = true;
   editablePath.value = props.currentPath;
   showPathHistoryDropdown.value = true;
@@ -510,6 +522,15 @@ defineExpose({
         </div>
       </div>
     </div>
+
+    <!-- 移动端历史路径与跳转底部抽屉 -->
+    <MobilePathHistoryDrawer
+      v-if="isMobile"
+      :is-visible="showMobilePathHistoryDrawer"
+      :current-path="currentPath"
+      @close="showMobilePathHistoryDrawer = false"
+      @navigate-to-path="(p: string) => { navigateTo(p); showMobilePathHistoryDrawer = false; }"
+    />
   </div>
 </template>
 

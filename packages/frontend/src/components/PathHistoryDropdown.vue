@@ -58,6 +58,7 @@ import { storeToRefs } from 'pinia';
 import { usePathHistoryStore, PathHistoryEntryFE } from '../stores/pathHistory.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useI18n } from 'vue-i18n';
+import { copyToClipboard } from '../utils/clipboard';
 
 const pathHistoryStore = usePathHistoryStore();
 const uiNotificationsStore = useUiNotificationsStore();
@@ -93,11 +94,10 @@ const handleItemClick = (path: string) => {
 };
 
 const copyPathToClipboard = async (path: string) => {
-  try {
-    await navigator.clipboard.writeText(path);
+  const success = await copyToClipboard(path);
+  if (success) {
     uiNotificationsStore.showSuccess(t('pathHistory.copiedSuccess', '路径已复制到剪贴板'));
-  } catch (err) {
-    console.error('Failed to copy path:', err);
+  } else {
     uiNotificationsStore.showError(t('pathHistory.copiedError', '复制路径失败'));
   }
 };

@@ -124,6 +124,10 @@ const handleRequestEditFromPopup = (connection: ConnectionInfo) => { // 假设 W
 const showContextMenu = (event: MouseEvent, sessionId: string) => {
   event.preventDefault();
   event.stopPropagation();
+  // 移动端严格禁止呼出桌面端右键上下文菜单
+  if (props.isMobile) {
+    return;
+  }
   contextTargetSessionId.value = sessionId; // Still set the original ref if needed elsewhere
   menuTargetId.value = sessionId; // + Set the dedicated ref for the prop
   contextMenuPosition.value = { x: event.clientX, y: event.clientY };
@@ -448,6 +452,8 @@ watch(() => props.activeSessionId, async (newId) => {
       <div
         ref="mobileTabsContainerRef"
         class="mobile-tabs-scroll-container flex items-center gap-1 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
+        style="-webkit-touch-callout: none;"
+        @contextmenu.prevent
       >
         <div
           v-for="session in draggableSessions"
@@ -458,10 +464,11 @@ watch(() => props.activeSessionId, async (newId) => {
             ? 'bg-background text-primary border border-primary/30 font-medium shadow-xs'
             : 'text-text-secondary hover:text-foreground hover:bg-background/40 active:bg-background/60 border border-transparent'"
           @click="activateSession(session.sessionId)"
-          @contextmenu.prevent="showContextMenu($event, session.sessionId)"
+          @contextmenu.prevent
           @touchstart="handleTouchStart($event, session.sessionId)"
           @touchend="handleTouchEnd($event)"
           :title="session.connectionName"
+          style="-webkit-touch-callout: none;"
         >
           <!-- 状态指示灯 -->
           <span
@@ -601,6 +608,7 @@ watch(() => props.activeSessionId, async (newId) => {
     />
     <!-- +++ Context Menu Instance (Ensure it's present) +++ -->
     <TabBarContextMenu
+      v-if="!props.isMobile"
       :visible="contextMenuVisible"
       :position="contextMenuPosition"
       :items="contextMenuItems"
