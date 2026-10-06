@@ -46,6 +46,9 @@ let terminalTextStrokeEnabledFound = false;
             case 'terminalFontFamily':
                 settings.terminalFontFamily = row.value;
                 break;
+            case 'terminalFontFamilyMobile':
+                settings.terminalFontFamilyMobile = row.value;
+                break;
             case 'terminalFontSize':
                 settings.terminalFontSize = parseInt(row.value, 10);
                 break;
@@ -122,6 +125,7 @@ case 'terminalTextStrokeEnabled':
         customUiTheme: settings.customUiTheme ?? defaults.customUiTheme,
         activeTerminalThemeId: settings.activeTerminalThemeId ?? defaults.activeTerminalThemeId,
         terminalFontFamily: settings.terminalFontFamily ?? defaults.terminalFontFamily,
+        terminalFontFamilyMobile: settings.terminalFontFamilyMobile ?? defaults.terminalFontFamilyMobile,
         terminalFontSize: settings.terminalFontSize ?? defaults.terminalFontSize,
         terminalFontSizeMobile: settings.terminalFontSizeMobile ?? defaults.terminalFontSizeMobile,
         editorFontSize: settings.editorFontSize ?? defaults.editorFontSize,
@@ -173,6 +177,7 @@ const getDefaultAppearanceSettings = (): Omit<AppearanceSettings, '_id'> => {
         customUiTheme: JSON.stringify(defaultUiTheme),
         activeTerminalThemeId: null, // 初始默认应为 null
         terminalFontFamily: 'Consolas, "Courier New", monospace, "Microsoft YaHei", "微软雅黑"',
+        terminalFontFamilyMobile: '-apple-system-monospaced, "SF Mono", Menlo, Monaco, "Roboto Mono", "Noto Sans Mono", monospace',
         terminalFontSize: 14,
         terminalFontSizeMobile: 14, // 移动端默认字体大小
         editorFontSize: 14,
@@ -215,6 +220,7 @@ export const ensureDefaultSettingsExist = async (db: sqlite3.Database): Promise<
         { key: 'customUiTheme', value: defaults.customUiTheme },
         { key: 'activeTerminalThemeId', value: null }, // 以 null 开始
         { key: 'terminalFontFamily', value: defaults.terminalFontFamily },
+        { key: 'terminalFontFamilyMobile', value: defaults.terminalFontFamilyMobile },
         { key: 'terminalFontSize', value: defaults.terminalFontSize },
         { key: 'terminalFontSizeMobile', value: defaults.terminalFontSizeMobile },
         { key: 'editorFontSize', value: defaults.editorFontSize },
