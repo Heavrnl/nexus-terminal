@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue'; 
+import MobileDashboard from '../components/MobileDashboard.vue';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useAuditLogStore } from '../stores/audit.store';
 import { useSessionStore } from '../stores/session.store';
@@ -18,6 +20,15 @@ import type { Locale } from 'date-fns';
 
 const { t, locale } = useI18n();
 const router = useRouter();
+const { isMobile } = useDeviceDetection();
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+const handleResize = () => {
+  windowWidth.value = window.innerWidth;
+};
+
+const isMobileMode = computed(() => isMobile.value || windowWidth.value < 768);
+
 const connectionsStore = useConnectionsStore();
 const auditLogStore = useAuditLogStore();
 const sessionStore = useSessionStore();
@@ -153,6 +164,11 @@ onMounted(async () => {
   } catch (error) {
     console.error("加载标签列表失败:", error);
   }
+  window.addEventListener('resize', handleResize);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
 });
 
 const connectTo = (connection: ConnectionInfo) => {
@@ -284,7 +300,11 @@ const handleConnectionModified = async () => {
 </script>
 
 <template>
-  <div class="p-4 md:p-6 lg:p-8 bg-background text-foreground">
+  <!-- 移动端特化版本 -->
+  <MobileDashboard v-if="isMobileMode" />
+
+  <!-- 桌面端视图（保持原逻辑与布局 100% 不变） -->
+  <div v-else class="p-4 md:p-6 lg:p-8 bg-background text-foreground">
     <h1 class="text-2xl font-semibold mb-6">{{ t('nav.dashboard') }}</h1>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
@@ -421,6 +441,7 @@ const handleConnectionModified = async () => {
     <AddConnectionForm
       v-if="showAddEditConnectionForm"
       :connectionToEdit="connectionToEdit"
+      :is-mobile="false"
       @close="handleFormClose"
       @connection-added="handleConnectionModified"
       @connection-updated="handleConnectionModified"
