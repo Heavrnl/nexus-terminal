@@ -609,6 +609,6 @@ watch(() => props.activeSessionId, async (newId) => {
       @close="closeContextMenu"
     />
     <!-- 传输进度模态框 -->
-    <TransferProgressModal v-model:visible="showTransferProgressModal" />
+    <TransferProgressModal v-model:visible="showTransferProgressModal" :is-mobile="props.isMobile" />
   </div>
 </template>
