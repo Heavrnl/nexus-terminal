@@ -1,25 +1,51 @@
 <script setup lang="ts">
-import { ref, Teleport, nextTick, type Ref } from 'vue';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { ConnectionInfo } from '../stores/connections.store'; // Keep ConnectionInfo type
+import { ConnectionInfo } from '../stores/connections.store';
 import { useAddConnectionForm } from '../composables/useAddConnectionForm';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
 import AddConnectionFormBasicInfo from './AddConnectionFormBasicInfo.vue';
 import AddConnectionFormAuth from './AddConnectionFormAuth.vue';
 import AddConnectionFormAdvanced from './AddConnectionFormAdvanced.vue';
+import { getTranslation } from '../utils/languageUtils';
 
 // 定义组件发出的事件
 const emit = defineEmits(['close', 'connection-added', 'connection-updated', 'connection-deleted']);
 
 // 定义 Props
-const props = defineProps<{
+interface Props {
   connectionToEdit: ConnectionInfo | null;
-}>();
+  isMobile?: boolean;
+}
 
-import { getTranslation } from '../utils/languageUtils';
-
+const props = withDefaults(defineProps<Props>(), {
+  isMobile: undefined,
+});
 
 const { t, locale } = useI18n();
+const { isMobile: detectedMobile } = useDeviceDetection();
 const scriptModeFormatInfo = ref(getTranslation('connections.form.scriptModeFormatInfo', locale.value));
+
+// 视口尺寸响应式监听
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
+const handleResize = () => {
+  windowWidth.value = window.innerWidth;
+};
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize);
+});
+
+const isMobileMode = computed(() => {
+  if (typeof props.isMobile === 'boolean') {
+    return props.isMobile;
+  }
+  return detectedMobile.value || windowWidth.value < 768;
+});
 
 const {
   formData,
@@ -54,176 +80,340 @@ const {
 const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
   advancedConnectionMode.value = newMode;
 };
-
-// Tooltip state and refs - Kept in component as it's purely view-related
-const showHostTooltip = ref(false);
-const hostTooltipStyle = ref({});
-const hostIconRef = ref<HTMLElement | null>(null);
-const hostTooltipContentRef = ref<HTMLElement | null>(null);
-
-const handleHostIconMouseEnter = async () => {
-  showHostTooltip.value = true;
-  await nextTick();
-
-  if (hostIconRef.value && hostTooltipContentRef.value) {
-    const iconRect = hostIconRef.value.getBoundingClientRect();
-    const tooltipRect = hostTooltipContentRef.value.getBoundingClientRect();
-
-    let top = iconRect.top - tooltipRect.height - 8;
-    let left = iconRect.left + (iconRect.width / 2) - (tooltipRect.width / 2);
-
-    if (top < 0) {
-      top = iconRect.bottom + 8;
-    }
-    if (left < 0) {
-      left = 0;
-    }
-    if (left + tooltipRect.width > window.innerWidth) {
-      left = window.innerWidth - tooltipRect.width;
-    }
-
-    hostTooltipStyle.value = {
-      top: `${top}px`,
-      left: `${left}px`,
-    };
-  }
-};
-
-const handleHostIconMouseLeave = () => {
-  showHostTooltip.value = false;
-};
-
 </script>
 
 <template>
-  <!-- Host Tooltip is managed by AddConnectionFormBasicInfo for its specific host input,
-       but if there was a general tooltip at this level, Teleport would be here.
-       The original Teleport for host tooltip is removed as it's now encapsulated. -->
-  <div class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4"> <!-- Overlay -->
-    <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-2xl max-h-[90vh] flex flex-col"> <!-- Form Panel -->
-      <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">{{ formTitle }}</h3> <!-- Title -->
-      <form @submit.prevent="handleSubmit" class="flex-grow overflow-y-auto pr-2 space-y-6"> <!-- Form with scroll and spacing -->
+  <Teleport to="body">
+    <!-- ==================== 移动端特化视图 (Bottom Sheet 抽屉) ==================== -->
+    <Transition name="bottom-sheet">
+      <div
+        v-if="isMobileMode"
+        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
+        @click.self="emit('close')"
+      >
+        <div class="mobile-form-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text">
+          
+          <!-- 1. 顶部手柄条与导航栏 -->
+          <div class="flex-shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
+            <!-- 拖拽手柄条 -->
+            <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
 
-        <!-- Regular Form Sections (conditionally rendered) -->
-        <template v-if="!isScriptModeActive">
-          <AddConnectionFormBasicInfo :form-data="formData" />
-          <AddConnectionFormAuth :form-data="formData" :is-edit-mode="isEditMode" />
-          <AddConnectionFormAdvanced
-            :form-data="formData"
-            :proxies="proxies"
-            :tags="tags"
-            :connections="connections"
-            :is-proxy-loading="isProxyLoading"
-            :proxy-store-error="proxyStoreError"
-            :is-tag-loading="isTagLoading"
-            :tag-store-error="tagStoreError"
-            :advanced-connection-mode="advancedConnectionMode"
-            @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
-            :add-jump-host="addJumpHost"
-            :remove-jump-host="removeJumpHost"
-            @create-tag="handleCreateTag"
-            @delete-tag="handleDeleteTag"
-          />
-        </template>
-       
-        <!-- Script Mode Section Toggle -->
-       <div v-if="!isEditMode" class="space-y-4 p-4 border border-border rounded-md bg-header/30 mt-6">
-         <div class="flex justify-between items-center">
-           <h4 class="text-base font-semibold">{{ t('connections.form.sectionScriptMode', '脚本模式') }}</h4>
-           <button
-             type="button"
-             @click="isScriptModeActive = !isScriptModeActive"
-             :class="[
-               'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
-               isScriptModeActive ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-             ]"
-             role="switch"
-             :aria-checked="isScriptModeActive"
-           >
-             <span
-               aria-hidden="true"
-               :class="[
-                 'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
-                 isScriptModeActive ? 'translate-x-5' : 'translate-x-0'
-               ]"
-             ></span>
-           </button>
-         </div>
-         <div v-if="isScriptModeActive" class="mt-4">
-           <textarea
-             id="conn-script-input"
-             v-model="scriptInputText"
-             rows="10"
-             wrap="off"
-             class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-             :placeholder="t('connections.form.scriptModePlaceholder')"
-           ></textarea>
-           <p class="mt-1 text-xs text-text-secondary whitespace-pre-line">
-             {{ scriptModeFormatInfo }}
-           </p>
-         </div>
-       </div>
+            <div class="flex items-center justify-between">
+              <!-- 左侧取消/收起按钮 -->
+              <button
+                type="button"
+                @click="emit('close')"
+                class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1"
+                :title="t('common.cancel', '取消')"
+              >
+                <i class="fas fa-chevron-down text-xs"></i>
+                <span>{{ t('common.cancel', '取消') }}</span>
+              </button>
 
-       <!-- Error message DIV removed -->
+              <!-- 居中标题与协议徽章 -->
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[170px]">
+                  {{ formTitle }}
+                </span>
+                <span
+                  class="px-1.5 py-0.2 rounded text-[10px] uppercase font-mono font-bold tracking-wider flex-shrink-0"
+                  :class="formData.type === 'RDP'
+                    ? 'bg-blue-500/10 text-blue-400'
+                    : formData.type === 'VNC'
+                      ? 'bg-purple-500/10 text-purple-400'
+                      : 'bg-emerald-500/10 text-emerald-400'"
+                >
+                  {{ formData.type }}
+                </span>
+              </div>
 
-       </form> <!-- End Form -->
+              <!-- 右侧快捷保存按钮 -->
+              <button
+                type="button"
+                @click="handleSubmit"
+                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                class="px-3 py-1 text-xs font-medium rounded-lg bg-primary text-button-text hover:bg-primary-hover active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs flex items-center gap-1.5 -mr-1"
+              >
+                <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>{{ isEditMode ? t('common.save', '保存') : t('common.add', '添加') }}</span>
+              </button>
+            </div>
+          </div>
 
-       <!-- Form Actions -->
-      <div class="flex justify-between items-center pt-5 mt-6 flex-shrink-0">
-         <!-- Test Area (Only show for SSH and when script mode is NOT active) -->
-         <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex flex-col items-start gap-1">
-             <div class="flex items-center gap-2"> <!-- Button and Icon -->
-                 <button type="button" @click="handleTestConnection" :disabled="isLoading || testStatus === 'testing'"
-                         class="px-3 py-1.5 border border-border rounded-md text-sm font-medium text-text-secondary bg-background hover:bg-border focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center transition-colors duration-150">
-                     <svg v-if="testStatus === 'testing'" class="animate-spin -ml-0.5 mr-2 h-4 w-4 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                     </svg>
-                     {{ testButtonText }}
-                 </button>
-                 <div class="relative group"> <!-- Tooltip Container -->
-                     <i class="fas fa-info-circle text-text-secondary cursor-help"></i>
-                     <span class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 whitespace-pre-wrap">
-                         {{ t('connections.test.latencyTooltip') }}
-                     </span>
-                 </div>
-             </div>
-             <!-- Test Result -->
-             <div class="min-h-[1.2em] pl-1 text-xs">
-                 <div v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">
-                   {{ t('connections.test.testingInProgress', '测试中...') }}
-                 </div>
-                 <div v-else-if="testStatus === 'success'" class="font-medium" :style="{ color: latencyColor }">
-                   {{ testResult }}
-                 </div>
-                 <div v-else-if="testStatus === 'error'" class="text-error font-medium">
-                   <!-- Error message is now shown via uiNotificationsStore -->
-                   <!-- Display a generic message or icon here if needed, or leave empty -->
-                    {{ t('connections.test.errorPrefix', '错误:') }} {{ testResult }} <!-- Or simply 'Error' -->
-                 </div>
-             </div>
-         </div>
-         <!-- Placeholder for alignment when test button is hidden or script mode is active -->
-         <div v-else-if="!isScriptModeActive" class="flex-1"></div>
-         <div v-else class="flex-1"></div> <!-- Also take up space if script mode is active, pushing buttons right -->
-         <div class="flex space-x-3"> <!-- Main Actions -->
-             <button v-if="isEditMode && !isScriptModeActive" type="button" @click="handleDeleteConnection" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                     class="px-4 py-2 bg-transparent text-red-600 border border-red-500 rounded-md shadow-sm hover:bg-red-500/10 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
-               {{ t('connections.actions.delete') }}
-             </button>
-             <button type="submit" @click="handleSubmit" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                     class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
-               {{ submitButtonText }}
-             </button>
-             <button type="button" @click="emit('close')" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                     class="px-4 py-2 bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
-               {{ t('connections.form.cancel') }}
-             </button>
-         </div>
-      </div> <!-- End Form Actions -->
+          <!-- 2. 表单滚动主体 -->
+          <div class="flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
+            <template v-if="!isScriptModeActive">
+              <AddConnectionFormBasicInfo :form-data="formData" />
+              <AddConnectionFormAuth :form-data="formData" :is-edit-mode="isEditMode" />
+              <AddConnectionFormAdvanced
+                :form-data="formData"
+                :proxies="proxies"
+                :tags="tags"
+                :connections="connections"
+                :is-proxy-loading="isProxyLoading"
+                :proxy-store-error="proxyStoreError"
+                :is-tag-loading="isTagLoading"
+                :tag-store-error="tagStoreError"
+                :advanced-connection-mode="advancedConnectionMode"
+                @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
+                :add-jump-host="addJumpHost"
+                :remove-jump-host="removeJumpHost"
+                @create-tag="handleCreateTag"
+                @delete-tag="handleDeleteTag"
+              />
+            </template>
 
-    </div> <!-- End Form Panel -->
-  </div> <!-- End Overlay -->
+            <!-- 脚本模式切换 (仅在添加模式下可用) -->
+            <div v-if="!isEditMode" class="space-y-3 p-3.5 border border-border/50 rounded-xl bg-header/20">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h4 class="text-sm font-semibold text-foreground">{{ t('connections.form.sectionScriptMode', '脚本模式') }}</h4>
+                  <p class="text-xs text-text-secondary">{{ t('connections.form.scriptModeDescription', '批量粘贴导入快速配置') }}</p>
+                </div>
+                <button
+                  type="button"
+                  @click="isScriptModeActive = !isScriptModeActive"
+                  :class="[
+                    'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
+                    isScriptModeActive ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+                  ]"
+                  role="switch"
+                  :aria-checked="isScriptModeActive"
+                >
+                  <span
+                    aria-hidden="true"
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
+                      isScriptModeActive ? 'translate-x-5' : 'translate-x-0'
+                    ]"
+                  ></span>
+                </button>
+              </div>
+              <div v-if="isScriptModeActive" class="mt-2">
+                <textarea
+                  id="conn-script-input-mobile"
+                  v-model="scriptInputText"
+                  rows="6"
+                  wrap="off"
+                  class="w-full px-3 py-2 border border-border rounded-xl shadow-xs bg-background text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  :placeholder="t('connections.form.scriptModePlaceholder')"
+                ></textarea>
+                <p class="mt-1 text-[11px] text-text-secondary whitespace-pre-line leading-relaxed">
+                  {{ scriptModeFormatInfo }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 底部空间留白 -->
+            <div class="h-2"></div>
+          </div>
+
+          <!-- 3. 移动端固定吸底操作栏 (Sticky Bottom Bar) -->
+          <div class="flex-shrink-0 border-t border-border/40 bg-header/40 px-4 py-2.5">
+            <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
+            <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                @click="handleTestConnection"
+                :disabled="isLoading || testStatus === 'testing'"
+                class="px-2.5 py-1 text-xs font-medium rounded-lg border border-border/70 text-text-secondary bg-background/80 hover:bg-border/40 active:bg-border disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
+              >
+                <svg v-if="testStatus === 'testing'" class="animate-spin h-3.5 w-3.5 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <i v-else class="fas fa-bolt text-xs"></i>
+                <span>{{ testButtonText }}</span>
+              </button>
+
+              <div class="text-xs font-mono">
+                <span v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">{{ t('connections.test.testingInProgress', '测试中...') }}</span>
+                <span v-else-if="testStatus === 'success'" class="font-semibold" :style="{ color: latencyColor }">✓ {{ testResult }}</span>
+                <span v-else-if="testStatus === 'error'" class="text-error font-medium truncate max-w-[200px]" :title="String(testResult)">✗ {{ testResult }}</span>
+              </div>
+            </div>
+
+            <!-- 主按钮操作区：删除 / 保存 -->
+            <div class="flex items-center gap-2.5">
+              <button
+                v-if="isEditMode && !isScriptModeActive"
+                type="button"
+                @click="handleDeleteConnection"
+                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                class="px-3.5 py-2.5 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 active:scale-98 disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1.5 transition-all"
+              >
+                <i class="fas fa-trash-alt text-xs"></i>
+                <span>{{ t('connections.actions.delete') }}</span>
+              </button>
+
+              <button
+                type="button"
+                @click="handleSubmit"
+                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                class="flex-grow py-2.5 px-4 rounded-xl bg-primary text-button-text hover:bg-primary-hover active:scale-98 disabled:opacity-50 text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all"
+              >
+                <svg v-if="isLoading" class="animate-spin h-4 w-4 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>{{ submitButtonText }}</span>
+              </button>
+            </div>
+
+            <!-- 底部安全区垫片 -->
+            <div class="sheet-safe-bottom shrink-0"></div>
+          </div>
+
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ==================== 桌面端原有视图 (居中固定模态框) ==================== -->
+    <div v-if="!isMobileMode" class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4">
+      <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">{{ formTitle }}</h3>
+        <form @submit.prevent="handleSubmit" class="flex-grow overflow-y-auto pr-2 space-y-6">
+          <template v-if="!isScriptModeActive">
+            <AddConnectionFormBasicInfo :form-data="formData" />
+            <AddConnectionFormAuth :form-data="formData" :is-edit-mode="isEditMode" />
+            <AddConnectionFormAdvanced
+              :form-data="formData"
+              :proxies="proxies"
+              :tags="tags"
+              :connections="connections"
+              :is-proxy-loading="isProxyLoading"
+              :proxy-store-error="proxyStoreError"
+              :is-tag-loading="isTagLoading"
+              :tag-store-error="tagStoreError"
+              :advanced-connection-mode="advancedConnectionMode"
+              @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
+              :add-jump-host="addJumpHost"
+              :remove-jump-host="removeJumpHost"
+              @create-tag="handleCreateTag"
+              @delete-tag="handleDeleteTag"
+            />
+          </template>
+         
+          <div v-if="!isEditMode" class="space-y-4 p-4 border border-border rounded-md bg-header/30 mt-6">
+            <div class="flex justify-between items-center">
+              <h4 class="text-base font-semibold">{{ t('connections.form.sectionScriptMode', '脚本模式') }}</h4>
+              <button
+                type="button"
+                @click="isScriptModeActive = !isScriptModeActive"
+                :class="[
+                  'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
+                  isScriptModeActive ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+                ]"
+                role="switch"
+                :aria-checked="isScriptModeActive"
+              >
+                <span
+                  aria-hidden="true"
+                  :class="[
+                    'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
+                    isScriptModeActive ? 'translate-x-5' : 'translate-x-0'
+                  ]"
+                ></span>
+              </button>
+            </div>
+            <div v-if="isScriptModeActive" class="mt-4">
+              <textarea
+                id="conn-script-input"
+                v-model="scriptInputText"
+                rows="10"
+                wrap="off"
+                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                :placeholder="t('connections.form.scriptModePlaceholder')"
+              ></textarea>
+              <p class="mt-1 text-xs text-text-secondary whitespace-pre-line">
+                {{ scriptModeFormatInfo }}
+              </p>
+            </div>
+          </div>
+        </form>
+
+        <div class="flex justify-between items-center pt-5 mt-6 flex-shrink-0">
+          <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex flex-col items-start gap-1">
+            <div class="flex items-center gap-2">
+              <button type="button" @click="handleTestConnection" :disabled="isLoading || testStatus === 'testing'"
+                      class="px-3 py-1.5 border border-border rounded-md text-sm font-medium text-text-secondary bg-background hover:bg-border focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center transition-colors duration-150">
+                <svg v-if="testStatus === 'testing'" class="animate-spin -ml-0.5 mr-2 h-4 w-4 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {{ testButtonText }}
+              </button>
+              <div class="relative group">
+                <i class="fas fa-info-circle text-text-secondary cursor-help"></i>
+                <span class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-max max-w-xs p-2 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10 whitespace-pre-wrap">
+                  {{ t('connections.test.latencyTooltip') }}
+                </span>
+              </div>
+            </div>
+            <div class="min-h-[1.2em] pl-1 text-xs">
+              <div v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">
+                {{ t('connections.test.testingInProgress', '测试中...') }}
+              </div>
+              <div v-else-if="testStatus === 'success'" class="font-medium" :style="{ color: latencyColor }">
+                {{ testResult }}
+              </div>
+              <div v-else-if="testStatus === 'error'" class="text-error font-medium">
+                {{ t('connections.test.errorPrefix', '错误:') }} {{ testResult }}
+              </div>
+            </div>
+          </div>
+          <div v-else-if="!isScriptModeActive" class="flex-1"></div>
+          <div v-else class="flex-1"></div>
+          <div class="flex space-x-3">
+            <button v-if="isEditMode && !isScriptModeActive" type="button" @click="handleDeleteConnection" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                    class="px-4 py-2 bg-transparent text-red-600 border border-red-500 rounded-md shadow-sm hover:bg-red-500/10 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
+              {{ t('connections.actions.delete') }}
+            </button>
+            <button type="submit" @click="handleSubmit" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                    class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
+              {{ submitButtonText }}
+            </button>
+            <button type="button" @click="emit('close')" :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                    class="px-4 py-2 bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
+              {{ t('connections.form.cancel') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
-<!-- Scoped styles removed, now using Tailwind utility classes -->
+<style scoped>
+/* 遮罩淡入淡出动效 */
+.bottom-sheet-enter-active,
+.bottom-sheet-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.bottom-sheet-enter-from,
+.bottom-sheet-leave-to {
+  opacity: 0;
+}
+
+/* 抽屉底部弹性滑入滑出动效 */
+.bottom-sheet-enter-active .mobile-form-sheet {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-sheet-leave-active .mobile-form-sheet {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.bottom-sheet-enter-from .mobile-form-sheet,
+.bottom-sheet-leave-to .mobile-form-sheet {
+  transform: translateY(100%);
+}
+
+.sheet-safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+</style>

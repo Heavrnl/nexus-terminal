@@ -793,6 +793,7 @@ const closeFileManagerModal = () => {
     <AddConnectionFormComponent
       v-if="showAddEditForm"
       :connection-to-edit="connectionToEdit"
+      :is-mobile="isMobile"
       @close="handleFormClose"
       @connection-added="handleConnectionAdded"
       @connection-updated="handleConnectionUpdated"
