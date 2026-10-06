@@ -1707,5 +1707,16 @@
     "clearAfterSend": "发送后清空",
     "clearAfterSendTooltip": "命令成功发送后自动清空输入框草稿",
     "addHint": "您可以在顶部标签栏的【配置布局】中添加多行命令输入面板"
+  },
+  "imageViewer": {
+    "zoomIn": "放大 (滚轮上滚)",
+    "zoomOut": "缩小 (滚轮下滚)",
+    "actualSize": "恢复 100% 原始大小",
+    "fitToView": "自适应视图大小 (双击)",
+    "rotateLeft": "向左旋转 90°",
+    "rotateRight": "向右旋转 90°",
+    "flipH": "水平镜像翻转",
+    "reset": "重置所有变换",
+    "loadError": "图片加载失败或格式不受支持"
   }
 }

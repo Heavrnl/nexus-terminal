@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import MonacoEditor from './MonacoEditor.vue'; 
 import MarkdownSplitEditor from './MarkdownSplitEditor.vue';
 import MarkdownViewToggle from './MarkdownViewToggle.vue';
+import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store'; 
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
@@ -13,6 +14,7 @@ import { useAppearanceStore } from '../stores/appearance.store'; // +++ 导入�
 import { storeToRefs } from 'pinia';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
+import { isImageFilePath } from '../constants/fileTypes';
 
 const { t } = useI18n();
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射器 +++
@@ -169,8 +171,14 @@ const currentTabSessionName = computed(() => {
   return sessionStore.sessions.get(sessionId)?.connectionName ?? null;
 });
 
+// --- 图片文件判断 ---
+const isImageFile = computed(() => {
+  return isImageFilePath(activeTab.value?.filePath);
+});
+
 // --- Markdown 预览逻辑 ---
 const isMarkdownFile = computed(() => {
+  if (isImageFile.value) return false;
   if (!activeTab.value) return false;
   const path = activeTab.value.filePath || '';
   const ext = path.split('.').pop()?.toLowerCase();
@@ -329,29 +337,30 @@ const handleKeyDown = (event: KeyboardEvent) => {
             v-model:sync-scroll="isSyncScrollEnabled"
           />
 
-          <!-- +++ 编码选择下拉菜单 +++ -->
-          <div class="encoding-select-wrapper" v-if="activeTab && !currentTabIsLoading">
-            <select
-              ref="encodingSelectRef"
-              :value="currentSelectedEncoding"
-              @change="handleEncodingChange"
-              class="encoding-select"
-              :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
-            >
-              <option v-for="option in encodingOptions" :key="option.value" :value="option.value">
-                {{ option.text }}
-              </option>
-            </select>
-          </div>
-          <span v-else-if="activeTab" class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
-      
+          <!-- +++ 编码选择下拉菜单 (仅文本文件展示) +++ -->
+          <template v-if="!isImageFile">
+            <div class="encoding-select-wrapper" v-if="activeTab && !currentTabIsLoading">
+              <select
+                ref="encodingSelectRef"
+                :value="currentSelectedEncoding"
+                @change="handleEncodingChange"
+                class="encoding-select"
+                :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
+              >
+                <option v-for="option in encodingOptions" :key="option.value" :value="option.value">
+                  {{ option.text }}
+                </option>
+              </select>
+            </div>
+            <span v-else-if="activeTab" class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
 
-          <span v-if="currentTabSaveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
-          <span v-if="currentTabSaveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
-          <span v-if="currentTabSaveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ currentTabSaveError }}</span>
-          <button @click="handleSaveRequest" :disabled="currentTabIsSaving || currentTabIsLoading || !!currentTabLoadingError || !activeTab || !currentTabIsModified" class="save-btn">
-            {{ t('fileManager.actions.save') }}
-          </button>
+            <span v-if="currentTabSaveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
+            <span v-if="currentTabSaveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
+            <span v-if="currentTabSaveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ currentTabSaveError }}</span>
+            <button @click="handleSaveRequest" :disabled="currentTabIsSaving || currentTabIsLoading || !!currentTabLoadingError || !activeTab || !currentTabIsModified" class="save-btn">
+              {{ t('fileManager.actions.save') }}
+            </button>
+          </template>
         </div>
       </div>
       <!-- 如果没有活动标签页，显示简化头部 -->
@@ -383,6 +392,13 @@ const handleKeyDown = (event: KeyboardEvent) => {
       <div class="editor-content-area">
         <div v-if="currentTabIsLoading" class="editor-loading">{{ t('fileManager.loadingFile') }}</div>
         <div v-else-if="currentTabLoadingError" class="editor-error">{{ currentTabLoadingError }}</div>
+
+        <!-- 图片专用视图 -->
+        <ImageViewer
+          v-else-if="activeTab && isImageFile"
+          :key="`img-${activeTab.id}`"
+          :tab="activeTab"
+        />
 
         <!-- Markdown 专用视图 (内聚三种视图模式与平滑同步滚动) -->
         <MarkdownSplitEditor

@@ -1664,5 +1664,16 @@
     "clearAfterSend": "送信後にクリア",
     "clearAfterSendTooltip": "コマンド送信成功後に入力内容を自動的にクリアします",
     "addHint": "上部タブバーの [レイアウト設定] から複数行コマンド入力パネルを追加できます"
+  },
+  "imageViewer": {
+    "zoomIn": "拡大 (ホイール上)",
+    "zoomOut": "縮小 (ホイール下)",
+    "actualSize": "等倍表示 100%",
+    "fitToView": "ウィンドウに合わせる (ダブルクリック)",
+    "rotateLeft": "左に90度回転",
+    "rotateRight": "右に90度回転",
+    "flipH": "左右反転",
+    "reset": "変換をリセット",
+    "loadError": "画像の読み込みに失敗したかサポートされていない形式です"
   }
 }

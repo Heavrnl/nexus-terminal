@@ -6,12 +6,14 @@ import MonacoEditor from './MonacoEditor.vue';
 import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue'; // +++ Import new mobile editor
 import MarkdownSplitEditor from './MarkdownSplitEditor.vue';
 import MarkdownViewToggle from './MarkdownViewToggle.vue';
+import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useSessionStore } from '../stores/session.store';
 import { useAppearanceStore } from '../stores/appearance.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
+import { isImageFilePath } from '../constants/fileTypes';
 import { useOverlayResizable } from '../composables/useOverlayResizable';
 
 
@@ -217,8 +219,14 @@ const currentTabSessionName = computed(() => {
   return sessionStore.sessions.get(sessionId)?.connectionName ?? null; // 修正：使用 connectionName
 });
 
+// --- 图片文件判断 ---
+const isImageFile = computed(() => {
+  return isImageFilePath(activeTab.value?.filePath);
+});
+
 // --- Markdown 预览逻辑 ---
 const isMarkdownFile = computed(() => {
+  if (isImageFile.value) return false;
   if (!activeTab.value) return false;
   const path = activeTab.value.filePath || '';
   const ext = path.split('.').pop()?.toLowerCase();
@@ -492,38 +500,39 @@ watch(currentSelectedEncoding, () => {
             v-model:sync-scroll="isSyncScrollEnabled"
           />
 
-          <!-- +++ 编码选择下拉菜单 +++ -->
-          <div class="encoding-select-wrapper" v-if="activeTab && !currentTabIsLoading">
-            <select
-              ref="encodingSelectRef"
-              :value="currentSelectedEncoding"
-              @change="handleEncodingChange"
-              class="encoding-select"
-              :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
+          <!-- +++ 编码与保存按钮 (仅文本文件展示) +++ -->
+          <template v-if="!isImageFile">
+            <div class="encoding-select-wrapper" v-if="activeTab && !currentTabIsLoading">
+              <select
+                ref="encodingSelectRef"
+                :value="currentSelectedEncoding"
+                @change="handleEncodingChange"
+                class="encoding-select"
+                :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
+              >
+                <option v-for="option in encodingOptions" :key="option.value" :value="option.value">
+                  {{ option.text }}
+                </option>
+              </select>
+            </div>
+            <span v-else-if="activeTab" class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
+
+            <span v-if="currentTabSaveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
+            <span v-if="currentTabSaveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
+            <span v-if="currentTabSaveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ currentTabSaveError }}</span>
+            <!-- +++ 移动端搜索按钮 (Font Awesome) +++ -->
+            <button
+              v-if="props.isMobile && activeTab && !currentTabIsLoading"
+              @click="handleOpenSearch"
+              class="search-btn"
+              :title="t('fileManager.actions.search', 'Search')"
             >
-              <option v-for="option in encodingOptions" :key="option.value" :value="option.value">
-                {{ option.text }}
-              </option>
-            </select>
-          </div>
-          <span v-else-if="activeTab" class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
-
-
-          <span v-if="currentTabSaveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
-          <span v-if="currentTabSaveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
-          <span v-if="currentTabSaveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ currentTabSaveError }}</span>
-          <!-- +++ 移动端搜索按钮 (Font Awesome) +++ -->
-          <button
-            v-if="props.isMobile && activeTab && !currentTabIsLoading"
-            @click="handleOpenSearch"
-            class="search-btn"
-            :title="t('fileManager.actions.search', 'Search')"
-          >
-            <i class="fas fa-search"></i>
-          </button>
-          <button @click="handleSaveRequest" :disabled="currentTabIsSaving || currentTabIsLoading || !!currentTabLoadingError || !activeTab" class="save-btn">
-            {{ t('fileManager.actions.save') }}
-          </button>
+              <i class="fas fa-search"></i>
+            </button>
+            <button @click="handleSaveRequest" :disabled="currentTabIsSaving || currentTabIsLoading || !!currentTabLoadingError || !activeTab" class="save-btn">
+              {{ t('fileManager.actions.save') }}
+            </button>
+          </template>
 
           <button v-if="!props.isMobile" @click="handleCloseContainer" class="close-editor-btn" :title="t('fileManager.actions.closeEditor')">✖</button>
         </div>
@@ -558,6 +567,13 @@ watch(currentSelectedEncoding, () => {
       <div class="editor-content-area">
         <div v-if="currentTabIsLoading" class="editor-loading">{{ t('fileManager.loadingFile') }}</div>
         <div v-else-if="currentTabLoadingError" class="editor-error">{{ currentTabLoadingError }}</div>
+
+        <!-- 图片专用视图 -->
+        <ImageViewer
+          v-else-if="activeTab && isImageFile"
+          :key="`img-${activeTab.id}`"
+          :tab="activeTab"
+        />
 
         <!-- Markdown 专用视图 (内聚三种视图模式与平滑同步滚动) -->
         <MarkdownSplitEditor

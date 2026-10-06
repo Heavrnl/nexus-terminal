@@ -1703,5 +1703,16 @@
     "clearAfterSend": "Clear After Send",
     "clearAfterSendTooltip": "Automatically clears the draft after sending commands",
     "addHint": "You can add the Multi-line Command Input panel via [Configure Layout] in the top tab bar"
+  },
+  "imageViewer": {
+    "zoomIn": "Zoom In (Scroll Up)",
+    "zoomOut": "Zoom Out (Scroll Down)",
+    "actualSize": "Actual Size 100%",
+    "fitToView": "Fit to View (Double Click)",
+    "rotateLeft": "Rotate Left 90°",
+    "rotateRight": "Rotate Right 90°",
+    "flipH": "Flip Horizontally",
+    "reset": "Reset Transforms",
+    "loadError": "Failed to load image or unsupported format"
   }
 }
