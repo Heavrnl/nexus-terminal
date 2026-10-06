@@ -283,6 +283,99 @@ const resetSplitRatio = () => {
   splitRatio.value = 50;
 };
 
+// --- Markdown 双向同步滚动 (Synchronized Scrolling) ---
+const SYNC_SCROLL_STORAGE_KEY = 'nexus_markdown_sync_scroll_enabled';
+const isSyncScrollEnabled = ref<boolean>(localStorage.getItem(SYNC_SCROLL_STORAGE_KEY) !== 'false'); // 默认开启
+const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | null>(null);
+const markdownPreviewRef = ref<InstanceType<typeof MarkdownPreview> | null>(null);
+
+const toggleSyncScroll = () => {
+  isSyncScrollEnabled.value = !isSyncScrollEnabled.value;
+  localStorage.setItem(SYNC_SCROLL_STORAGE_KEY, String(isSyncScrollEnabled.value));
+};
+
+// 互斥锁与防死循环计时器
+type ScrollSyncSource = 'editor' | 'preview' | null;
+let currentScrollSyncSource: ScrollSyncSource = null;
+let resetScrollSyncTimer: number | null = null;
+
+const scheduleResetSyncSource = () => {
+  if (resetScrollSyncTimer) clearTimeout(resetScrollSyncTimer);
+  resetScrollSyncTimer = window.setTimeout(() => {
+    currentScrollSyncSource = null;
+  }, 100);
+};
+
+// 左侧 Monaco Editor 滚动 -> 同步到右侧 MarkdownPreview
+const handleEditorScrollSync = (info: { scrollTop: number; scrollLeft: number; scrollHeight?: number; clientHeight?: number }) => {
+  handleEditorScroll(info);
+
+  if (!isMarkdownFile.value || markdownViewMode.value !== 'split' || !isSyncScrollEnabled.value) {
+    return;
+  }
+
+  if (currentScrollSyncSource === 'preview') {
+    return;
+  }
+
+  const previewComp = markdownPreviewRef.value;
+  if (!previewComp) return;
+
+  const previewInfo = previewComp.getScrollInfo();
+  const editorScrollHeight = info.scrollHeight ?? 0;
+  const editorClientHeight = info.clientHeight ?? 0;
+  const editorMaxScroll = editorScrollHeight - editorClientHeight;
+  const previewMaxScroll = previewInfo.scrollHeight - previewInfo.clientHeight;
+
+  if (editorMaxScroll <= 0 || previewMaxScroll <= 0) return;
+
+  currentScrollSyncSource = 'editor';
+
+  const ratio = info.scrollTop / editorMaxScroll;
+  let targetPreviewTop = ratio * previewMaxScroll;
+  if (ratio <= 0.005) {
+    targetPreviewTop = 0;
+  } else if (ratio >= 0.995) {
+    targetPreviewTop = previewMaxScroll;
+  }
+
+  previewComp.setScrollTop(targetPreviewTop);
+  scheduleResetSyncSource();
+};
+
+// 右侧 MarkdownPreview 滚动 -> 同步到左侧 Monaco Editor
+const handlePreviewScrollSync = (info: { scrollTop: number; scrollHeight: number; clientHeight: number }) => {
+  if (!isMarkdownFile.value || markdownViewMode.value !== 'split' || !isSyncScrollEnabled.value) {
+    return;
+  }
+
+  if (currentScrollSyncSource === 'editor') {
+    return;
+  }
+
+  const editorComp = monacoEditorRef.value;
+  if (!editorComp) return;
+
+  const editorInfo = editorComp.getScrollInfo();
+  const editorMaxScroll = editorInfo.scrollHeight - editorInfo.clientHeight;
+  const previewMaxScroll = info.scrollHeight - info.clientHeight;
+
+  if (editorMaxScroll <= 0 || previewMaxScroll <= 0) return;
+
+  currentScrollSyncSource = 'preview';
+
+  const ratio = info.scrollTop / previewMaxScroll;
+  let targetEditorTop = ratio * editorMaxScroll;
+  if (ratio <= 0.005) {
+    targetEditorTop = 0;
+  } else if (ratio >= 0.995) {
+    targetEditorTop = editorMaxScroll;
+  }
+
+  editorComp.setScrollTop(targetEditorTop);
+  scheduleResetSyncSource();
+};
+
 // --- 事件处理 (根据模式调用不同 action) ---
 
 // +++ 编码选项 (copied from FileEditorContainer) +++
@@ -632,6 +725,10 @@ onBeforeUnmount(() => {
         clearTimeout(resizeCooldownTimer);
         resizeCooldownTimer = null;
     }
+    if (resetScrollSyncTimer) {
+        clearTimeout(resetScrollSyncTimer);
+        resetScrollSyncTimer = null;
+    }
 });
 
 </script>
@@ -694,6 +791,20 @@ onBeforeUnmount(() => {
             >
               <i class="fas fa-eye"></i>
             </button>
+
+            <!-- 双栏分屏模式下的同步滚动切换按钮 -->
+            <template v-if="markdownViewMode === 'split'">
+              <span class="markdown-toggle-divider"></span>
+              <button
+                type="button"
+                class="markdown-toggle-btn sync-scroll-btn"
+                :class="{ active: isSyncScrollEnabled }"
+                @click="toggleSyncScroll"
+                :title="isSyncScrollEnabled ? t('fileManager.markdown.syncScrollEnabled') : t('fileManager.markdown.syncScrollDisabled')"
+              >
+                <i :class="isSyncScrollEnabled ? 'fas fa-link' : 'fas fa-unlink'"></i>
+              </button>
+            </template>
           </div>
 
           <!-- +++ 编码选择下拉菜单 +++ -->
@@ -805,6 +916,7 @@ onBeforeUnmount(() => {
             <div class="split-pane split-editor-pane" :style="{ width: `${splitRatio}%` }">
               <MonacoEditor
                 v-if="!props.isMobile"
+                ref="monacoEditorRef"
                 :key="`monaco-split-${activeTab.id}`"
                 v-model="activeEditorContent"
                 :language="currentTabLanguage"
@@ -816,7 +928,7 @@ onBeforeUnmount(() => {
                 @update:fontSize="handleEditorFontSizeUpdate"
                 :initialScrollTop="activeTab?.scrollTop ?? 0"
                 :initialScrollLeft="activeTab?.scrollLeft ?? 0"
-                @update:scrollPosition="handleEditorScroll"
+                @update:scrollPosition="handleEditorScrollSync"
               />
               <CodeMirrorMobileEditor
                 v-else
@@ -841,7 +953,12 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="split-pane split-preview-pane" :style="{ width: `${100 - splitRatio}%` }">
-              <MarkdownPreview :content="activeEditorContent" :font-size="currentEditorFontSize" />
+              <MarkdownPreview
+                ref="markdownPreviewRef"
+                :content="activeEditorContent"
+                :font-size="currentEditorFontSize"
+                @scroll="handlePreviewScrollSync"
+              />
             </div>
           </div>
         </template>
@@ -1257,6 +1374,13 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
+}
+
+.markdown-toggle-divider {
+  width: 1px;
+  height: 14px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
 }
 
 .markdown-toggle-btn {

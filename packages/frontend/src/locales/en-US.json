@@ -544,7 +544,10 @@
       "split": "Split Preview",
       "editOnly": "Source Only",
       "previewOnly": "Preview Only",
-      "empty": "No Markdown content"
+      "empty": "No Markdown content",
+      "syncScroll": "Sync Scroll",
+      "syncScrollEnabled": "Sync scrolling enabled (click to disable)",
+      "syncScrollDisabled": "Sync scrolling disabled (click to enable)"
     },
     "modals": {
       "titles": {

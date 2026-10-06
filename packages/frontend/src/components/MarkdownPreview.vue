@@ -54,8 +54,41 @@ watch(
 
 const previewContainerRef = ref<HTMLElement | null>(null);
 
+const emit = defineEmits<{
+  (e: 'scroll', payload: { scrollTop: number; scrollHeight: number; clientHeight: number }): void;
+}>();
+
+const handleScroll = (event: Event) => {
+  const target = event.currentTarget as HTMLElement;
+  if (!target) return;
+  emit('scroll', {
+    scrollTop: target.scrollTop,
+    scrollHeight: target.scrollHeight,
+    clientHeight: target.clientHeight,
+  });
+};
+
+const setScrollTop = (top: number) => {
+  if (previewContainerRef.value) {
+    previewContainerRef.value.scrollTop = top;
+  }
+};
+
+const getScrollInfo = () => {
+  if (!previewContainerRef.value) {
+    return { scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+  }
+  return {
+    scrollTop: previewContainerRef.value.scrollTop,
+    scrollHeight: previewContainerRef.value.scrollHeight,
+    clientHeight: previewContainerRef.value.clientHeight,
+  };
+};
+
 defineExpose({
   previewContainerRef,
+  setScrollTop,
+  getScrollInfo,
 });
 </script>
 
@@ -64,6 +97,7 @@ defineExpose({
     ref="previewContainerRef"
     class="markdown-preview-container h-full overflow-y-auto select-text px-6 py-6 font-sans transition-colors duration-150"
     :style="{ fontSize: `${props.fontSize}px` }"
+    @scroll="handleScroll"
   >
     <!-- 空文档占位 -->
     <div

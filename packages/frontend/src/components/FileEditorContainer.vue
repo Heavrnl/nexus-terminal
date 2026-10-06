@@ -209,6 +209,101 @@ const resetSplitRatio = () => {
   splitRatio.value = 50;
 };
 
+// --- Markdown 双向同步滚动 (Synchronized Scrolling) ---
+const SYNC_SCROLL_STORAGE_KEY = 'nexus_markdown_sync_scroll_enabled';
+const isSyncScrollEnabled = ref<boolean>(localStorage.getItem(SYNC_SCROLL_STORAGE_KEY) !== 'false'); // 默认开启
+const markdownPreviewRef = ref<InstanceType<typeof MarkdownPreview> | null>(null);
+
+const toggleSyncScroll = () => {
+  isSyncScrollEnabled.value = !isSyncScrollEnabled.value;
+  localStorage.setItem(SYNC_SCROLL_STORAGE_KEY, String(isSyncScrollEnabled.value));
+};
+
+// 互斥锁与防死循环计时器
+type ScrollSyncSource = 'editor' | 'preview' | null;
+let currentScrollSyncSource: ScrollSyncSource = null;
+let resetScrollSyncTimer: number | null = null;
+
+const scheduleResetSyncSource = () => {
+  if (resetScrollSyncTimer) clearTimeout(resetScrollSyncTimer);
+  resetScrollSyncTimer = window.setTimeout(() => {
+    currentScrollSyncSource = null;
+  }, 100);
+};
+
+// 左侧 Monaco Editor 滚动 -> 同步到右侧 MarkdownPreview
+const handleEditorScrollSync = (info: { scrollTop: number; scrollLeft: number; scrollHeight?: number; clientHeight?: number }) => {
+  // 保持原有保存标签滚动位置的功能
+  handleEditorScroll(info);
+
+  if (!isMarkdownFile.value || markdownViewMode.value !== 'split' || !isSyncScrollEnabled.value) {
+    return;
+  }
+
+  // 若当前滚动是由 Preview 驱动触发的，立即阻断防止回弹死循环
+  if (currentScrollSyncSource === 'preview') {
+    return;
+  }
+
+  const previewComp = markdownPreviewRef.value;
+  if (!previewComp) return;
+
+  const previewInfo = previewComp.getScrollInfo();
+  const editorScrollHeight = info.scrollHeight ?? 0;
+  const editorClientHeight = info.clientHeight ?? 0;
+  const editorMaxScroll = editorScrollHeight - editorClientHeight;
+  const previewMaxScroll = previewInfo.scrollHeight - previewInfo.clientHeight;
+
+  if (editorMaxScroll <= 0 || previewMaxScroll <= 0) return;
+
+  currentScrollSyncSource = 'editor';
+
+  const ratio = info.scrollTop / editorMaxScroll;
+  let targetPreviewTop = ratio * previewMaxScroll;
+  if (ratio <= 0.005) {
+    targetPreviewTop = 0;
+  } else if (ratio >= 0.995) {
+    targetPreviewTop = previewMaxScroll;
+  }
+
+  previewComp.setScrollTop(targetPreviewTop);
+  scheduleResetSyncSource();
+};
+
+// 右侧 MarkdownPreview 滚动 -> 同步到左侧 Monaco Editor
+const handlePreviewScrollSync = (info: { scrollTop: number; scrollHeight: number; clientHeight: number }) => {
+  if (!isMarkdownFile.value || markdownViewMode.value !== 'split' || !isSyncScrollEnabled.value) {
+    return;
+  }
+
+  // 若当前滚动是由 Editor 驱动触发的，立即阻断防止回弹死循环
+  if (currentScrollSyncSource === 'editor') {
+    return;
+  }
+
+  const editorComp = monacoEditorRef.value;
+  if (!editorComp) return;
+
+  const editorInfo = editorComp.getScrollInfo();
+  const editorMaxScroll = editorInfo.scrollHeight - editorInfo.clientHeight;
+  const previewMaxScroll = info.scrollHeight - info.clientHeight;
+
+  if (editorMaxScroll <= 0 || previewMaxScroll <= 0) return;
+
+  currentScrollSyncSource = 'preview';
+
+  const ratio = info.scrollTop / previewMaxScroll;
+  let targetEditorTop = ratio * editorMaxScroll;
+  if (ratio <= 0.005) {
+    targetEditorTop = 0;
+  } else if (ratio >= 0.995) {
+    targetEditorTop = editorMaxScroll;
+  }
+
+  editorComp.setScrollTop(targetEditorTop);
+  scheduleResetSyncSource();
+};
+
 // Watch for changes in the selected encoding to update width
 watch(currentSelectedEncoding, () => {
   updateSelectWidth();
@@ -337,6 +432,10 @@ onBeforeUnmount(() => {
   }
   // +++ 移除键盘事件监听器 +++
   window.removeEventListener('keydown', handleKeyDown);
+  if (resetScrollSyncTimer) {
+    clearTimeout(resetScrollSyncTimer);
+    resetScrollSyncTimer = null;
+  }
 });
 
 // +++ 处理键盘事件以切换标签 +++
@@ -423,6 +522,20 @@ const handleKeyDown = (event: KeyboardEvent) => {
             >
               <i class="fas fa-eye"></i>
             </button>
+
+            <!-- 双栏分屏模式下的同步滚动切换按钮 -->
+            <template v-if="markdownViewMode === 'split'">
+              <span class="markdown-toggle-divider"></span>
+              <button
+                type="button"
+                class="markdown-toggle-btn sync-scroll-btn"
+                :class="{ active: isSyncScrollEnabled }"
+                @click="toggleSyncScroll"
+                :title="isSyncScrollEnabled ? t('fileManager.markdown.syncScrollEnabled') : t('fileManager.markdown.syncScrollDisabled')"
+              >
+                <i :class="isSyncScrollEnabled ? 'fas fa-link' : 'fas fa-unlink'"></i>
+              </button>
+            </template>
           </div>
 
           <!-- +++ 编码选择下拉菜单 +++ -->
@@ -525,7 +638,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
                 @update:fontSize="handleEditorFontSizeUpdate"
                 :initialScrollTop="activeTab?.scrollTop ?? 0"
                 :initialScrollLeft="activeTab?.scrollLeft ?? 0"
-                @update:scrollPosition="handleEditorScroll"
+                @update:scrollPosition="handleEditorScrollSync"
               />
             </div>
 
@@ -542,7 +655,12 @@ const handleKeyDown = (event: KeyboardEvent) => {
 
             <!-- 右侧实时渲染预览分屏 -->
             <div class="split-pane split-preview-pane" :style="{ width: `${100 - splitRatio}%` }">
-              <MarkdownPreview :content="localEditorContent" :font-size="currentEditorFontSize" />
+              <MarkdownPreview
+                ref="markdownPreviewRef"
+                :content="localEditorContent"
+                :font-size="currentEditorFontSize"
+                @scroll="handlePreviewScrollSync"
+              />
             </div>
           </div>
         </template>
@@ -778,6 +896,13 @@ const handleKeyDown = (event: KeyboardEvent) => {
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
+}
+
+.markdown-toggle-divider {
+  width: 1px;
+  height: 14px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
 }
 
 .markdown-toggle-btn {

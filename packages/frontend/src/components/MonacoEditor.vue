@@ -124,13 +124,12 @@ onMounted(() => {
     editorInstance.onDidScrollChange((e) => {
       if (editorInstance) {
         // 只有当滚动是由用户操作或实际视口变化引起时才发出
-        // setScrollPosition 也会触发此事件，需要避免循环
-        // 一个简单的检查是，如果事件中的滚动值与 props 中的初始值不同，则认为是有效滚动
-        // 但更好的方式是父组件在设置初始值后才开始监听此事件，或此组件内部处理
-        // 为简单起见，我们直接 emit
+        const layoutInfo = editorInstance.getLayoutInfo();
         emit('update:scrollPosition', {
           scrollTop: editorInstance.getScrollTop(),
           scrollLeft: editorInstance.getScrollLeft(),
+          scrollHeight: editorInstance.getScrollHeight(),
+          clientHeight: layoutInfo ? layoutInfo.height : 0,
         });
       }
     });
@@ -263,7 +262,19 @@ onBeforeUnmount(() => {
 });
 
 defineExpose({
-  focus: () => editorInstance?.focus()
+  focus: () => editorInstance?.focus(),
+  setScrollTop: (top: number) => {
+    if (editorInstance) {
+      editorInstance.setScrollTop(top);
+    }
+  },
+  getScrollInfo: () => ({
+    scrollTop: editorInstance?.getScrollTop() ?? 0,
+    scrollLeft: editorInstance?.getScrollLeft() ?? 0,
+    scrollHeight: editorInstance?.getScrollHeight() ?? 0,
+    clientHeight: editorInstance?.getLayoutInfo()?.height ?? 0,
+  }),
+  getEditor: () => editorInstance,
 });
 
 </script>

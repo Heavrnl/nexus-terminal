@@ -491,7 +491,10 @@
       "split": "分割プレビュー",
       "editOnly": "ソースのみ",
       "previewOnly": "プレビューのみ",
-      "empty": "Markdownコンテンツなし"
+      "empty": "Markdownコンテンツなし",
+      "syncScroll": "同期スクロール",
+      "syncScrollEnabled": "同期スクロール有効（クリックで無効化）",
+      "syncScrollDisabled": "同期スクロール無効（クリックで有効化）"
     },
     "modals": {
       "titles": {
