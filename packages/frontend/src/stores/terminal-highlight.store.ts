@@ -25,7 +25,21 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
           enabled.value = parsed.enabled;
         }
         if (Array.isArray(parsed.rules) && parsed.rules.length > 0) {
-          rules.value = parsed.rules;
+          // 清理已废弃的内置预设规则并无缝升级时间戳正则
+          const defaultTimestamp = DEFAULT_HIGHLIGHT_RULES.find((d) => d.id === 'timestamp_iso');
+          rules.value = parsed.rules
+            .filter((r) => r.id !== 'hash_container_id' && r.id !== 'unix_path')
+            .map((r) => {
+              if (
+                r.id === 'timestamp_iso' &&
+                defaultTimestamp &&
+                (r.pattern === '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b' ||
+                 r.isBuiltin)
+              ) {
+                return { ...r, pattern: defaultTimestamp.pattern };
+              }
+              return r;
+            });
         }
       }
     } catch (e) {

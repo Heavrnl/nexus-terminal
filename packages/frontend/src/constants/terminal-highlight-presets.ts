@@ -77,33 +77,9 @@ export const DEFAULT_HIGHLIGHT_RULES: TerminalHighlightRule[] = [
     description: '匹配 http:// 或 https:// 协议网址',
   },
   {
-    id: 'hash_container_id',
-    name: '容器 ID / 哈希 / UUID',
-    pattern: '\\b[0-9a-f]{12,64}\\b|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b',
-    flags: 'g',
-    color: '#facc15', // 金黄色
-    bold: false,
-    underline: false,
-    enabled: true,
-    isBuiltin: true,
-    description: '匹配 12~64 位短长容器 ID、Git 提交哈希或标准 UUID',
-  },
-  {
-    id: 'unix_path',
-    name: 'Unix 文件与目录绝对路径',
-    pattern: '(?:\\/[a-zA-Z0-9_\\-\\.]+){2,}\\/?',
-    flags: 'g',
-    color: '#2dd4bf', // 蓝绿薄荷色
-    bold: false,
-    underline: false,
-    enabled: true,
-    isBuiltin: true,
-    description: '匹配常见 Linux/Unix 绝对路径 (如 /var/log/nginx/access.log)',
-  },
-  {
     id: 'timestamp_iso',
     name: '时间戳 (ISO / 日期时间)',
-    pattern: '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
+    pattern: '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
     flags: 'g',
     color: '#94a3b8', // 石板灰蓝
     bold: false,
