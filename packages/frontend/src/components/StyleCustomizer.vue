@@ -4,9 +4,9 @@ import { useI18n } from 'vue-i18n';
 import type { TerminalTheme } from '../types/terminal-theme.types';
 import StyleCustomizerUiTab from './style-customizer/StyleCustomizerUiTab.vue';
 import StyleCustomizerTerminalTab from './style-customizer/StyleCustomizerTerminalTab.vue';
+import StyleCustomizerHighlightTab from './style-customizer/StyleCustomizerHighlightTab.vue';
 import StyleCustomizerBackgroundTab from './style-customizer/StyleCustomizerBackgroundTab.vue';
 import StyleCustomizerOtherTab from './style-customizer/StyleCustomizerOtherTab.vue'; 
-import StyleCustomizerHighlightTab from './style-customizer/StyleCustomizerHighlightTab.vue';
 
 const { t } = useI18n();
 const uiTabRef = ref<InstanceType<typeof StyleCustomizerUiTab> | null>(null);
@@ -172,7 +172,7 @@ onMounted(() => {
             ]"
             :disabled="isEditingTheme"
           >
-            {{ t('styleCustomizer.highlightTab', '高亮规则') }}
+            {{ t('styleCustomizer.terminalHighlight', '代码高亮') }}
           </button>
            <button
             @click="currentTab = 'background'"
@@ -206,7 +206,6 @@ onMounted(() => {
             @update:is-editing-theme="val => isEditingTheme = val"
             @update:editing-theme="val => editingTheme = val"
           />
-
           <StyleCustomizerHighlightTab v-if="currentTab === 'highlight'" />
           <StyleCustomizerBackgroundTab v-if="currentTab === 'background'" />
           <StyleCustomizerOtherTab v-if="currentTab === 'other'" />

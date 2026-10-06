@@ -1,80 +1,29 @@
-export interface TerminalKeywordHighlightRule {
+/**
+ * 终端代码与关键字高亮规则定义
+ */
+export interface TerminalHighlightRule {
   id: string;
   name: string;
-  pattern: string;
-  isRegex: boolean;
-  isCaseSensitive: boolean;
-  color: string; // 前景十六进制颜色，如 #10b981
-  bgColor?: string; // 背景十六进制颜色（可选），如 #1f2937 或空
-  enabled: boolean;
-  isPreset?: boolean; // 是否为内置预设
+  pattern: string; // 正则表达式源文本
+  flags?: string; // 默认 'g'
+  color: string; // 前景色 Hex (如 #22c55e)
+  bgColor?: string; // 背景色 Hex (可选)
+  bold?: boolean; // 是否加粗
+  underline?: boolean; // 是否下划线
+  enabled: boolean; // 是否启用该条规则
+  isBuiltin?: boolean; // 是否为系统内置预设
+  description?: string; // 规则说明
 }
 
-export const DEFAULT_TERMINAL_HIGHLIGHT_RULES: TerminalKeywordHighlightRule[] = [
-  {
-    id: 'preset-status-success',
-    name: '运行与成功状态 (UP / OK / SUCCESS)',
-    pattern: '\\b(UP|RUNNING|OK|SUCCESS|ACTIVE|ONLINE|HEALTHY|TRUE)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#10b981', // 亮绿色
-    bgColor: '',
-    enabled: true,
-    isPreset: true,
-  },
-  {
-    id: 'preset-status-error',
-    name: '异常与退出状态 (ERROR / FAIL / EXITED)',
-    pattern: '\\b(ERROR|FAIL|FAILED|FATAL|EXCEPTION|CRITICAL|DOWN|EXITED|STOPPED|FALSE)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#ef4444', // 醒目红
-    bgColor: '',
-    enabled: true,
-    isPreset: true,
-  },
-  {
-    id: 'preset-status-warn',
-    name: '警告与重试 (WARN / PENDING / TIMEOUT)',
-    pattern: '\\b(WARN|WARNING|TIMEOUT|PENDING|WAITING|RETRY|DEPRECATED)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#f59e0b', // 橙黄色
-    bgColor: '',
-    enabled: true,
-    isPreset: true,
-  },
-  {
-    id: 'preset-net-ip',
-    name: 'IPv4 地址识别',
-    pattern: '\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#06b6d4', // 青色
-    bgColor: '',
-    enabled: true,
-    isPreset: true,
-  },
-  {
-    id: 'preset-net-ports',
-    name: '端口与协议映射 (如 80->80/tcp)',
-    pattern: '\\b(?:\\d+->)?\\d+\\/(?:tcp|udp)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#a855f7', // 紫色
-    bgColor: '',
-    enabled: true,
-    isPreset: true,
-  },
-  {
-    id: 'preset-log-info',
-    name: '常规调试日志等级 (INFO / DEBUG)',
-    pattern: '\\b(INFO|DEBUG|NOTICE)\\b',
-    isRegex: true,
-    isCaseSensitive: false,
-    color: '#38bdf8', // 浅蓝天蓝
-    bgColor: '',
-    enabled: false, // 默认不干扰大篇幅日志，用户可自行勾选
-    isPreset: true,
-  }
-];
+/**
+ * 终端高亮全量配置结构
+ */
+export interface TerminalHighlightConfig {
+  enabled: boolean;
+  rules: TerminalHighlightRule[];
+}
+
+// 向后兼容类型别名与常量引用
+export type TerminalKeywordHighlightRule = TerminalHighlightRule;
+export { DEFAULT_HIGHLIGHT_RULES as DEFAULT_TERMINAL_HIGHLIGHT_RULES } from '../constants/terminal-highlight-presets';
+

@@ -12,7 +12,9 @@ import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import 'xterm/css/xterm.css';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
-import { applyTerminalHighlight } from '../utils/terminal-highlighter';
+import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
+
+const highlightStore = useTerminalHighlightStore();
 
 
 // 定义 props 和 emits
@@ -63,7 +65,6 @@ const {
   terminalTextShadowOffsetY,
   terminalTextShadowBlur,
   terminalTextShadowColor,
-  terminalHighlightPipeline,
   initialAppearanceDataLoaded, 
 } = storeToRefs(appearanceStore);
  
@@ -270,29 +271,6 @@ onMounted(() => {
 
     // 将终端附加到 DOM
     terminal.open(terminalRef.value);
-
-    // 接入智能关键字高亮管道：代理 terminal.write
-    const rawTerminalWrite = terminal.write.bind(terminal);
-    const textDecoder = new TextDecoder('utf-8');
-    terminal.write = ((data: string | Uint8Array, callback?: () => void) => {
-      const pipeline = terminalHighlightPipeline.value;
-      if (!pipeline) {
-        return rawTerminalWrite(data as any, callback);
-      }
-      try {
-        if (typeof data === 'string') {
-          const highlighted = applyTerminalHighlight(data, pipeline);
-          return rawTerminalWrite(highlighted, callback);
-        } else if (data instanceof Uint8Array) {
-          const str = textDecoder.decode(data);
-          const highlighted = applyTerminalHighlight(str, pipeline);
-          return rawTerminalWrite(highlighted, callback);
-        }
-      } catch (err) {
-        console.warn('[Terminal]', err);
-      }
-      return rawTerminalWrite(data as any, callback);
-    }) as any;
     // terminal.open() 同步执行完毕后，可以认为 Xterm 已尝试附加到 DOM
     isTerminalDomReady.value = true; // +++ 直接在此处设置 DOM 准备就绪状态 +++
     console.log(`[Terminal ${props.sessionId}] Xterm open() called, considering DOM ready for initial style checks.`);
@@ -415,7 +393,7 @@ onMounted(() => {
             const { done, value } = await reader.read();
             if (done) break;
             if (terminal && value) {
-              terminal.write(value); // 将流数据写入终端
+              terminal.write(highlightStore.highlight(value)); // 将流数据写入终端
               // 移除此处不必要的 fit() 调用
             }
           }
@@ -659,7 +637,7 @@ onBeforeUnmount(() => {
   });
 // 暴露 write 方法给父组件 (可选)
 const write = (data: string | Uint8Array) => {
-    terminal?.write(data);
+    terminal?.write(highlightStore.highlight(data));
 };
 
 // *** 暴露搜索方法 ***

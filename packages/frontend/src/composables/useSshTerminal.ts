@@ -5,6 +5,7 @@ import { sessions as globalSessionsRef } from '../stores/session/state'; // +++ 
 import type { Terminal } from 'xterm';
 import type { SearchAddon, ISearchOptions } from '@xterm/addon-search'; // *** 移除 ISearchResult 导入 ***
 import type { WebSocketMessage, MessagePayload } from '../types/websocket.types';
+import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -23,6 +24,7 @@ export interface SshTerminalDependencies {
 export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalDependencies, t: ReturnType<typeof useI18n>['t']) { // +++ Update type of t +++
     // 使用依赖注入的 WebSocket 函数
     const { sendMessage, onMessage, isConnected } = wsDeps;
+    const highlightStore = useTerminalHighlightStore();
 
     const terminalInstance = ref<Terminal | null>(null);
     const searchAddon = ref<SearchAddon | null>(null); // Keep searchAddon ref
@@ -56,7 +58,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // console.log(`[会话 ${sessionId}][SSH终端模块] 发现 SessionState.pendingOutput，长度: ${currentSessionState.pendingOutput.length}。正在写入...`);
             currentSessionState.pendingOutput.forEach(data => {
                 const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
-                term.write(normalizedData);
+                term.write(highlightStore.highlight(normalizedData));
             });
             currentSessionState.pendingOutput = []; // 清空
             // console.log(`[会话 ${sessionId}][SSH终端模块] SessionState.pendingOutput 处理完毕。`);
@@ -72,7 +74,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 2. 将此管理器内部缓冲的输出 (terminalOutputBuffer, 来自 ssh:output) 写入终端
         if (terminalOutputBuffer.value.length > 0) {
             terminalOutputBuffer.value.forEach(data => {
-                 term.write(data);
+                 term.write(highlightStore.highlight(data));
             });
             terminalOutputBuffer.value = []; // 清空内部缓冲区
         }
@@ -144,7 +146,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         if (terminalInstance.value) {
             // console.log(`[会话 ${sessionId}][SSH前端] 终端实例存在，尝试写入...`);
-            terminalInstance.value.write(outputData);
+            terminalInstance.value.write(highlightStore.highlight(outputData));
             // console.log(`[会话 ${sessionId}][SSH前端] 写入完成。`);
         } else {
             // 如果终端还没准备好，先缓冲输出

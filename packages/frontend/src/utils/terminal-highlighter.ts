@@ -1,126 +1,284 @@
-import type { TerminalKeywordHighlightRule } from '../types/terminal-highlight.types';
+import type { TerminalHighlightRule } from '../types/terminal-highlight.types';
 
-// ANSI 转义序列切分正则 (兼容 VT100 / xterm 常用控制码)
-const ANSI_SPLIT_REGEX = /(\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))/g;
-
-// 正则特殊字符转义工具
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// 十六进制颜色转 RGB
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  if (!hex) return null;
-  let cleanHex = hex.trim().replace(/^#/, '');
+/**
+ * 十六进制颜色转 RGB
+ */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const cleanHex = hex.replace('#', '').trim();
   if (cleanHex.length === 3) {
-    cleanHex = cleanHex.split('').map(c => c + c).join('');
+    const r = parseInt(cleanHex[0] + cleanHex[0], 16);
+    const g = parseInt(cleanHex[1] + cleanHex[1], 16);
+    const b = parseInt(cleanHex[2] + cleanHex[2], 16);
+    return isNaN(r) || isNaN(g) || isNaN(b) ? null : { r, g, b };
   }
-  if (cleanHex.length !== 6) return null;
-  const num = parseInt(cleanHex, 16);
-  if (isNaN(num)) return null;
-  return {
-    r: (num >> 16) & 255,
-    g: (num >> 8) & 255,
-    b: num & 255
-  };
-}
-
-// 构建 ANSI 24-bit TrueColor 前景色代码
-function getFgAnsi(hexColor: string): string {
-  const rgb = hexToRgb(hexColor);
-  if (!rgb) return '';
-  return `\x1b[38;2;${rgb.r};${rgb.g};${rgb.b}m`;
-}
-
-// 构建 ANSI 24-bit TrueColor 背景色代码
-function getBgAnsi(hexColor: string): string {
-  const rgb = hexToRgb(hexColor);
-  if (!rgb) return '';
-  return `\x1b[48;2;${rgb.r};${rgb.g};${rgb.b}m`;
-}
-
-export interface CompiledHighlightPipeline {
-  combinedRegex: RegExp;
-  activeRules: TerminalKeywordHighlightRule[];
+  if (cleanHex.length === 6) {
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return isNaN(r) || isNaN(g) || isNaN(b) ? null : { r, g, b };
+  }
+  return null;
 }
 
 /**
- * 将启用的规则列表编译为一个高效的单次匹配正则表达式管道
+ * 预编译后的高亮规则项
  */
-export function compileHighlightRules(rules: TerminalKeywordHighlightRule[]): CompiledHighlightPipeline | null {
-  if (!rules || rules.length === 0) return null;
+export interface CompiledHighlightRule {
+  id: string;
+  regex: RegExp;
+  prefix: string; // 注入的 ANSI 序列
+  suffix: string; // 复原的 ANSI 序列
+}
 
-  const validParts: string[] = [];
-  const activeRules: TerminalKeywordHighlightRule[] = [];
+export type CompiledHighlightPipeline = CompiledHighlightRule[];
 
-  for (const rule of rules) {
-    if (!rule.enabled || !rule.pattern?.trim()) continue;
-    try {
-      let subPattern = rule.pattern.trim();
-      if (!rule.isRegex) {
-        // 普通关键字模式，支持中英文逗号、空格或竖线分隔
-        const tokens = subPattern.split(/[,，|\s]+/).map(t => t.trim()).filter(Boolean);
-        if (tokens.length === 0) continue;
-        subPattern = `\\b(?:${tokens.map(escapeRegex).join('|')})\\b`;
-      }
-      // 验证子模式合法性
-      new RegExp(subPattern);
-      validParts.push(`(${subPattern})`);
-      activeRules.push(rule);
-    } catch (err) {
-      console.warn(`[TerminalHighlighter] 跳过语法错误的规则: ${rule.name}`, err);
+/**
+ * 构建高亮规则对应的 ANSI 开头与结尾序列
+ */
+export function buildAnsiStyleTokens(rule: TerminalHighlightRule): { prefix: string; suffix: string } {
+  let prefix = '';
+  let suffix = '';
+
+  // 1. 前景色 (24-bit TrueColor)
+  if (rule.color) {
+    const rgb = hexToRgb(rule.color);
+    if (rgb) {
+      prefix += `\x1b[38;2;${rgb.r};${rgb.g};${rgb.b}m`;
+      suffix += '\x1b[39m'; // 恢复默认前景色
     }
   }
 
-  if (validParts.length === 0) return null;
+  // 2. 背景色 (24-bit TrueColor)
+  if (rule.bgColor) {
+    const bgRgb = hexToRgb(rule.bgColor);
+    if (bgRgb) {
+      prefix += `\x1b[48;2;${bgRgb.r};${bgRgb.g};${bgRgb.b}m`;
+      suffix += '\x1b[49m'; // 恢复默认背景色
+    }
+  }
 
-  // 合并为单次扫描正则 (g 全局匹配，i 默认不区分大小写，针对单项可微调)
-  const combinedRegex = new RegExp(validParts.join('|'), 'gi');
-  return { combinedRegex, activeRules };
+  // 3. 加粗
+  if (rule.bold) {
+    prefix += '\x1b[1m';
+    suffix += '\x1b[22m'; // 关闭粗体
+  }
+
+  // 4. 下划线
+  if (rule.underline) {
+    prefix += '\x1b[4m';
+    suffix += '\x1b[24m'; // 关闭下划线
+  }
+
+  return { prefix, suffix };
 }
 
 /**
- * 对终端文本段落应用关键字高亮着色
+ * 编译并缓存激活规则
  */
-export function applyTerminalHighlight(text: string, pipeline: CompiledHighlightPipeline | null): string {
-  if (!text || !pipeline || pipeline.activeRules.length === 0) {
-    return text;
+export function compileHighlightRules(rules: TerminalHighlightRule[]): CompiledHighlightRule[] {
+  const compiled: CompiledHighlightRule[] = [];
+
+  for (const rule of rules) {
+    if (!rule.enabled || !rule.pattern) continue;
+
+    try {
+      const flags = rule.flags && rule.flags.includes('g') ? rule.flags : `${rule.flags || ''}g`;
+      const regex = new RegExp(rule.pattern, flags);
+      const { prefix, suffix } = buildAnsiStyleTokens(rule);
+
+      if (prefix) {
+        compiled.push({
+          id: rule.id,
+          regex,
+          prefix,
+          suffix,
+        });
+      }
+    } catch (e) {
+      console.warn(`[TerminalHighlighter] 忽略无效的高亮正则规则 "${rule.name}":`, e);
+    }
   }
 
-  const { combinedRegex, activeRules } = pipeline;
+  return compiled;
+}
 
-  // 将文本按 ANSI 转义控制字符安全切分，保护控制序列不被替换破坏
-  const chunks = text.split(ANSI_SPLIT_REGEX);
+/**
+ * ANSI 转义字符序列正则，涵盖标准 CSI、OSC 以及常见控制字符
+ */
+const ANSI_PATTERN = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    if (!chunk) continue;
+/**
+ * 对纯文本片段安全应用高亮规则替换
+ */
+function highlightPlainTextSegment(text: string, rules: CompiledHighlightRule[]): string {
+  if (!text || rules.length === 0) return text;
 
-    // 如果该片段本身是 ANSI 控制序列，原样保留跳过
-    if (chunk.charCodeAt(0) === 0x1b) {
+  let result = text;
+  for (const rule of rules) {
+    rule.regex.lastIndex = 0;
+    result = result.replace(rule.regex, (match) => {
+      // 若匹配文本包含控制符则原样保留
+      if (!match || match.includes('\x1b')) return match;
+      return `${rule.prefix}${match}${rule.suffix}`;
+    });
+  }
+  return result;
+}
+
+/**
+ * 对传入的终端输出进行 ANSI 保护并执行规则高亮
+ * @param input 终端数据 (string)
+ * @param rules 编译后的高亮规则数组
+ */
+export function highlightTerminalString(input: string, rules: CompiledHighlightRule[]): string {
+  if (!input || rules.length === 0) return input;
+
+  // 性能快速检查：如果完全不包含任何英文字母/数字或符号，直接跳过
+  if (input.length < 2) return input;
+
+  // 检查是否包含已有 ANSI 转义序列
+  ANSI_PATTERN.lastIndex = 0;
+  if (!ANSI_PATTERN.test(input)) {
+    // 纯文本没有任何 ANSI 控制字符，直接全量安全高亮
+    return highlightPlainTextSegment(input, rules);
+  }
+
+  // 包含 ANSI 控制序列：按 ANSI 转义码分割分段处理，保护所有控制符不受破坏
+  ANSI_PATTERN.lastIndex = 0;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const segments: string[] = [];
+
+  while ((match = ANSI_PATTERN.exec(input)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIndex) {
+      const plainText = input.substring(lastIndex, matchIndex);
+      segments.push(highlightPlainTextSegment(plainText, rules));
+    }
+    // 原样保留 ANSI 序列
+    segments.push(match[0]);
+    lastIndex = ANSI_PATTERN.lastIndex;
+  }
+
+  if (lastIndex < input.length) {
+    const plainText = input.substring(lastIndex);
+    segments.push(highlightPlainTextSegment(plainText, rules));
+  }
+
+  return segments.join('');
+}
+
+/**
+ * HTML 特殊字符转义
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * 将包含 ANSI 颜色序列的终端输出转换为安全 HTML 标记 (供预览组件实时渲染)
+ */
+export function ansiToHtml(ansiText: string): string {
+  if (!ansiText) return '';
+
+  let html = '';
+  let openSpanCount = 0;
+
+  // 正则匹配 ANSI 序列与常规文本
+  const tokens = ansiText.split(/(\x1b\[[0-9;]*m|\x1b\[[0-9;?]*[a-zA-Z]|\r?\n)/g);
+
+  for (const token of tokens) {
+    if (!token) continue;
+
+    if (token === '\n' || token === '\r\n') {
+      html += '<br/>';
       continue;
     }
 
-    // 重置正则状态
-    combinedRegex.lastIndex = 0;
+    // 处理颜色与样式 SGR 序列 (e.g. \x1b[38;2;R;G;Bm, \x1b[1m, \x1b[0m)
+    if (token.startsWith('\x1b[') && token.endsWith('m')) {
+      const codeStr = token.slice(2, -1);
+      const codes = codeStr ? codeStr.split(';').map((c) => parseInt(c, 10)) : [0];
 
-    // 单次扫描替换纯文本片段中的关键字
-    chunks[i] = chunk.replace(combinedRegex, (match, ...args) => {
-      // args 中前面 activeRules.length 项对应各个捕获组
-      for (let ruleIndex = 0; ruleIndex < activeRules.length; ruleIndex++) {
-        if (args[ruleIndex] !== undefined && args[ruleIndex] !== '') {
-          const rule = activeRules[ruleIndex];
-          const fgCode = getFgAnsi(rule.color);
-          const bgCode = rule.bgColor ? getBgAnsi(rule.bgColor) : '';
-          const resetBg = bgCode ? '\x1b[49m' : '';
-          const resetFg = fgCode ? '\x1b[39m' : '';
-
-          return `${fgCode}${bgCode}${match}${resetBg}${resetFg}`;
+      let i = 0;
+      while (i < codes.length) {
+        const c = codes[i];
+        if (c === 0) {
+          // 重置所有
+          while (openSpanCount > 0) {
+            html += '</span>';
+            openSpanCount--;
+          }
+        } else if (c === 1) {
+          // 加粗
+          html += '<span style="font-weight: 700;">';
+          openSpanCount++;
+        } else if (c === 4) {
+          // 下划线
+          html += '<span style="text-decoration: underline;">';
+          openSpanCount++;
+        } else if (c === 22) {
+          // 取消加粗
+          if (openSpanCount > 0) {
+            html += '</span>';
+            openSpanCount--;
+          }
+        } else if (c === 24) {
+          // 取消下划线
+          if (openSpanCount > 0) {
+            html += '</span>';
+            openSpanCount--;
+          }
+        } else if (c === 39) {
+          // 恢复默认前景色
+          if (openSpanCount > 0) {
+            html += '</span>';
+            openSpanCount--;
+          }
+        } else if (c === 49) {
+          // 恢复默认背景色
+          if (openSpanCount > 0) {
+            html += '</span>';
+            openSpanCount--;
+          }
+        } else if (c === 38 && codes[i + 1] === 2 && i + 4 < codes.length) {
+          // 24位 TrueColor 前景: 38;2;R;G;B
+          const r = codes[i + 2];
+          const g = codes[i + 3];
+          const b = codes[i + 4];
+          html += `<span style="color: rgb(${r}, ${g}, ${b});">`;
+          openSpanCount++;
+          i += 4;
+        } else if (c === 48 && codes[i + 1] === 2 && i + 4 < codes.length) {
+          // 24位 TrueColor 背景: 48;2;R;G;B
+          const r = codes[i + 2];
+          const g = codes[i + 3];
+          const b = codes[i + 4];
+          html += `<span style="background-color: rgb(${r}, ${g}, ${b});">`;
+          openSpanCount++;
+          i += 4;
         }
+        i++;
       }
-      return match;
-    });
+    } else if (token.startsWith('\x1b')) {
+      // 其它控制符忽略
+      continue;
+    } else {
+      // 普通文本
+      html += escapeHtml(token);
+    }
   }
 
-  return chunks.join('');
+  while (openSpanCount > 0) {
+    html += '</span>';
+    openSpanCount--;
+  }
+
+  return html;
 }
+
