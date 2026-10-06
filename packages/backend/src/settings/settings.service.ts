@@ -25,7 +25,9 @@ interface FocusSwitcherFullConfig { // 完整配置结构
 }
 
 const FOCUS_SEQUENCE_KEY = 'focusSwitcherSequence'; // 设置键保持不变
-const NAV_BAR_VISIBLE_KEY = 'navBarVisible'; // 导航栏可见性设置键
+const NAV_BAR_VISIBLE_KEY = 'navBarVisible'; // 导航栏可见性设置键 (通用/回退)
+const NAV_BAR_VISIBLE_DESKTOP_KEY = 'navBarVisible_desktop'; // 桌面端独立设置键
+const NAV_BAR_VISIBLE_MOBILE_KEY = 'navBarVisible_mobile'; // 移动端独立设置键
 const LAYOUT_TREE_KEY = 'layoutTree'; // 布局树设置键
 const AUTO_COPY_ON_SELECT_KEY = 'autoCopyOnSelect'; // 终端选中自动复制设置键
 const STATUS_MONITOR_INTERVAL_SECONDS_KEY = 'statusMonitorIntervalSeconds'; // 状态监控间隔设置键
@@ -194,36 +196,60 @@ export const settingsService = {
   }, 
 
   /**
-   * 获取导航栏可见性设置
-   * @returns 返回导航栏是否可见 (boolean)，如果未设置则默认为 true
+   * 获取导航栏可见性设置 (支持按平台区分桌面端与移动端)
+   * @param platform 可选平台标识 ('desktop' | 'mobile')
+   * @returns 返回导航栏是否可见 (boolean)
    */
-  async getNavBarVisibility(): Promise<boolean> {
-    console.log(`[Service] Attempting to get setting for key: ${NAV_BAR_VISIBLE_KEY}`);
+  async getNavBarVisibility(platform?: string): Promise<boolean> {
+    const isMobile = platform === 'mobile';
+    const isDesktop = platform === 'desktop';
+    const targetKey = isMobile ? NAV_BAR_VISIBLE_MOBILE_KEY : (isDesktop ? NAV_BAR_VISIBLE_DESKTOP_KEY : NAV_BAR_VISIBLE_KEY);
+    console.log(`[Service] Attempting to get nav bar visibility for platform: ${platform || 'all'} (key: ${targetKey})`);
     try {
-      const visibleStr = await settingsRepository.getSetting(NAV_BAR_VISIBLE_KEY);
-      console.log(`[Service] Raw value from repository for ${NAV_BAR_VISIBLE_KEY}:`, visibleStr);
-      // 如果设置存在且值为 'false'，则返回 false，否则都返回 true (包括未设置的情况)
-      return visibleStr !== 'false';
+      const visibleStr = await settingsRepository.getSetting(targetKey);
+      if (visibleStr !== null) {
+        console.log(`[Service] Found platform setting for ${targetKey}: ${visibleStr}`);
+        return visibleStr !== 'false';
+      }
+      // 如果平台独立设置未找到，尝试读取通用的旧设置
+      const fallbackStr = await settingsRepository.getSetting(NAV_BAR_VISIBLE_KEY);
+      if (fallbackStr !== null) {
+        return fallbackStr !== 'false';
+      }
+      // 默认值：桌面端默认 true，移动端默认 false（移动端最大化终端视口）
+      return isMobile ? false : true;
     } catch (error) {
-      console.error(`[Service] Error getting nav bar visibility setting (key: ${NAV_BAR_VISIBLE_KEY}):`, error);
-      // 出错时返回默认值 true
-      return true;
+      console.error(`[Service] Error getting nav bar visibility setting (key: ${targetKey}):`, error);
+      return isMobile ? false : true;
     }
   }, 
 
   /**
-   * 设置导航栏可见性
+   * 设置导航栏可见性 (支持按平台区分桌面端与移动端)
    * @param visible 是否可见 (boolean)
+   * @param platform 可选平台标识 ('desktop' | 'mobile')
    */
-  async setNavBarVisibility(visible: boolean): Promise<void> {
-    console.log(`[Service] setNavBarVisibility called with: ${visible}`);
+  async setNavBarVisibility(visible: boolean, platform?: string): Promise<void> {
+    console.log(`[Service] setNavBarVisibility called with: ${visible}, platform: ${platform || 'all'}`);
     try {
-      const visibleStr = String(visible); // 将布尔值转换为 'true' 或 'false'
-      console.log(`[Service] Attempting to save setting. Key: ${NAV_BAR_VISIBLE_KEY}, Value: ${visibleStr}`);
-      await settingsRepository.setSetting(NAV_BAR_VISIBLE_KEY, visibleStr);
-      console.log(`[Service] Successfully saved setting for key: ${NAV_BAR_VISIBLE_KEY}`);
+      const visibleStr = String(visible);
+      const isMobile = platform === 'mobile';
+      const isDesktop = platform === 'desktop';
+
+      if (isMobile) {
+        await settingsRepository.setSetting(NAV_BAR_VISIBLE_MOBILE_KEY, visibleStr);
+      } else if (isDesktop) {
+        await settingsRepository.setSetting(NAV_BAR_VISIBLE_DESKTOP_KEY, visibleStr);
+      } else {
+        await Promise.all([
+          settingsRepository.setSetting(NAV_BAR_VISIBLE_KEY, visibleStr),
+          settingsRepository.setSetting(NAV_BAR_VISIBLE_DESKTOP_KEY, visibleStr),
+          settingsRepository.setSetting(NAV_BAR_VISIBLE_MOBILE_KEY, visibleStr),
+        ]);
+      }
+      console.log(`[Service] Successfully saved nav bar visibility for platform: ${platform || 'all'}`);
     } catch (error) {
-      console.error(`[Service] Error calling settingsRepository.setSetting for key ${NAV_BAR_VISIBLE_KEY}:`, error);
+      console.error(`[Service] Error saving nav bar visibility setting:`, error);
       throw new Error('Failed to save nav bar visibility setting.');
     }
   }, 

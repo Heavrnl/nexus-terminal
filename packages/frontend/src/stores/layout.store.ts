@@ -170,8 +170,41 @@ export const useLayoutStore = defineStore('layout', () => {
   ]);
   // 控制布局（Header/Footer）可见性的状态
   const isLayoutVisible: Ref<boolean> = ref(true); // 控制整体布局（Header/Footer）可见性
-  // 控制主导航栏（Header）可见性的状态
-  const isHeaderVisible: Ref<boolean> = ref(true); // 默认可见
+
+  // --- 分端独立存储：桌面端与移动端主导航栏（Header）可见性 ---
+  const LS_HEADER_VISIBLE_DESKTOP = 'nexus_nav_bar_visible_desktop';
+  const LS_HEADER_VISIBLE_MOBILE = 'nexus_nav_bar_visible_mobile';
+
+  function isMobilePlatform(): boolean {
+    if (typeof window === 'undefined') return false;
+    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return isMobileUA || window.innerWidth < 768;
+  }
+
+  const desktopHeaderVisible = ref<boolean>(
+    typeof localStorage !== 'undefined' && localStorage.getItem(LS_HEADER_VISIBLE_DESKTOP) !== null
+      ? localStorage.getItem(LS_HEADER_VISIBLE_DESKTOP) === 'true'
+      : true
+  );
+
+  const mobileHeaderVisible = ref<boolean>(
+    typeof localStorage !== 'undefined' && localStorage.getItem(LS_HEADER_VISIBLE_MOBILE) !== null
+      ? localStorage.getItem(LS_HEADER_VISIBLE_MOBILE) === 'true'
+      : false // 移动端默认隐藏，最大化利用小屏终端空间
+  );
+
+  // 控制主导航栏（Header）可见性的状态（自动对应当前端并保持外部响应式兼容）
+  const isHeaderVisible: Ref<boolean> = ref(
+    isMobilePlatform() ? mobileHeaderVisible.value : desktopHeaderVisible.value
+  );
+
+  function syncCurrentHeaderVisibility() {
+    isHeaderVisible.value = isMobilePlatform() ? mobileHeaderVisible.value : desktopHeaderVisible.value;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', syncCurrentHeaderVisibility);
+  }
 
   // --- 计算属性 ---
   // 计算当前布局和侧栏中正在使用的所有面板
@@ -433,38 +466,57 @@ function ensureNodeIds(node: LayoutNode | null): LayoutNode | null {
     // 注意：这个状态目前不与后端同步
   }
 
-  // 从后端加载主导航栏可见性设置
+  // 从后端/缓存加载主导航栏可见性设置 (分端加载)
   async function loadHeaderVisibility() {
-    console.log('[Layout Store] Attempting to load header visibility from backend...');
+    const isMobile = isMobilePlatform();
+    const platform = isMobile ? 'mobile' : 'desktop';
+    console.log(`[Layout Store] Attempting to load header visibility for ${platform}...`);
     try {
-      // --- 调用后端 API (复用 nav-bar-visibility 接口) ---
-      const response = await apiClient.get<{ visible: boolean }>('/settings/nav-bar-visibility'); // 使用 apiClient
+      // --- 调用后端 API (携带 platform 参数区分桌面端与移动端) ---
+      const response = await apiClient.get<{ visible: boolean }>(`/settings/nav-bar-visibility?platform=${platform}`);
       if (response && typeof response.data.visible === 'boolean') {
-        isHeaderVisible.value = response.data.visible;
-        console.log(`[Layout Store] Header visibility loaded from backend: ${isHeaderVisible.value}`);
-      } else {
-        console.warn('[Layout Store] Invalid response from backend for header visibility, using default.');
-        isHeaderVisible.value = true; // 默认值
+        const val = response.data.visible;
+        if (isMobile) {
+          mobileHeaderVisible.value = val;
+          if (typeof localStorage !== 'undefined') localStorage.setItem(LS_HEADER_VISIBLE_MOBILE, String(val));
+        } else {
+          desktopHeaderVisible.value = val;
+          if (typeof localStorage !== 'undefined') localStorage.setItem(LS_HEADER_VISIBLE_DESKTOP, String(val));
+        }
+        isHeaderVisible.value = val;
+        console.log(`[Layout Store] Header visibility for ${platform} loaded from backend: ${val}`);
       }
     } catch (error) {
-      console.error('[Layout Store] Failed to load header visibility from backend:', error);
-      // 出错时使用默认值
-      isHeaderVisible.value = true;
+      console.warn(`[Layout Store] Failed to load header visibility for ${platform} from backend:`, error);
+      // 出错时同步当前本地状态
+      syncCurrentHeaderVisibility();
     }
   }
 
-  // 切换主导航栏可见性并同步到后端
+  // 切换主导航栏可见性并同步到后端 (分端存储，互不干扰)
   async function toggleHeaderVisibility() {
-    const newValue = !isHeaderVisible.value;
-    console.log(`[Layout Store] Toggling header visibility to: ${newValue}`);
-    isHeaderVisible.value = newValue; // 立即更新 UI
+    const isMobile = isMobilePlatform();
+    const platform = isMobile ? 'mobile' : 'desktop';
+    const currentVal = isMobile ? mobileHeaderVisible.value : desktopHeaderVisible.value;
+    const newValue = !currentVal;
+
+    console.log(`[Layout Store] Toggling header visibility for ${platform} to: ${newValue}`);
+
+    if (isMobile) {
+      mobileHeaderVisible.value = newValue;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(LS_HEADER_VISIBLE_MOBILE, String(newValue));
+    } else {
+      desktopHeaderVisible.value = newValue;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(LS_HEADER_VISIBLE_DESKTOP, String(newValue));
+    }
+    isHeaderVisible.value = newValue; // 立即更新当前端 UI
 
     try {
-      // --- 调用后端 API (复用 nav-bar-visibility 接口) ---
-      await apiClient.put('/settings/nav-bar-visibility', { visible: newValue }); // 使用 apiClient
-      console.log('[Layout Store] Header visibility saved to backend.');
+      // --- 调用后端 API (携带 platform 字段实现分端持久化) ---
+      await apiClient.put('/settings/nav-bar-visibility', { visible: newValue, platform });
+      console.log(`[Layout Store] Header visibility for ${platform} saved to backend.`);
     } catch (error) {
-      console.error('[Layout Store] Failed to save header visibility to backend:', error);
+      console.error(`[Layout Store] Failed to save header visibility for ${platform} to backend:`, error);
     }
   }
 

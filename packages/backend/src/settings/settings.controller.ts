@@ -181,7 +181,8 @@ export const settingsController = {
   */
  async getNavBarVisibility(req: Request, res: Response): Promise<void> {
    try {
-     const isVisible = await settingsService.getNavBarVisibility();
+     const platform = typeof req.query.platform === 'string' ? req.query.platform : undefined;
+     const isVisible = await settingsService.getNavBarVisibility(platform);
      res.json({ visible: isVisible });
    } catch (error: any) {
      console.error('[控制器] 获取导航栏可见性时出错:', error);
@@ -194,7 +195,7 @@ export const settingsController = {
   */
  async setNavBarVisibility(req: Request, res: Response): Promise<void> {
    try {
-     const { visible } = req.body;
+     const { visible, platform } = req.body;
      console.log('[控制器] 请求体 visible:', visible);
 
      if (typeof visible !== 'boolean') {
@@ -204,7 +205,7 @@ export const settingsController = {
      }
 
      
-     await settingsService.setNavBarVisibility(visible);
+     await settingsService.setNavBarVisibility(visible, typeof platform === 'string' ? platform : undefined);
      
 
 
