@@ -48,6 +48,7 @@ const isLoadingDropdown = ref(false);
 const dropdownFilter = ref('');
 const dropdownPopoverRef = ref<HTMLDivElement | null>(null);
 const dropdownPosition = ref<{ top: number; left: number }>({ top: 0, left: 0 });
+const breadcrumbStreamRef = ref<HTMLDivElement | null>(null);
 
 const closeDirDropdown = () => {
   activeDropdownDir.value = null;
@@ -60,6 +61,11 @@ watch(() => props.currentPath, (newPath) => {
     editablePath.value = newPath;
   }
   closeDirDropdown();
+  nextTick(() => {
+    if (breadcrumbStreamRef.value) {
+      breadcrumbStreamRef.value.scrollLeft = breadcrumbStreamRef.value.scrollWidth;
+    }
+  });
 }, { immediate: true });
 
 // --- 面包屑分段解析 ---
@@ -312,8 +318,11 @@ defineExpose({
       class="flex items-center flex-grow min-w-0 h-full overflow-hidden"
       @click="startEdit"
     >
-      <!-- 可点击的面包屑段落流 -->
-      <div class="flex items-center flex-shrink-0 max-w-full overflow-x-auto no-scrollbar py-0.5">
+      <!-- 可点击的面包屑段落流：自适应宽度，超出时自动滚动且预留右侧空白 -->
+      <div
+        ref="breadcrumbStreamRef"
+        class="flex items-center flex-shrink min-w-0 max-w-[calc(100%-36px)] overflow-x-auto no-scrollbar py-0.5"
+      >
         <template v-for="(seg, idx) in breadcrumbSegments" :key="seg.path">
           <!-- 根目录纯图标按钮 -->
           <template v-if="seg.isRoot">
@@ -364,9 +373,9 @@ defineExpose({
         </template>
       </div>
 
-      <!-- 右侧空白点击区域（Windows 资源管理器灵魂：点击任意空白切换输入模式） -->
+      <!-- 右侧强制常驻空白点击区域（超出宽度时仍保留至少 36px 空间用于切换输入模式） -->
       <div
-        class="flex-grow min-w-[30px] h-full cursor-text"
+        class="flex-grow flex-shrink-0 min-w-[36px] h-full cursor-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-100 rounded-sm"
         title="点击直接输入路径"
       ></div>
     </div>
