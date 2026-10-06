@@ -952,11 +952,11 @@
       "terminalRightClickPasteSuccess": "Terminal right-click paste setting saved.",
       "terminalRightClickPasteError": "Failed to save terminal right-click paste setting.",
       "fileManagerDoubleClickToOpenTitle": "Double-Click to Open Files/Folders",
-      "fileManagerDoubleClickToOpenDescription": "When enabled, double-click to open files or folders and single-click to select; when disabled, single-click opens directly (Default: Disabled)",
+      "fileManagerDoubleClickToOpenDescription": "When enabled, double-click to open files or folders and single-click to select; when disabled, single-click opens directly",
       "fileManagerDoubleClickToOpenSuccess": "Double-click setting saved successfully.",
       "fileManagerDoubleClickToOpenError": "Failed to save double-click setting.",
       "terminalNoWrapTitle": "No Wrap",
-      "terminalNoWrapDescription": "When enabled, terminal text will not soft-wrap and can be scrolled horizontally; when disabled, lines wrap to fit terminal width (Default: Disabled)",
+      "terminalNoWrapDescription": "When enabled, terminal text will not soft-wrap and can be scrolled horizontally; when disabled, lines wrap to fit terminal width",
       "terminalNoWrapSuccess": "Terminal no wrap setting saved successfully.",
       "terminalNoWrapError": "Failed to save terminal no wrap setting."
     },

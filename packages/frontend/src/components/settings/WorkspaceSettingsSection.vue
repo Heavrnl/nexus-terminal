@@ -105,7 +105,7 @@
               {{ $t('settings.workspace.terminalNoWrapTitle', '不换行') }}
             </div>
             <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行（默认关闭）') }}
+              {{ $t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
@@ -270,7 +270,7 @@
               {{ $t('settings.workspace.fileManagerDoubleClickToOpenTitle', '双击打开文件/文件夹') }}
             </div>
             <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开（默认关闭）') }}
+              {{ $t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开') }}
             </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">

@@ -1167,11 +1167,11 @@
       "terminalRightClickPasteSuccess": "ターミナルの右クリック貼り付け設定が保存されました。",
       "terminalRightClickPasteError": "ターミナルの右クリック貼り付け設定の保存に失敗しました。",
       "fileManagerDoubleClickToOpenTitle": "ダブルクリックでファイル/フォルダーを開く",
-      "fileManagerDoubleClickToOpenDescription": "有効にするとダブルクリックで開き、シングルクリックで選択します。無効時はシングルクリックで直接開きます (デフォルト: 無効)",
+      "fileManagerDoubleClickToOpenDescription": "有効にするとダブルクリックで開き、シングルクリックで選択します。無効時はシングルクリックで直接開きます",
       "fileManagerDoubleClickToOpenSuccess": "ダブルクリック設定が保存されました。",
       "fileManagerDoubleClickToOpenError": "ダブルクリック設定の保存に失敗しました。",
       "terminalNoWrapTitle": "折り返さない",
-      "terminalNoWrapDescription": "有効にすると、ターミナルのテキストは折り返されず、水平スクロールで表示されます。無効時は画面幅に合わせて折り返します (デフォルト: 無効)",
+      "terminalNoWrapDescription": "有効にすると、ターミナルのテキストは折り返されず、水平スクロールで表示されます。無効時は画面幅に合わせて折り返します",
       "terminalNoWrapSuccess": "ターミナルの折り返しなし設定が保存されました。",
       "terminalNoWrapError": "ターミナルの折り返しなし設定の保存に失敗しました。"
     },
