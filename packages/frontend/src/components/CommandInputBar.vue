@@ -11,7 +11,7 @@ import QuickCommandsModal from './QuickCommandsModal.vue';
 import CommandHistoryModal from './CommandHistoryModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
-import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import MultiLineCommandInput from './MultiLineCommandInput.vue';
 
 
@@ -281,6 +281,20 @@ const focusSearchInput = (): boolean => {
 
 defineExpose({ focusCommandInput, focusSearchInput });
 
+const onWorkspaceEvent = useWorkspaceEventSubscriber();
+const offWorkspaceEvent = useWorkspaceEventOff();
+
+// 监听填入命令事件：移动端自动展开多行命令输入框；桌面端更新单行输入框
+const handleCommandFill = (payload: { command: string }) => {
+  if (props.isMobile) {
+    isMobileMultiLineOpen.value = true;
+  } else {
+    if (activeSessionId.value) {
+      updateSessionCommandInput(activeSessionId.value, payload.command);
+    }
+  }
+};
+
 // --- Register/Unregister Focus Actions ---
 let unregisterCommandInputFocus: (() => void) | null = null;
 let unregisterTerminalSearchFocus: (() => void) | null = null;
@@ -288,6 +302,7 @@ let unregisterTerminalSearchFocus: (() => void) | null = null;
 onMounted(() => {
   unregisterCommandInputFocus = focusSwitcherStore.registerFocusAction('commandInput', focusCommandInput);
   unregisterTerminalSearchFocus = focusSwitcherStore.registerFocusAction('terminalSearch', focusSearchInput);
+  onWorkspaceEvent('commandInput:fill', handleCommandFill);
 });
 
 onBeforeUnmount(() => {
@@ -297,9 +312,14 @@ onBeforeUnmount(() => {
   if (unregisterTerminalSearchFocus) {
     unregisterTerminalSearchFocus();
   }
+  offWorkspaceEvent('commandInput:fill', handleCommandFill);
 });
 
-// +++ Functions to control the quick commands modal +++
+// +++ Functions to control the quick commands modal / bottom sheet +++
+const toggleQuickCommandsModal = () => {
+  showQuickCommands.value = !showQuickCommands.value;
+};
+
 const openQuickCommandsModal = () => {
   showQuickCommands.value = true;
 };
@@ -308,7 +328,11 @@ const closeQuickCommandsModal = () => {
   showQuickCommands.value = false;
 };
 
-// +++ Functions to control the command history modal +++
+// +++ Functions to control the command history modal / bottom sheet +++
+const toggleCommandHistoryModal = () => {
+  showCommandHistoryModal.value = !showCommandHistoryModal.value;
+};
+
 const openCommandHistoryModal = () => {
   showCommandHistoryModal.value = true;
 };
@@ -317,7 +341,11 @@ const closeCommandHistoryModal = () => {
   showCommandHistoryModal.value = false;
 };
 
-// +++ Functions to control the suspended SSH sessions modal +++
+// +++ Functions to control the suspended SSH sessions modal / bottom sheet +++
+const toggleSuspendedSshSessionsModal = () => {
+  showSuspendedSshSessionsModal.value = !showSuspendedSshSessionsModal.value;
+};
+
 const openSuspendedSshSessionsModal = () => {
   showSuspendedSshSessionsModal.value = true;
 };
@@ -370,8 +398,9 @@ const handleQuickCommandExecute = (command: string) => {
        <!-- +++ Quick Commands Button (Mobile only) +++ -->
        <button
         v-if="props.isMobile"
-        @click="openQuickCommandsModal"
+        @click="toggleQuickCommandsModal"
         class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :class="showQuickCommands ? 'border-primary bg-primary/10 text-primary' : ''"
         :title="t('quickCommands.title', '快捷指令')"
       >
         <i class="fas fa-bolt text-base"></i>
@@ -379,8 +408,9 @@ const handleQuickCommandExecute = (command: string) => {
        <!-- +++ Command History Button (Mobile only) +++ -->
        <button
         v-if="props.isMobile"
-        @click="openCommandHistoryModal"
+        @click="toggleCommandHistoryModal"
         class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :class="showCommandHistoryModal ? 'border-primary bg-primary/10 text-primary' : ''"
         :title="t('commandHistory.title', '命令历史')"
       >
         <i class="fas fa-history text-base"></i>
@@ -443,8 +473,9 @@ const handleQuickCommandExecute = (command: string) => {
         <!-- +++ Suspended SSH Sessions Button (Mobile only, new position) +++ -->
         <button
           v-if="props.isMobile"
-          @click="openSuspendedSshSessionsModal"
+          @click="toggleSuspendedSshSessionsModal"
           class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="showSuspendedSshSessionsModal ? 'border-primary bg-primary/10 text-primary' : ''"
           :title="t('suspendedSshSessions.title', '挂起会话')"
         >
           <i class="fas fa-pause-circle text-base"></i>
@@ -508,7 +539,8 @@ const handleQuickCommandExecute = (command: string) => {
 
     <!-- 移动端多行命令输入组件展开区域 (点击上方图标展开/再次点击收回) -->
     <div
-      v-if="props.isMobile && isMobileMultiLineOpen"
+      v-if="props.isMobile"
+      v-show="isMobileMultiLineOpen"
       class="w-full max-h-[38vh] h-44 p-1.5 bg-background border-t border-border/50 shrink-0"
     >
       <MultiLineCommandInput :is-mobile="props.isMobile" class="h-full w-full" />

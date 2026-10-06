@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
-import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 
 const props = defineProps<{
@@ -39,22 +39,23 @@ watch(clearAfterSend, (val) => {
   localStorage.setItem(STORAGE_KEY_CLEAR_AFTER_SEND, String(val));
 });
 
+// 使用模块级对象存储会话草稿，避免 Proxy 循环响应并保证组件重挂载时不丢失草稿
+const globalSessionDrafts: Record<string, string> = {};
+
 // --- 状态定义 ---
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
-// 使用普通对象存储会话草稿，避免 Proxy 循环响应
-const sessionDrafts: Record<string, string> = {};
-const currentContent = ref('');
+const currentContent = ref(activeSessionId.value ? (globalSessionDrafts[activeSessionId.value] || '') : '');
 const selectedText = ref('');
 const copySuccess = ref(false);
 
 // 监听会话变更，保存旧草稿，加载新草稿
 watch(activeSessionId, (newId, oldId) => {
   if (oldId) {
-    sessionDrafts[oldId] = currentContent.value;
+    globalSessionDrafts[oldId] = currentContent.value;
   }
   if (newId) {
-    currentContent.value = sessionDrafts[newId] || '';
+    currentContent.value = globalSessionDrafts[newId] || '';
   } else {
     currentContent.value = '';
   }
@@ -123,7 +124,7 @@ const handleSend = () => {
   if (clearAfterSend.value && !selectedText.value) {
     currentContent.value = '';
     if (activeSessionId.value) {
-      sessionDrafts[activeSessionId.value] = '';
+      globalSessionDrafts[activeSessionId.value] = '';
     }
   }
 
@@ -134,7 +135,7 @@ const handleSend = () => {
 const handleClear = () => {
   currentContent.value = '';
   if (activeSessionId.value) {
-    sessionDrafts[activeSessionId.value] = '';
+    globalSessionDrafts[activeSessionId.value] = '';
   }
   selectedText.value = '';
   textareaRef.value?.focus();
@@ -192,14 +193,35 @@ const focusInput = (): boolean => {
 
 defineExpose({ focusInput });
 
+const onWorkspaceEvent = useWorkspaceEventSubscriber();
+const offWorkspaceEvent = useWorkspaceEventOff();
+
+// 监听填入命令事件，将内容写入多行输入框并聚焦光标到末尾
+const handleFillCommand = (payload: { command: string }) => {
+  currentContent.value = payload.command;
+  if (activeSessionId.value) {
+    globalSessionDrafts[activeSessionId.value] = payload.command;
+  }
+  nextTick(() => {
+    if (textareaRef.value) {
+      textareaRef.value.focus();
+      const len = payload.command.length;
+      textareaRef.value.selectionStart = textareaRef.value.selectionEnd = len;
+      updateSelection();
+    }
+  });
+};
+
 let unregisterFocus: (() => void) | null = null;
 onMounted(() => {
   unregisterFocus = focusSwitcherStore.registerFocusAction('multiLineCommandInput', focusInput);
+  onWorkspaceEvent('commandInput:fill', handleFillCommand);
 });
 onBeforeUnmount(() => {
   if (unregisterFocus) {
     unregisterFocus();
   }
+  offWorkspaceEvent('commandInput:fill', handleFillCommand);
 });
 </script>
 

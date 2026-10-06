@@ -1,5 +1,192 @@
 <template>
-  <div class="fixed inset-0 bg-overlay flex justify-center items-center z-50">
+  <!-- 移动端：底部滑出抽屉 (Bottom Sheet) -->
+  <Teleport to="body" v-if="isMobile">
+    <Transition name="bottom-sheet">
+      <div
+        class="bottom-sheet-overlay fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
+        @click.self="closeForm"
+      >
+        <div
+          class="mobile-form-sheet w-full h-[85vh] max-h-[92vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
+        >
+          <!-- 顶部拖拽手柄与点击快速收起指示条 -->
+          <div
+            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
+            @click="closeForm"
+            title="点击收起"
+          >
+            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
+          </div>
+
+          <!-- 顶栏标题与关闭按钮 -->
+          <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <i :class="isEditing ? 'fas fa-edit' : 'fas fa-plus'" class="text-sm"></i>
+              </div>
+              <h3 class="text-base font-semibold text-foreground tracking-tight">
+                {{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}
+              </h3>
+            </div>
+
+            <!-- 收起按钮 -->
+            <button
+              @click="closeForm"
+              class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
+              :title="t('close', '收起')"
+            >
+              <i class="fas fa-chevron-down text-sm"></i>
+            </button>
+          </div>
+
+          <!-- 移动端表单可滚动内容区 -->
+          <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
+            <!-- 1. 指令内容 (核心必填) -->
+            <div>
+              <label for="m-qc-command" class="block mb-1.5 text-xs font-semibold text-text-secondary">
+                {{ t('quickCommands.form.command', '指令:') }} <span class="text-error">*</span>
+              </label>
+              <textarea
+                id="m-qc-command"
+                v-model="formData.command"
+                required
+                rows="3"
+                :placeholder="placeholder"
+                class="w-full px-3 py-2 border border-border/60 rounded-xl bg-input text-foreground font-mono text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary leading-relaxed whitespace-pre-wrap break-all"
+              ></textarea>
+              <small v-if="commandError" class="text-error text-xs mt-1 block">{{ commandError }}</small>
+            </div>
+
+            <!-- 2. 指令名称 (可选) -->
+            <div>
+              <label for="m-qc-name" class="block mb-1.5 text-xs font-semibold text-text-secondary">
+                {{ t('quickCommands.form.name', '名称:') }}
+              </label>
+              <input
+                id="m-qc-name"
+                type="text"
+                v-model="formData.name"
+                :placeholder="t('quickCommands.form.namePlaceholder', '可选，用于快速识别')"
+                class="w-full px-3 py-2 border border-border/60 rounded-xl bg-input text-foreground text-xs sm:text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition duration-150"
+              />
+            </div>
+
+            <!-- 3. 标签分类 -->
+            <div>
+              <label for="m-qc-tags" class="block mb-1.5 text-xs font-semibold text-text-secondary">
+                {{ t('quickCommands.form.tags', '标签:') }}
+              </label>
+              <TagInput
+                id="m-qc-tags"
+                v-model="formData.tagIds"
+                :available-tags="quickCommandTagsStore.tags"
+                :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
+                @create-tag="handleCreateTag"
+                :allow-create="true"
+                :allow-delete="true"
+                @delete-tag="handleDeleteTag"
+                class="w-full"
+              />
+            </div>
+
+            <!-- 4. 变量管理 -->
+            <div class="pt-2 border-t border-border/40">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-text-secondary">
+                  {{ t('quickCommands.form.variablesTitle', '变量管理') }}
+                </span>
+                <button
+                  type="button"
+                  @click="addVariable"
+                  class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <i class="fas fa-plus text-[10px]"></i>
+                  <span>{{ t('quickCommands.form.addVariable', '添加变量') }}</span>
+                </button>
+              </div>
+
+              <!-- 变量为空提示 -->
+              <div
+                v-if="localVariables.length === 0"
+                class="text-xs text-text-secondary/70 p-3 border border-dashed border-border/50 rounded-xl text-center bg-background-secondary/20"
+              >
+                {{ t('quickCommands.form.noVariables', '暂无变量。点击上方按钮添加。') }}
+              </div>
+
+              <!-- 变量卡片列表 -->
+              <div v-else class="space-y-2">
+                <div
+                  v-for="variable in localVariables"
+                  :key="variable.id"
+                  class="p-2.5 border border-border/50 rounded-xl bg-background-secondary/30 space-y-2"
+                >
+                  <div class="flex items-center gap-2">
+                    <input
+                      type="text"
+                      v-model="variable.name"
+                      :placeholder="t('quickCommands.form.variableNamePlaceholder', '变量名')"
+                      class="flex-grow px-2.5 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-xs font-mono shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      @click="deleteVariable(variable.id)"
+                      class="p-1.5 text-text-secondary hover:text-error active:scale-90 rounded-lg hover:bg-error/10 transition-colors cursor-pointer shrink-0"
+                      :title="t('common.delete', '删除')"
+                    >
+                      <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                  </div>
+                  <textarea
+                    v-model="variable.value"
+                    :placeholder="t('quickCommands.form.variableValuePlaceholder', '变量值')"
+                    rows="2"
+                    class="w-full px-2.5 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-xs font-mono shadow-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部吸底操作栏 -->
+          <div class="sheet-footer flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border/50 bg-background shrink-0">
+            <!-- 取消按钮 -->
+            <button
+              type="button"
+              @click="closeForm"
+              class="py-2 px-4 rounded-xl text-xs font-medium bg-background border border-border/60 text-text-secondary hover:bg-border/30 active:scale-95 transition-all cursor-pointer"
+            >
+              {{ t('common.cancel', '取消') }}
+            </button>
+            <!-- 执行按钮 -->
+            <button
+              type="button"
+              @click="handleExecute"
+              class="py-2 px-4 rounded-xl text-xs font-semibold bg-[var(--color-success)] text-white hover:opacity-90 active:scale-95 transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
+            >
+              <i class="fas fa-play text-[10px]"></i>
+              <span>{{ t('quickCommands.form.execute', '执行') }}</span>
+            </button>
+            <!-- 保存/提交按钮 -->
+            <button
+              type="button"
+              @click="handleSubmit"
+              :disabled="isSubmitting || !!commandError"
+              class="py-2 px-5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
+            >
+              <i class="fas fa-check text-[10px]"></i>
+              <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
+            </button>
+          </div>
+
+          <!-- 底部安全区垫片 -->
+          <div class="sheet-safe-bottom shrink-0"></div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 桌面端：经典 Resizable 左右双栏弹窗 -->
+  <div v-else class="fixed inset-0 bg-overlay flex justify-center items-center z-50">
     <div
       ref="modalContentRef"
       class="bg-background text-foreground p-6 rounded-xl border border-border/50 shadow-2xl flex flex-col"
@@ -8,7 +195,9 @@
         height: resizableHeight ? `${resizableHeight}px` : undefined,
       }"
     >
-      <h2 class="m-0 mb-6 text-center text-xl font-semibold">{{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}</h2>
+      <h2 class="m-0 mb-6 text-center text-xl font-semibold">
+        {{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}
+      </h2>
       <div class="flex-grow flex space-x-6 min-h-0">
         <!-- 左侧：变量管理 -->
         <div class="w-1/3 border-r border-border/30 pr-6 flex flex-col overflow-y-auto">
@@ -17,7 +206,7 @@
             <div v-if="localVariables.length === 0" class="text-sm text-text-tertiary p-2 border border-dashed border-border/30 rounded-md">
               {{ t('quickCommands.form.noVariables', '暂无变量。点击下方按钮添加。') }}
             </div>
-            <div v-for="(variable, index) in localVariables" :key="variable.id" class="p-2.5 border border-border/40 rounded-lg bg-input/30 space-y-2">
+            <div v-for="variable in localVariables" :key="variable.id" class="p-2.5 border border-border/40 rounded-lg bg-input/30 space-y-2">
               <input
                 type="text"
                 v-model="variable.name"
@@ -51,49 +240,45 @@
               <label for="qc-name" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.name', '名称:') }}</label>
               <input
                 id="qc-name"
-            type="text"
-            v-model="formData.name"
-            :placeholder="t('quickCommands.form.namePlaceholder', '可选，用于快速识别')"
-            class="w-full px-4 py-2 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out"
-          />
-        </div>
-        <div class="flex flex-col flex-grow">
-          <label for="qc-command" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.command', '指令:') }} <span class="text-error">*</span></label>
-          <textarea
-            id="qc-command"
-            v-model="formData.command"
-            required
-            :placeholder="placeholder"
-            class="w-full px-4 py-2 border border-border/50 rounded-lg bg-input text-foreground text-sm min-h-[80px] shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out whitespace-nowrap overflow-x-auto flex-grow"
-          ></textarea>
-          <small v-if="commandError" class="text-error text-xs mt-1 block">{{ commandError }}</small>
-        </div>
-        <!-- +++ 标签输入区 +++ -->
-        <div>
-           <label for="qc-tags" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.tags', '标签:') }}</label>
-           <TagInput
-               id="qc-tags"
-               v-model="formData.tagIds"
-               :available-tags="quickCommandTagsStore.tags"
-               :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
-               @create-tag="handleCreateTag"
-               :allow-create="true"
-               :allow-delete="true"
-               @delete-tag="handleDeleteTag"
-               class="w-full"
-           />
-           <!-- 根据需要为 TagInput 添加样式/类 -->
-         </div>
-       </div>
-          <!-- +++ 标签输入区结束 +++ -->
+                type="text"
+                v-model="formData.name"
+                :placeholder="t('quickCommands.form.namePlaceholder', '可选，用于快速识别')"
+                class="w-full px-4 py-2 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out"
+              />
+            </div>
+            <div class="flex flex-col flex-grow">
+              <label for="qc-command" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.command', '指令:') }} <span class="text-error">*</span></label>
+              <textarea
+                id="qc-command"
+                v-model="formData.command"
+                required
+                :placeholder="placeholder"
+                class="w-full px-4 py-2 border border-border/50 rounded-lg bg-input text-foreground text-sm min-h-[80px] shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out whitespace-nowrap overflow-x-auto flex-grow"
+              ></textarea>
+              <small v-if="commandError" class="text-error text-xs mt-1 block">{{ commandError }}</small>
+            </div>
+            <!-- 标签输入区 -->
+            <div>
+              <label for="qc-tags" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.tags', '标签:') }}</label>
+              <TagInput
+                id="qc-tags"
+                v-model="formData.tagIds"
+                :available-tags="quickCommandTagsStore.tags"
+                :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
+                @create-tag="handleCreateTag"
+                :allow-create="true"
+                :allow-delete="true"
+                @delete-tag="handleDeleteTag"
+                class="w-full"
+              />
+            </div>
+          </div>
+          <!-- 底部按钮区 -->
           <div class="flex justify-end mt-auto pt-4 border-t border-border/50">
-            <!-- 次要/取消按钮 -->
             <button type="button" @click="closeForm" class="py-2 px-5 rounded-lg text-sm font-medium transition-colors duration-150 bg-background border border-border/50 text-text-secondary hover:bg-border hover:text-foreground mr-3">{{ t('common.cancel', '取消') }}</button>
-            <!-- 执行按钮 -->
-            <button type="button" @click="handleExecute" class="py-2 px-5 rounded-lg text-sm font-semibold transition-colors duration-150 bg-[var(--color-success)] text-white border-none shadow-md  focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--color-success)] mr-3">
+            <button type="button" @click="handleExecute" class="py-2 px-5 rounded-lg text-sm font-semibold transition-colors duration-150 bg-[var(--color-success)] text-white border-none shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--color-success)] mr-3">
               {{ t('quickCommands.form.execute', '执行') }}
             </button>
-            <!-- 主要/提交按钮 -->
             <button type="submit" :disabled="isSubmitting || !!commandError" class="py-2 px-5 rounded-lg text-sm font-semibold transition-colors duration-150 bg-primary text-white border-none shadow-md hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 disabled:opacity-70 disabled:cursor-not-allowed">
               {{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}
             </button>
@@ -107,6 +292,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useResizable } from '../composables/useResizable';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useI18n } from 'vue-i18n';
 import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
@@ -123,6 +309,7 @@ const props = defineProps<{
 
 const emit = defineEmits(['close']);
 
+const { isMobile } = useDeviceDetection();
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
 const { showAlertDialog } = useAlertDialog(); 
@@ -136,12 +323,11 @@ const isSubmitting = ref(false);
 const modalContentRef = ref<HTMLElement | null>(null);
 const R_MIN_WIDTH = 800; // 可调整大小的最小宽度 (像素)
 const R_MIN_HEIGHT = 700; // 可调整大小的最小高度 (像素)
-const placeholder = t('quickCommands.form.commandPlaceholder') + 'echo "Hello,\${USERNAME}"'
+const placeholder = t('quickCommands.form.commandPlaceholder') + 'echo "Hello,\${USERNAME}"';
 
 const { width: resizableWidth, height: resizableHeight } = useResizable(modalContentRef, {
   minWidth: R_MIN_WIDTH,
   minHeight: R_MIN_HEIGHT,
-  // 如果需要，可以在此处添加最大宽度和最大高度，例如：window.innerWidth * 0.95
 });
 
 const isEditing = computed(() => !!props.commandToEdit);
@@ -149,10 +335,9 @@ const isEditing = computed(() => !!props.commandToEdit);
 const formData = reactive({
     name: '',
     command: '',
-    tagIds: [] as number[], // +++ 添加标签ID +++
+    tagIds: [] as number[],
 });
 const localVariables = ref<{ name: string; value: string; id: string }[]>([]);
-
 
 const commandError = ref<string | null>(null);
 
@@ -165,9 +350,10 @@ watch(() => formData.command, (newCommand) => {
   }
 });
 
-// 初始化表单数据 (如果是编辑模式)
+// 初始化表单数据
 onMounted(() => {
-  if (typeof window !== 'undefined') {
+  // 仅在桌面端应用 resizable 尺寸初始化
+  if (typeof window !== 'undefined' && !isMobile.value) {
     let initialW = Math.min(window.innerWidth * 0.9, 1152); // 目标 90vw，最大 1152px
     let initialH = window.innerHeight * 0.85; // 目标 85vh
 
@@ -186,7 +372,7 @@ onMounted(() => {
       localVariables.value = Object.entries(props.commandToEdit.variables).map(([name, value]) => ({
         name,
         value,
-        id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}` // 生成唯一ID
+        id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
       }));
     } else {
       localVariables.value = [];
@@ -195,18 +381,14 @@ onMounted(() => {
 });
 
 const handleCreateTag = async (tagName: string) => {
-    console.log(`[QuickCmdForm] Received create-tag event for: ${tagName}`); 
     if (!tagName || tagName.trim().length === 0) return;
-    console.log(`[QuickCmdForm] Calling quickCommandTagsStore.addTag...`); 
     const newTag = await quickCommandTagsStore.addTag(tagName.trim());
     if (newTag && !formData.tagIds.includes(newTag.id)) {
-        console.log(`[QuickCmdForm] New tag created (ID: ${newTag.id}), adding to selection.`); 
         formData.tagIds.push(newTag.id);
     }
 };
 
 const handleDeleteTag = async (tagId: number) => {
-    console.log(`[QuickCmdForm] Received delete-tag event for ID: ${tagId}`); 
     const tagToDelete = quickCommandTagsStore.tags.find(t => t.id === tagId);
     if (!tagToDelete) return;
 
@@ -214,15 +396,10 @@ const handleDeleteTag = async (tagId: number) => {
         message: t('tags.prompts.confirmDelete', { name: tagToDelete.name })
     });
     if (confirmed) {
-        console.log(`[QuickCmdForm] Calling quickCommandTagsStore.deleteTag...`);
         const success = await quickCommandTagsStore.deleteTag(tagId);
         if (success) {
-            // 如果删除成功，TagInput的availableTags将会更新，
-            // 并且标签应该从输入框中消失。
-            // 如果该标签已被选中，我们还需要从本地的formData.tagIds中移除它。
             const index = formData.tagIds.indexOf(tagId);
             if (index > -1) {
-                 console.log(`[QuickCmdForm] Removing deleted tag ID ${tagId} from selection.`);
                  formData.tagIds.splice(index, 1);
             }
         } else {
@@ -232,16 +409,15 @@ const handleDeleteTag = async (tagId: number) => {
 };
 
 const handleSubmit = async () => {
-  if (commandError.value) return; // 如果校验失败则不提交
+  if (commandError.value) return;
 
   isSubmitting.value = true;
   let success = false;
 
-  // 处理名称，空字符串视为 null
   const finalName = formData.name.trim().length > 0 ? formData.name.trim() : null;
 
   const variablesToSave: Record<string, string> = localVariables.value.reduce((acc, curr) => {
-    if (curr.name.trim()) { // 只保存带有名称的变量
+    if (curr.name.trim()) {
       acc[curr.name.trim()] = curr.value;
     }
     return acc;
@@ -263,21 +439,18 @@ const closeForm = () => {
   emit('close');
 };
 
-//向 localVariables 数组添加一个新变量
 const addVariable = () => {
   localVariables.value.push({
     name: '',
     value: '',
-    id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}` // 生成唯一ID
+    id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
   });
 };
 
-// 通过 ID 从 localVariables 数组中删除变量
 const deleteVariable = (variableId: string) => {
   localVariables.value = localVariables.value.filter(v => v.id !== variableId);
 };
 
-// 使用当前变量执行命令
 const handleExecute = () => {
   let processedCommand = formData.command;
   const currentVariables = localVariables.value.reduce((acc, curr) => {
@@ -287,13 +460,11 @@ const handleExecute = () => {
     return acc;
   }, {} as Record<string, string>);
 
-  // 执行变量替换
   for (const varName in currentVariables) {
     const placeholder = new RegExp(`\\$\\{${varName}\\}`, 'g');
     processedCommand = processedCommand.replace(placeholder, currentVariables[varName]);
   }
 
-  // 检查模板中是否存在未定义的变量
   const variablePlaceholders = formData.command.match(/\$\{[^\}]+\}/g) || [];
   const undefinedVariables: string[] = [];
   variablePlaceholders.forEach(placeholder => {
@@ -315,7 +486,6 @@ const handleExecute = () => {
     return;
   }
 
-  console.log(`[QuickCmdForm] Executing processed command: "${processedCommand}" on session ${activeSessionId}`);
   emitWorkspaceEvent('quickCommand:executeProcessed', {
     command: processedCommand,
     sessionId: activeSessionId
@@ -325,4 +495,37 @@ const handleExecute = () => {
 };
 </script>
 
+<style scoped>
+.bg-overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+}
 
+/* 遮罩淡入淡出动效 */
+.bottom-sheet-enter-active,
+.bottom-sheet-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.bottom-sheet-enter-from,
+.bottom-sheet-leave-to {
+  opacity: 0;
+}
+
+/* 抽屉底部弹性滑入滑出动效 */
+.bottom-sheet-enter-active .mobile-form-sheet {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-sheet-leave-active .mobile-form-sheet {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.bottom-sheet-enter-from .mobile-form-sheet,
+.bottom-sheet-leave-to .mobile-form-sheet {
+  transform: translateY(100%);
+}
+
+.sheet-safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+}
+</style>

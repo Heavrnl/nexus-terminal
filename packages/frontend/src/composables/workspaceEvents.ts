@@ -57,6 +57,9 @@ export type WorkspaceEventPayloads = {
 
   // Quick Command Events
   'quickCommand:executeProcessed': { command: string; sessionId?: string };
+
+  // Command Input Fill Event (供历史记录/快捷指令等填入命令行或多行输入框)
+  'commandInput:fill': { command: string };
 };
 
 // 创建 mitt 事件发射器实例
