@@ -11,6 +11,7 @@ import QuickCommandsModal from './QuickCommandsModal.vue';
 import CommandHistoryModal from './CommandHistoryModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
+import { useLayoutStore } from '../stores/layout.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import MultiLineCommandInput from './MultiLineCommandInput.vue';
 
@@ -27,6 +28,16 @@ const quickCommandsStore = useQuickCommandsStore();
 const commandHistoryStore = useCommandHistoryStore();
 const sessionStore = useSessionStore(); // +++ 初始化 Session Store +++
 const fileEditorStore = useFileEditorStore(); // +++ Initialize File Editor Store +++
+const layoutStore = useLayoutStore(); // +++ Initialize Layout Store +++
+const { isHeaderVisible } = storeToRefs(layoutStore);
+
+const toggleHeader = () => {
+  layoutStore.toggleHeaderVisibility();
+};
+
+const openTransferProgressModal = () => {
+  emitWorkspaceEvent('ui:openTransferProgressModal');
+};
 
 // Get reactive setting from store
 const { commandInputSyncTarget, showPopupFileManagerBoolean, showPopupFileEditorBoolean } = storeToRefs(settingsStore); // +++ Import showPopupFileEditorBoolean +++
@@ -386,7 +397,7 @@ const handleQuickCommandExecute = (command: string) => {
 
 <template>
   <div :class="$attrs.class" class="flex flex-col bg-background border-t border-border/30">
-    <div class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full">
+    <div class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full overflow-x-auto no-scrollbar">
       <!-- Clear Terminal Button -->
       <button
         @click="emitWorkspaceEvent('terminal:clear')"
@@ -530,8 +541,27 @@ const handleQuickCommandExecute = (command: string) => {
           v-if="showPopupFileEditorBoolean || props.isMobile"
           @click="openFileEditorModal"
           class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :title="t('fileEditor.title', '文件编辑')"
         >
           <i class="fas fa-edit text-base"></i>
+        </button>
+        <!-- +++ Header Toggle Button (Mobile only) +++ -->
+        <button
+          v-if="props.isMobile"
+          @click="toggleHeader"
+          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
+        >
+          <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
+        </button>
+        <!-- +++ Transfer Progress Button (Mobile only) +++ -->
+        <button
+          v-if="props.isMobile"
+          @click="openTransferProgressModal"
+          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
+        >
+          <i class="fas fa-tasks text-base"></i>
         </button>
         <!-- Note: On mobile, when searching, only the close button (inside toggleSearch button logic) will be effectively visible in this control group -->
       </div>

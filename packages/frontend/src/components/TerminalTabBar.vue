@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, PropType, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, PropType, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import draggable from 'vuedraggable';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
@@ -407,15 +407,95 @@ onBeforeUnmount(() => {
   }
 });
 
+// +++ 移动端标签容器与激活项居中滚动 +++
+const mobileTabsContainerRef = ref<HTMLElement | null>(null);
+
+watch(() => props.activeSessionId, async (newId) => {
+  if (newId && props.isMobile) {
+    await nextTick();
+    const activeEl = mobileTabsContainerRef.value?.querySelector(`[data-tab-id="${newId}"]`);
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }
+});
+
 </script>
 
 <template>
-  <!-- +++ 使用 :class 绑定来条件化样式，包括高度 (修正 props 引用) +++ -->
-  <div :class="['flex bg-header border border-border overflow-hidden',
-               { 'rounded-t-md mx-2 mt-2': !props.isMobile }, // Desktop margins/rounding - Use props.isMobile
-               props.isMobile ? 'h-8' : 'h-10' // Mobile height h-8, Desktop h-10 - Use props.isMobile
-              ]">
-    <div class="flex items-center overflow-x-auto flex-shrink min-w-0 h-full"> <!-- Ensure inner div has h-full -->
+  <!-- 外层容器：桌面端带边框圆角，移动端为实体底色的会话行 -->
+  <div :class="[
+    props.isMobile
+      ? 'flex items-center w-full h-10 px-2 bg-header border-t border-border select-none relative shrink-0'
+      : 'flex items-center bg-header border border-border overflow-hidden rounded-t-md mx-2 mt-2 h-10 select-none relative'
+  ]">
+    <!-- ==================== 移动端特化视图 ==================== -->
+    <template v-if="props.isMobile">
+      <!-- + 号按键：最左侧固定按键 -->
+      <button
+        @click="togglePopup"
+        class="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg bg-background text-primary border border-border hover:bg-border/60 active:scale-95 transition-all shadow-sm"
+        :title="$t('tabs.newTabTooltip')"
+      >
+        <i class="fas fa-plus text-xs"></i>
+      </button>
+
+      <!-- 纵向分割微线 -->
+      <div class="h-4 w-[1px] bg-border mx-2 flex-shrink-0"></div>
+
+      <!-- 会话胶囊标签横向滚动列表 -->
+      <div
+        ref="mobileTabsContainerRef"
+        class="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-grow h-full py-1 min-w-0"
+      >
+        <div
+          v-for="session in draggableSessions"
+          :key="session.sessionId"
+          :data-tab-id="session.sessionId"
+          class="flex items-center px-2.5 h-7 rounded-lg cursor-pointer flex-shrink-0 transition-all duration-150 select-none max-w-[150px] border shadow-sm"
+          :class="session.sessionId === activeSessionId
+            ? 'bg-background text-primary border-primary/50 font-semibold shadow-sm ring-1 ring-primary/20'
+            : 'bg-background/50 text-text-secondary border-border hover:bg-background/80 hover:text-foreground active:scale-95'"
+          @click="activateSession(session.sessionId)"
+          @contextmenu.prevent="showContextMenu($event, session.sessionId)"
+          @touchstart="handleTouchStart($event, session.sessionId)"
+          @touchend="handleTouchEnd($event)"
+          :title="session.connectionName"
+        >
+          <!-- 状态指示灯 -->
+          <span
+            :class="[
+              'w-2 h-2 rounded-full mr-1.5 flex-shrink-0 transition-colors',
+              session.isMarkedForSuspend ? 'bg-blue-500' :
+              session.status === 'connected' ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]' :
+              session.status === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+              session.status === 'disconnected' ? 'bg-red-500' : 'bg-gray-400'
+            ]"
+          ></span>
+
+          <!-- 会话名称 -->
+          <span class="truncate text-xs tracking-tight flex-grow min-w-0">
+            {{ session.connectionName }}
+          </span>
+
+          <!-- 仅在激活的 Tab 上显示常驻关闭小叉号 -->
+          <button
+            v-if="session.sessionId === activeSessionId"
+            class="ml-1.5 -mr-0.5 w-4 h-4 rounded-full flex items-center justify-center text-primary/70 hover:text-primary hover:bg-primary/20 active:bg-primary/30 transition-colors flex-shrink-0"
+            @click.stop="closeSession($event, session.sessionId)"
+            :title="$t('tabs.closeTabTooltip')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ==================== 桌面端原有视图 ==================== -->
+    <template v-else>
+      <div class="flex items-center overflow-x-auto flex-shrink min-w-0 h-full"> <!-- Ensure inner div has h-full -->
       <draggable
         v-model="draggableSessions"
         item-key="sessionId"
@@ -485,26 +565,29 @@ onBeforeUnmount(() => {
           <i class="fas fa-th-large text-sm"></i>
         </button>
     </div>
+    </template>
     <!-- Connection List Popup -->
-    <div v-if="showConnectionListPopup" class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4" @click.self="togglePopup">
-      <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-md max-h-[80vh] flex flex-col relative">
-        <button class="absolute top-2 right-2 p-1 text-text-secondary hover:text-foreground" @click="togglePopup">
-           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-           </svg>
-        </button>
-        <h3 class="text-lg font-semibold text-center mb-4">{{ t('terminalTabBar.selectServerTitle') }}</h3>
-        <div class="flex-grow overflow-y-auto border border-border rounded">
-            <WorkspaceConnectionListComponent
-              @connect-request="handlePopupConnect"
-              @open-new-session="handlePopupConnect"
-              @request-add-connection="handleRequestAddFromPopup"
-              @request-edit-connection="handleRequestEditFromPopup"
-              class="popup-connection-list"
-            />
+    <Teleport to="body">
+      <div v-if="showConnectionListPopup" class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4" @click.self="togglePopup">
+        <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-md max-h-[80vh] flex flex-col relative">
+          <button class="absolute top-2 right-2 p-1 text-text-secondary hover:text-foreground" @click="togglePopup">
+             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+             </svg>
+          </button>
+          <h3 class="text-lg font-semibold text-center mb-4">{{ t('terminalTabBar.selectServerTitle') }}</h3>
+          <div class="flex-grow overflow-y-auto border border-border rounded">
+              <WorkspaceConnectionListComponent
+                @connect-request="handlePopupConnect"
+                @open-new-session="handlePopupConnect"
+                @request-add-connection="handleRequestAddFromPopup"
+                @request-edit-connection="handleRequestEditFromPopup"
+                class="popup-connection-list"
+              />
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
     <!-- +++ Context Menu Instance (Ensure it's present) +++ -->
     <TabBarContextMenu
       :visible="contextMenuVisible"

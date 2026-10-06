@@ -705,11 +705,12 @@ const closeFileManagerModal = () => {
 <template>
   <!-- *** 动态 class 绑定，添加 is-mobile 类 *** -->
   <div :class="['workspace-view', { 'with-header': isHeaderVisible, 'is-mobile': isMobile }]">
-    <!-- TerminalTabBar 始终渲染, 传递 isMobile 状态 -->
-    <TerminalTabBar
+    <!-- --- 桌面端布局 --- -->
+    <template v-if="!isMobile">
+      <TerminalTabBar
         :sessions="sessionTabsWithStatus"
         :active-session-id="activeSessionId"
-        :is-mobile="isMobile"
+        :is-mobile="false"
         @activate-session="sessionStore.activateSession"
         @close-session="sessionStore.closeSession"
         @open-layout-configurator="handleOpenLayoutConfigurator"
@@ -718,10 +719,7 @@ const closeFileManagerModal = () => {
         @close-other-sessions="handleCloseOtherSessions"
         @close-sessions-to-right="handleCloseSessionsToRight"
         @close-sessions-to-left="handleCloseSessionsToLeft"
-    />
-
-    <!-- --- 桌面端布局 --- -->
-    <template v-if="!isMobile">
+      />
       <div class="main-content-area">
         <LayoutRenderer
           v-if="layoutTree"
@@ -756,6 +754,21 @@ const closeFileManagerModal = () => {
           {{ t('workspace.noActiveSession', '没有活动的会话') }}
         </div>
       </div>
+      <!-- 移动端会话标签栏：自然流位于终端内容区下方、工具栏上方 -->
+      <TerminalTabBar
+        :sessions="sessionTabsWithStatus"
+        :active-session-id="activeSessionId"
+        :is-mobile="true"
+        @activate-session="sessionStore.activateSession"
+        @close-session="sessionStore.closeSession"
+        @open-layout-configurator="handleOpenLayoutConfigurator"
+        @request-add-connection-from-popup="handleRequestAddConnection"
+        @request-edit-connection-from-popup="handleRequestEditConnection"
+        @close-other-sessions="handleCloseOtherSessions"
+        @close-sessions-to-right="handleCloseSessionsToRight"
+        @close-sessions-to-left="handleCloseSessionsToLeft"
+      />
+      <!-- 移动端命令工具栏：自然流紧随标签栏下方 -->
       <CommandInputBar
         class="mobile-command-bar"
         :is-mobile="isMobile"
