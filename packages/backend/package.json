@@ -11,7 +11,7 @@
    "dependencies": {
       "@simplewebauthn/server": "^13.3.3",
       "@types/archiver": "^6.0.3",
-      "@types/multer": "^1.4.12",
+      "@types/multer": "^2.3.0",
       "@types/session-file-store": "^1.2.5",
       "@types/uuid": "^10.0.0",
       "adm-zip": "^0.6.1",
