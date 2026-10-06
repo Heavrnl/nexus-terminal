@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ToggleSwitch from '../common/ToggleSwitch.vue';
 import { useTerminalHighlightStore } from '../../stores/terminal-highlight.store';
-import type { TerminalHighlightRule } from '../../types/terminal-highlight.types';
+import type { TerminalHighlightGroup, HighlightPriority, HighlightMatchType } from '../../types/terminal-highlight.types';
 import { ansiToHtml } from '../../utils/terminal-highlighter';
 
 const { t } = useI18n();
@@ -35,9 +35,9 @@ CONTAINER ID   IMAGE          COMMAND                  STATUS                   
 3c4d5e6f7a8b   redis:7-alpine "docker-entrypoint.s…"   Up 1 day (healthy)        0.0.0.0:6379->6379/tcp cache-redis`,
 
   log: `$ tail -n 3 /var/log/nginx/access.log
-2026-10-06 18:30:15 [INFO] 192.168.1.100 GET https://nexus.example.com/api/v1/health 200 OK
-2026-10-06 18:30:16 [WARN] Slow database query from 10.0.0.8:5432, duration: 1820ms
-2026-10-06 18:30:17 [ERROR] Connection refused to 172.16.0.4:6379, retry 3 of 5 failed!`,
+2026-10-06 18:30:15,084 [INFO] 192.168.1.100 GET https://nexus.example.com/api/v1/health 200 OK
+2026-10-06 18:30:16.120 [WARN] Slow database query from 10.0.0.8:5432, duration: 1820ms
+2026-10-06 18:30:17,452 [ERROR] Connection refused to 172.16.0.4:6379, retry 3 of 5 failed! exit code 1`,
 
   network: `$ ip addr show eth0 && netstat -tlpn
 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP group default
@@ -53,23 +53,51 @@ const previewHtml = computed(() => {
   return ansiToHtml(typeof highlightedAnsi === 'string' ? highlightedAnsi : text);
 });
 
-// 编辑与新增弹窗状态
+// 编辑与新增弹窗表单状态
 const isEditModalOpen = ref(false);
-const editingRuleId = ref<string | null>(null);
-const ruleForm = ref({
+const editingGroupId = ref<string | null>(null);
+const isEditingBuiltin = ref(false);
+
+const groupForm = ref<{
+  name: string;
+  description: string;
+  matchType: HighlightMatchType;
+  keywordsInput: string;
+  keywords: string[];
+  patternsInput: string;
+  color: string;
+  bold: boolean;
+  underline: boolean;
+  priority: HighlightPriority;
+  flags: string;
+}>({
   name: '',
-  pattern: '',
-  flags: 'g',
-  color: '#22c55e',
+  description: '',
+  matchType: 'keywords',
+  keywordsInput: '',
+  keywords: [],
+  patternsInput: '',
+  color: '#3b82f6',
   bold: false,
   underline: false,
+  priority: 2,
+  flags: 'g',
 });
+
 const regexError = ref<string | null>(null);
 
-const validateRegex = (pattern: string, flags: string): boolean => {
+// 校验正则表达式
+const validateRegex = (patternStr: string, flags: string): boolean => {
+  if (!patternStr.trim()) {
+    regexError.value = null;
+    return true;
+  }
+  const lines = patternStr.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   try {
     const f = flags && flags.includes('g') ? flags : `${flags || ''}g`;
-    new RegExp(pattern, f);
+    for (const p of lines) {
+      new RegExp(p, f);
+    }
     regexError.value = null;
     return true;
   } catch (err: any) {
@@ -78,75 +106,132 @@ const validateRegex = (pattern: string, flags: string): boolean => {
   }
 };
 
+// 打开新建分组弹窗
 const handleOpenAddModal = () => {
-  editingRuleId.value = null;
-  ruleForm.value = {
+  editingGroupId.value = null;
+  isEditingBuiltin.value = false;
+  groupForm.value = {
     name: '',
-    pattern: '',
-    flags: 'g',
+    description: '',
+    matchType: 'keywords',
+    keywordsInput: '',
+    keywords: [],
+    patternsInput: '',
     color: '#3b82f6',
     bold: false,
     underline: false,
+    priority: 2,
+    flags: 'g',
   };
   regexError.value = null;
   isEditModalOpen.value = true;
 };
 
-const handleOpenEditModal = (rule: TerminalHighlightRule) => {
-  editingRuleId.value = rule.id;
-  ruleForm.value = {
-    name: rule.name,
-    pattern: rule.pattern,
-    flags: rule.flags || 'g',
-    color: rule.color,
-    bold: !!rule.bold,
-    underline: !!rule.underline,
+// 打开编辑弹窗
+const handleOpenEditModal = (group: TerminalHighlightGroup) => {
+  editingGroupId.value = group.id;
+  isEditingBuiltin.value = !!group.isBuiltin;
+  groupForm.value = {
+    name: group.name,
+    description: group.description || '',
+    matchType: group.matchType,
+    keywordsInput: '',
+    keywords: [...(group.keywords || [])],
+    patternsInput: (group.patterns || []).join('\n'),
+    color: group.color,
+    bold: !!group.bold,
+    underline: !!group.underline,
+    priority: group.priority || 2,
+    flags: group.flags || 'g',
   };
   regexError.value = null;
   isEditModalOpen.value = true;
 };
 
-const handleSaveRule = () => {
-  if (!ruleForm.value.name.trim()) return;
-  if (!ruleForm.value.pattern.trim()) return;
+// 添加单个关键词标签
+const handleAddKeywordFromInput = () => {
+  const raw = groupForm.value.keywordsInput.trim();
+  if (!raw) return;
 
-  if (!validateRegex(ruleForm.value.pattern, ruleForm.value.flags)) {
-    return;
+  // 支持以空格或逗号分割批量添加
+  const tokens = raw.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s.length > 0);
+  for (const token of tokens) {
+    if (!groupForm.value.keywords.includes(token)) {
+      groupForm.value.keywords.push(token);
+    }
+  }
+  groupForm.value.keywordsInput = '';
+};
+
+// 删除单个关键词标签
+const handleRemoveKeyword = (index: number) => {
+  groupForm.value.keywords.splice(index, 1);
+};
+
+// 保存分组
+const handleSaveGroup = () => {
+  if (!groupForm.value.name.trim()) return;
+
+  // 保证未按回车的关键词输入被收纳
+  if (groupForm.value.matchType === 'keywords' && groupForm.value.keywordsInput.trim()) {
+    handleAddKeywordFromInput();
   }
 
-  if (editingRuleId.value) {
-    highlightStore.updateRule(editingRuleId.value, {
-      name: ruleForm.value.name.trim(),
-      pattern: ruleForm.value.pattern.trim(),
-      flags: ruleForm.value.flags,
-      color: ruleForm.value.color,
-      bold: ruleForm.value.bold,
-      underline: ruleForm.value.underline,
+  // 正则模式校验
+  if (groupForm.value.matchType === 'regex') {
+    if (!validateRegex(groupForm.value.patternsInput, groupForm.value.flags)) {
+      return;
+    }
+  }
+
+  const patterns = groupForm.value.patternsInput
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (editingGroupId.value) {
+    highlightStore.updateGroup(editingGroupId.value, {
+      name: groupForm.value.name.trim(),
+      description: groupForm.value.description.trim(),
+      matchType: groupForm.value.matchType,
+      keywords: groupForm.value.keywords,
+      patterns,
+      color: groupForm.value.color,
+      bold: groupForm.value.bold,
+      underline: groupForm.value.underline,
+      priority: groupForm.value.priority,
+      flags: groupForm.value.flags,
     });
   } else {
-    highlightStore.addRule({
-      name: ruleForm.value.name.trim(),
-      pattern: ruleForm.value.pattern.trim(),
-      flags: ruleForm.value.flags,
-      color: ruleForm.value.color,
-      bold: ruleForm.value.bold,
-      underline: ruleForm.value.underline,
+    highlightStore.addGroup({
+      name: groupForm.value.name.trim(),
+      description: groupForm.value.description.trim(),
       enabled: true,
+      matchType: groupForm.value.matchType,
+      keywords: groupForm.value.keywords,
+      patterns,
+      color: groupForm.value.color,
+      bold: groupForm.value.bold,
+      underline: groupForm.value.underline,
+      priority: groupForm.value.priority,
+      flags: groupForm.value.flags,
     });
   }
+
   isEditModalOpen.value = false;
 };
 
+// 恢复预设
 const handleResetToDefault = () => {
-  if (confirm(t('styleCustomizer.confirmResetHighlight', '确定恢复默认预设高亮规则？'))) {
+  if (confirm(t('styleCustomizer.confirmResetHighlight', '确定恢复为系统内置预设高亮分组？自定义分组将被清空。'))) {
     highlightStore.resetToDefault();
   }
 };
 </script>
 
 <template>
-  <div class="space-y-3.5 pb-4">
-    <!-- 1. 顶部控制栏 (正常尺寸) -->
+  <div class="space-y-4 pb-4">
+    <!-- 1. 顶部控制栏 -->
     <div class="bg-header/40 border border-border rounded-lg p-3.5 flex items-center justify-between gap-4 shadow-2xs">
       <div class="flex items-center gap-3">
         <span class="text-base font-semibold text-foreground">
@@ -155,7 +240,7 @@ const handleResetToDefault = () => {
         <ToggleSwitch
           :model-value="highlightStore.enabled"
           @update:model-value="highlightStore.toggleEnabled"
-          aria-label="启用终端代码高亮"
+          aria-label="启用终端高亮"
         />
       </div>
 
@@ -163,7 +248,7 @@ const handleResetToDefault = () => {
         <button
           @click="handleResetToDefault"
           class="px-3 py-1.5 text-sm border border-border rounded-md bg-background hover:bg-muted text-text-secondary hover:text-foreground transition-colors flex items-center gap-1.5"
-          :title="t('styleCustomizer.resetHighlightTitle', '恢复经典预设规则')"
+          :title="t('styleCustomizer.resetHighlightTitle', '恢复内置语义分组')"
         >
           <i class="fas fa-rotate-left text-xs"></i>
           {{ t('styleCustomizer.resetDefault', '恢复预设') }}
@@ -173,12 +258,12 @@ const handleResetToDefault = () => {
           class="px-3.5 py-1.5 text-sm border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors font-medium flex items-center gap-1.5"
         >
           <i class="fas fa-plus text-xs"></i>
-          {{ t('styleCustomizer.addRule', '添加规则') }}
+          {{ t('styleCustomizer.addGroup', '新建高亮分组') }}
         </button>
       </div>
     </div>
 
-    <!-- 2. 实时预览窗口 (正常高度与字体) -->
+    <!-- 2. 实时预览视口 -->
     <div class="border border-border rounded-lg overflow-hidden shadow-2xs bg-[#12141a]">
       <div class="px-3.5 py-2 border-b border-border/40 bg-[#1a1d24] flex items-center justify-between">
         <div class="flex items-center gap-1.5">
@@ -215,35 +300,52 @@ const handleResetToDefault = () => {
       </div>
     </div>
 
-    <!-- 3. 规则列表 (分行完整展示，避免截断) -->
+    <!-- 3. 高亮语义分组卡片列表 -->
     <div class="border border-border rounded-lg overflow-hidden bg-background shadow-2xs">
       <div class="px-3.5 py-2.5 border-b border-border bg-header/30 flex items-center justify-between">
         <span class="text-sm font-semibold text-foreground">
-          {{ t('styleCustomizer.rulesList', '高亮规则') }}
-          <span class="font-normal text-text-secondary text-xs">({{ highlightStore.rules.length }})</span>
+          {{ t('styleCustomizer.groupsList', '高亮语义分组') }}
+          <span class="font-normal text-text-secondary text-xs">({{ highlightStore.groups.length }})</span>
+        </span>
+        <span class="text-xs text-text-secondary">
+          基于语义分类与区间仲裁装配
         </span>
       </div>
 
       <div class="divide-y divide-border/30">
         <div
-          v-for="(rule, index) in highlightStore.rules"
-          :key="rule.id"
+          v-for="(group, index) in highlightStore.groups"
+          :key="group.id"
           class="p-3.5 hover:bg-muted/15 transition-colors space-y-2.5"
         >
-          <!-- 第一行：开关 + 规则名称 + 右侧样式与操作按钮组 -->
+          <!-- 卡片头部：开关 + 标题 + 标签 + 样式与操作按钮组 -->
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <ToggleSwitch
-                :model-value="rule.enabled"
-                @update:model-value="(val) => highlightStore.toggleRule(rule.id, val)"
-                :aria-label="`启用 ${rule.name}`"
+                :model-value="group.enabled"
+                @update:model-value="(val) => highlightStore.toggleGroup(group.id, val)"
+                :aria-label="`启用 ${group.name}`"
               />
 
               <span
                 class="font-medium text-sm text-foreground select-none"
-                :class="{ 'opacity-50 line-through': !rule.enabled }"
+                :class="{ 'opacity-50 line-through': !group.enabled }"
               >
-                {{ rule.name }}
+                {{ group.name }}
+              </span>
+
+              <!-- 内置 / 自定义徽章 -->
+              <span
+                v-if="group.isBuiltin"
+                class="px-1.5 py-0.5 text-[10px] rounded bg-muted text-text-secondary font-mono border border-border/40 shrink-0"
+              >
+                内置
+              </span>
+              <span
+                v-else
+                class="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary font-mono border border-primary/20 shrink-0"
+              >
+                自定义
               </span>
             </div>
 
@@ -256,18 +358,18 @@ const handleResetToDefault = () => {
               >
                 <input
                   type="color"
-                  v-model="rule.color"
+                  v-model="group.color"
                   class="absolute -top-4 -left-4 w-16 h-16 cursor-pointer opacity-0"
                 />
-                <span class="w-full h-full" :style="{ backgroundColor: rule.color }"></span>
+                <span class="w-full h-full" :style="{ backgroundColor: group.color }"></span>
               </label>
 
               <!-- 加粗开关 B -->
               <button
-                @click="rule.bold = !rule.bold"
+                @click="group.bold = !group.bold"
                 :class="[
                   'w-7 h-7 rounded-md text-xs font-bold border transition-colors flex items-center justify-center',
-                  rule.bold ? 'bg-primary text-white border-primary shadow-xs' : 'bg-background text-text-secondary border-border hover:bg-muted'
+                  group.bold ? 'bg-primary text-white border-primary shadow-xs' : 'bg-background text-text-secondary border-border hover:bg-muted'
                 ]"
                 title="加粗 (Bold)"
               >
@@ -276,10 +378,10 @@ const handleResetToDefault = () => {
 
               <!-- 下划线开关 U -->
               <button
-                @click="rule.underline = !rule.underline"
+                @click="group.underline = !group.underline"
                 :class="[
                   'w-7 h-7 rounded-md text-xs underline border transition-colors flex items-center justify-center font-serif',
-                  rule.underline ? 'bg-primary text-white border-primary shadow-xs' : 'bg-background text-text-secondary border-border hover:bg-muted'
+                  group.underline ? 'bg-primary text-white border-primary shadow-xs' : 'bg-background text-text-secondary border-border hover:bg-muted'
                 ]"
                 title="下划线 (Underline)"
               >
@@ -290,7 +392,7 @@ const handleResetToDefault = () => {
 
               <!-- 排序：上移 -->
               <button
-                @click="highlightStore.moveRule(index, index - 1)"
+                @click="highlightStore.moveGroup(index, index - 1)"
                 :disabled="index === 0"
                 class="w-7 h-7 text-text-secondary hover:text-foreground hover:bg-muted disabled:opacity-25 disabled:cursor-not-allowed rounded-md border border-border flex items-center justify-center transition-colors"
                 title="上移"
@@ -299,8 +401,8 @@ const handleResetToDefault = () => {
               </button>
               <!-- 排序：下移 -->
               <button
-                @click="highlightStore.moveRule(index, index + 1)"
-                :disabled="index === highlightStore.rules.length - 1"
+                @click="highlightStore.moveGroup(index, index + 1)"
+                :disabled="index === highlightStore.groups.length - 1"
                 class="w-7 h-7 text-text-secondary hover:text-foreground hover:bg-muted disabled:opacity-25 disabled:cursor-not-allowed rounded-md border border-border flex items-center justify-center transition-colors"
                 title="下移"
               >
@@ -311,37 +413,61 @@ const handleResetToDefault = () => {
 
               <!-- 编辑 -->
               <button
-                @click="handleOpenEditModal(rule)"
+                @click="handleOpenEditModal(group)"
                 class="w-7 h-7 rounded-md border border-border bg-background hover:bg-muted text-text-secondary hover:text-foreground transition-colors flex items-center justify-center"
-                title="编辑"
+                title="编辑分组"
               >
                 <i class="fas fa-pen text-xs"></i>
               </button>
 
-              <!-- 删除 -->
+              <!-- 删除 (仅自建分组允许删除，内置受保护) -->
               <button
-                @click="highlightStore.deleteRule(rule.id)"
+                v-if="!group.isBuiltin"
+                @click="highlightStore.deleteGroup(group.id)"
                 class="w-7 h-7 rounded-md border border-border bg-background hover:bg-red-500/10 text-text-secondary hover:text-red-500 transition-colors flex items-center justify-center"
-                title="删除"
+                title="删除分组"
               >
                 <i class="fas fa-trash-can text-xs"></i>
               </button>
             </div>
           </div>
 
-          <!-- 第二行：完整展示正则表达式，绝不截断 -->
-          <div class="flex items-center gap-2 pl-9">
-            <div class="flex-1 min-w-0 bg-muted/40 hover:bg-muted/60 border border-border/50 rounded-md px-3 py-1.5 flex items-center justify-between gap-2 font-mono text-xs transition-colors">
-              <span class="text-primary font-semibold select-none">/</span>
-              <span class="text-foreground flex-1 break-all select-all font-mono">{{ rule.pattern }}</span>
-              <span class="text-primary font-semibold select-none">/{{ rule.flags || 'g' }}</span>
+          <!-- 卡片内容：规则概览胶囊 -->
+          <div class="pl-9 text-xs">
+            <!-- 关键词模式展示标签胶囊 -->
+            <div v-if="group.keywords && group.keywords.length > 0" class="flex flex-wrap items-center gap-1.5">
+              <span
+                v-for="(kw, kwIdx) in group.keywords"
+                :key="kwIdx"
+                class="px-2 py-0.5 rounded bg-muted/60 text-foreground font-mono text-[11px] border border-border/40"
+              >
+                {{ kw }}
+              </span>
             </div>
+
+            <!-- 正则表达式展示代码块 -->
+            <div v-else-if="group.patterns && group.patterns.length > 0" class="space-y-1">
+              <div
+                v-for="(pat, patIdx) in group.patterns"
+                :key="patIdx"
+                class="bg-muted/40 border border-border/50 rounded-md px-3 py-1 flex items-center justify-between gap-2 font-mono text-xs"
+              >
+                <span class="text-primary font-semibold select-none">/</span>
+                <span class="text-foreground flex-1 break-all select-all font-mono">{{ pat }}</span>
+                <span class="text-primary font-semibold select-none">/{{ group.flags || 'g' }}</span>
+              </div>
+            </div>
+
+            <!-- 内置语义说明 -->
+            <p v-if="group.description" class="text-text-secondary text-[11px] mt-1">
+              {{ group.description }}
+            </p>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 4. 添加/编辑规则 Modal 对话框 (正常桌面端尺寸，实色不透明背景) -->
+    <!-- 4. 添加/编辑高亮分组 Modal 弹窗 -->
     <div
       v-if="isEditModalOpen"
       class="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
@@ -350,38 +476,117 @@ const handleResetToDefault = () => {
       <div class="bg-background text-foreground rounded-xl shadow-2xl w-full max-w-lg border border-border overflow-hidden">
         <header class="px-5 py-3.5 border-b border-border bg-header/60 flex justify-between items-center">
           <h3 class="font-semibold text-base">
-            {{ editingRuleId ? t('styleCustomizer.editRule', '编辑规则') : t('styleCustomizer.createRule', '添加规则') }}
+            {{ editingGroupId ? (isEditingBuiltin ? t('styleCustomizer.editBuiltinGroup', '调整内置高亮样式') : t('styleCustomizer.editGroup', '编辑高亮分组')) : t('styleCustomizer.createGroup', '新建高亮分组') }}
           </h3>
           <button @click="isEditModalOpen = false" class="text-text-secondary hover:text-foreground text-xl leading-none">&times;</button>
         </header>
 
-        <div class="p-5 space-y-4 bg-background">
-          <!-- 规则名称 -->
+        <div class="p-5 space-y-4 bg-background max-h-[75vh] overflow-y-auto">
+          <!-- 分组名称 -->
           <div>
             <label class="block text-sm font-medium text-text-secondary mb-1.5">
-              {{ t('styleCustomizer.ruleName', '规则名称') }}
+              {{ t('styleCustomizer.groupName', '分组名称') }} *
             </label>
             <input
               type="text"
-              v-model="ruleForm.name"
-              placeholder="例如：Pod 状态"
+              v-model="groupForm.name"
+              placeholder="例如：Docker 容器 / 业务微服务"
               class="w-full px-3.5 py-2 text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
             />
           </div>
 
-          <!-- 正则表达式 -->
-          <div>
+          <!-- 匹配方式选择 (内置分组锁定其模式) -->
+          <div v-if="!isEditingBuiltin">
             <label class="block text-sm font-medium text-text-secondary mb-1.5">
-              {{ t('styleCustomizer.rulePattern', '正则表达式') }}
+              {{ t('styleCustomizer.matchType', '匹配方式') }}
             </label>
-            <input
-              type="text"
-              v-model="ruleForm.pattern"
-              @input="validateRegex(ruleForm.pattern, ruleForm.flags)"
-              placeholder="例如：\\b(CrashLoopBackOff|Pending)\\b"
-              class="w-full px-3.5 py-2 font-mono text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
-            />
-            <p v-if="regexError" class="text-xs text-red-500 mt-1.5 flex items-center gap-1.5">
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                @click="groupForm.matchType = 'keywords'"
+                :class="[
+                  'py-2 px-3 text-sm rounded-lg border text-center transition-all flex items-center justify-center gap-2',
+                  groupForm.matchType === 'keywords'
+                    ? 'bg-primary/10 border-primary text-primary font-semibold'
+                    : 'bg-muted/30 border-border text-text-secondary hover:text-foreground'
+                ]"
+              >
+                <i class="fas fa-tags text-xs"></i>
+                关键词 (推荐)
+              </button>
+              <button
+                type="button"
+                @click="groupForm.matchType = 'regex'"
+                :class="[
+                  'py-2 px-3 text-sm rounded-lg border text-center transition-all flex items-center justify-center gap-2',
+                  groupForm.matchType === 'regex'
+                    ? 'bg-primary/10 border-primary text-primary font-semibold'
+                    : 'bg-muted/30 border-border text-text-secondary hover:text-foreground'
+                ]"
+              >
+                <i class="fas fa-code text-xs"></i>
+                正则表达式 (高级)
+              </button>
+            </div>
+          </div>
+
+          <!-- 关键词输入模式 -->
+          <div v-if="groupForm.matchType === 'keywords' || (isEditingBuiltin && groupForm.keywords.length > 0)">
+            <label class="block text-sm font-medium text-text-secondary mb-1.5">
+              {{ t('styleCustomizer.keywords', '包含关键词') }}
+            </label>
+
+            <!-- 关键词输入栏 -->
+            <div class="flex gap-2 mb-2">
+              <input
+                type="text"
+                v-model="groupForm.keywordsInput"
+                @keydown.enter.prevent="handleAddKeywordFromInput"
+                placeholder="输入单词按回车添加 (如 container)"
+                class="flex-1 px-3.5 py-2 text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+              />
+              <button
+                type="button"
+                @click="handleAddKeywordFromInput"
+                class="px-3.5 py-2 text-sm border border-border rounded-lg bg-header hover:bg-muted text-foreground transition-colors"
+              >
+                添加
+              </button>
+            </div>
+
+            <!-- 已添加关键词标签列表 -->
+            <div class="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-muted/20 border border-border/50 rounded-lg">
+              <span
+                v-for="(kw, idx) in groupForm.keywords"
+                :key="idx"
+                class="px-2.5 py-1 rounded bg-muted text-foreground text-xs font-mono flex items-center gap-1.5 border border-border/60"
+              >
+                {{ kw }}
+                <button
+                  type="button"
+                  @click="handleRemoveKeyword(idx)"
+                  class="text-text-secondary hover:text-red-500 text-xs"
+                >&times;</button>
+              </span>
+              <span v-if="groupForm.keywords.length === 0" class="text-text-secondary text-xs self-center">
+                暂无关键词，请在上方输入添加
+              </span>
+            </div>
+          </div>
+
+          <!-- 正则表达式模式 -->
+          <div v-if="groupForm.matchType === 'regex' || (isEditingBuiltin && (!groupForm.keywords || groupForm.keywords.length === 0))">
+            <label class="block text-sm font-medium text-text-secondary mb-1.5">
+              {{ t('styleCustomizer.patterns', '正则表达式 (每行一条)') }}
+            </label>
+            <textarea
+              v-model="groupForm.patternsInput"
+              @input="validateRegex(groupForm.patternsInput, groupForm.flags)"
+              placeholder="例如：\bexit code \d+\b"
+              rows="3"
+              class="w-full px-3.5 py-2 font-mono text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none resize-none"
+            ></textarea>
+            <p v-if="regexError" class="text-xs text-red-500 mt-1 flex items-center gap-1.5">
               <i class="fas fa-circle-exclamation text-xs"></i>
               {{ regexError }}
             </p>
@@ -395,12 +600,12 @@ const handleResetToDefault = () => {
             <div class="flex items-center gap-2.5">
               <input
                 type="color"
-                v-model="ruleForm.color"
+                v-model="groupForm.color"
                 class="w-9 h-9 rounded-lg border border-border cursor-pointer p-0.5 bg-input shrink-0"
               />
               <input
                 type="text"
-                v-model="ruleForm.color"
+                v-model="groupForm.color"
                 class="w-24 px-2.5 py-2 text-sm font-mono uppercase rounded-lg border border-border bg-input text-foreground outline-none"
               />
               <!-- 快捷颜色色盘 -->
@@ -409,7 +614,7 @@ const handleResetToDefault = () => {
                   v-for="c in PALETTE_COLORS"
                   :key="c"
                   type="button"
-                  @click="ruleForm.color = c"
+                  @click="groupForm.color = c"
                   class="w-6 h-6 rounded border border-border/80 transition-transform hover:scale-110"
                   :style="{ backgroundColor: c }"
                 ></button>
@@ -420,13 +625,52 @@ const handleResetToDefault = () => {
           <!-- 样式开关选项 -->
           <div class="flex items-center gap-6 pt-1">
             <label class="flex items-center gap-2 cursor-pointer text-sm">
-              <input type="checkbox" v-model="ruleForm.bold" class="rounded border-border text-primary focus:ring-primary" />
+              <input type="checkbox" v-model="groupForm.bold" class="rounded border-border text-primary focus:ring-primary" />
               <span class="font-bold">加粗 (Bold)</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer text-sm">
-              <input type="checkbox" v-model="ruleForm.underline" class="rounded border-border text-primary focus:ring-primary" />
+              <input type="checkbox" v-model="groupForm.underline" class="rounded border-border text-primary focus:ring-primary" />
               <span class="underline">下划线 (Underline)</span>
             </label>
+          </div>
+
+          <!-- 优先级配置 (仅非内置分组展示) -->
+          <div v-if="!isEditingBuiltin">
+            <label class="block text-sm font-medium text-text-secondary mb-1.5">
+              {{ t('styleCustomizer.priority', '匹配优先级 (重叠冲突仲裁)') }}
+            </label>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                @click="groupForm.priority = 3"
+                :class="[
+                  'py-1.5 px-2 text-xs rounded-md border text-center transition-all',
+                  groupForm.priority === 3 ? 'bg-primary/10 border-primary text-primary font-semibold' : 'bg-muted/30 border-border text-text-secondary'
+                ]"
+              >
+                高 (优先锁定)
+              </button>
+              <button
+                type="button"
+                @click="groupForm.priority = 2"
+                :class="[
+                  'py-1.5 px-2 text-xs rounded-md border text-center transition-all',
+                  groupForm.priority === 2 ? 'bg-primary/10 border-primary text-primary font-semibold' : 'bg-muted/30 border-border text-text-secondary'
+                ]"
+              >
+                普通 (标准)
+              </button>
+              <button
+                type="button"
+                @click="groupForm.priority = 1"
+                :class="[
+                  'py-1.5 px-2 text-xs rounded-md border text-center transition-all',
+                  groupForm.priority === 1 ? 'bg-primary/10 border-primary text-primary font-semibold' : 'bg-muted/30 border-border text-text-secondary'
+                ]"
+              >
+                低 (次要词组)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -438,11 +682,11 @@ const handleResetToDefault = () => {
             {{ t('common.cancel', '取消') }}
           </button>
           <button
-            @click="handleSaveRule"
-            :disabled="!ruleForm.name.trim() || !ruleForm.pattern.trim() || !!regexError"
+            @click="handleSaveGroup"
+            :disabled="!groupForm.name.trim() || !!regexError"
             class="px-4 py-2 text-sm font-semibold rounded-lg bg-button text-button-text hover:bg-button-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {{ t('common.save', '保存') }}
+            {{ t('common.save', '保存分组') }}
           </button>
         </footer>
       </div>
