@@ -231,10 +231,6 @@ const handleConnect = (conn: ConnectionInfo) => {
   router.push('/workspace');
 };
 
-// 快速跳转至工作区
-const handleNavigateWorkspace = () => {
-  router.push('/workspace');
-};
 
 // 复制主机地址
 const handleCopyAddress = async (conn: ConnectionInfo, e?: Event) => {
@@ -371,7 +367,6 @@ onMounted(async () => {
             {{ t('nav.dashboard', '星枢仪表盘') }}
             <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           </h1>
-          <p class="text-[11px] text-muted-foreground leading-none mt-0.5">移动端特化控制台</p>
         </div>
       </div>
 
@@ -379,6 +374,7 @@ onMounted(async () => {
         <!-- 手动刷新按钮 -->
         <button
           @click="handleRefresh"
+          type="button"
           class="w-9 h-9 rounded-lg bg-card/80 border border-border/80 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 transition"
           :title="t('common.refresh', '刷新')"
         >
@@ -388,6 +384,7 @@ onMounted(async () => {
         <!-- 快速添加按钮 -->
         <button
           @click="openAddConnection"
+          type="button"
           class="px-3 py-1.5 h-9 rounded-lg bg-primary text-primary-foreground font-medium text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition"
         >
           <i class="fas fa-plus text-xs"></i>
@@ -397,7 +394,7 @@ onMounted(async () => {
     </header>
 
     <!-- 2. 主体内容容器 -->
-    <main class="flex-1 px-3.5 pt-3 space-y-3.5 max-w-lg mx-auto w-full">
+    <main class="flex-1 px-3.5 pt-3 space-y-3 max-w-lg mx-auto w-full">
 
       <!-- A. 概览指标卡片组 (Hero Stats) -->
       <section class="grid grid-cols-3 gap-2">
@@ -447,44 +444,26 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- B. 快捷接入横幅 (直达工作区终端) -->
-      <section 
-        @click="handleNavigateWorkspace"
-        class="p-3 rounded-xl bg-gradient-to-r from-primary/15 via-card to-card border border-primary/25 shadow-sm flex items-center justify-between active:scale-[0.99] transition cursor-pointer"
-      >
-        <div class="flex items-center space-x-3">
-          <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow">
-            <i class="fas fa-terminal text-sm"></i>
-          </div>
-          <div>
-            <div class="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <span>终端工作区 (Workspace)</span>
-              <span class="px-1.5 py-0.2 text-[9px] bg-primary/20 text-primary font-mono rounded">直达</span>
-            </div>
-            <div class="text-[11px] text-muted-foreground mt-0.5">
-              切换并管理当前活动的终端会话与连接
-            </div>
-          </div>
-        </div>
-        <i class="fas fa-chevron-right text-xs text-muted-foreground pr-1"></i>
-      </section>
-
-      <!-- C. 移动端分段控制器 (Segmented Switcher) -->
-      <section class="bg-muted/50 p-1 rounded-xl border border-border/60 flex items-center">
+      <!-- B. 移动端分段控制器 (Segmented Switcher) - 无边框插值与无聚焦闪烁 -->
+      <section class="bg-muted/50 p-1 rounded-xl border border-border/60 flex items-center select-none">
         <button
           @click="activeTab = 'servers'"
+          type="button"
           :class="[
-            'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5',
+            'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 flex items-center justify-center gap-1.5 outline-none focus:outline-none focus:ring-0 active:outline-none',
             activeTab === 'servers'
-              ? 'bg-card text-foreground shadow-sm border border-border/40 font-bold'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-card text-foreground shadow-xs font-bold'
+              : 'bg-transparent text-muted-foreground hover:text-foreground'
           ]"
         >
           <i class="fas fa-server text-[11px]"></i>
           <span>服务器列表</span>
           <span 
             v-if="connections.length > 0" 
-            :class="['px-1.5 py-0.2 text-[10px] rounded-full', activeTab === 'servers' ? 'bg-primary/20 text-primary font-mono' : 'bg-muted text-muted-foreground font-mono']"
+            :class="[
+              'px-1.5 py-0.2 text-[10px] rounded-full font-mono transition-colors',
+              activeTab === 'servers' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+            ]"
           >
             {{ filteredAndSortedConnections.length }}
           </span>
@@ -492,18 +471,22 @@ onMounted(async () => {
 
         <button
           @click="activeTab = 'activity'"
+          type="button"
           :class="[
-            'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5',
+            'flex-1 py-1.5 text-xs font-semibold rounded-lg transition-colors duration-150 flex items-center justify-center gap-1.5 outline-none focus:outline-none focus:ring-0 active:outline-none',
             activeTab === 'activity'
-              ? 'bg-card text-foreground shadow-sm border border-border/40 font-bold'
-              : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-card text-foreground shadow-xs font-bold'
+              : 'bg-transparent text-muted-foreground hover:text-foreground'
           ]"
         >
           <i class="fas fa-bolt text-[11px]"></i>
           <span>最近动态</span>
           <span 
             v-if="auditLogs.length > 0" 
-            :class="['px-1.5 py-0.2 text-[10px] rounded-full', activeTab === 'activity' ? 'bg-primary/20 text-primary font-mono' : 'bg-muted text-muted-foreground font-mono']"
+            :class="[
+              'px-1.5 py-0.2 text-[10px] rounded-full font-mono transition-colors',
+              activeTab === 'activity' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+            ]"
           >
             {{ auditLogs.length }}
           </span>
@@ -942,6 +925,19 @@ onMounted(async () => {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 根除触摸高亮与白色聚焦框闪烁 */
+button, input, a {
+  -webkit-tap-highlight-color: transparent;
+  outline: none !important;
+}
+
+button:focus,
+button:focus-visible,
+button:active {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* 底部抽屉过渡动画 */
