@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import WorkspaceConnectionListComponent from './WorkspaceConnectionList.vue';
+import MobileServerSelectionDrawer from './MobileServerSelectionDrawer.vue';
 import TabBarContextMenu from './TabBarContextMenu.vue';
 import TransferProgressModal from './TransferProgressModal.vue';
 import { useSessionStore } from '../stores/session.store';
@@ -566,9 +567,9 @@ watch(() => props.activeSessionId, async (newId) => {
         </button>
     </div>
     </template>
-    <!-- Connection List Popup -->
+    <!-- Connection List Popup (桌面端居中弹窗) -->
     <Teleport to="body">
-      <div v-if="showConnectionListPopup" class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4" @click.self="togglePopup">
+      <div v-if="showConnectionListPopup && !props.isMobile" class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4" @click.self="togglePopup">
         <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-md max-h-[80vh] flex flex-col relative">
           <button class="absolute top-2 right-2 p-1 text-text-secondary hover:text-foreground" @click="togglePopup">
              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -588,6 +589,16 @@ watch(() => props.activeSessionId, async (newId) => {
         </div>
       </div>
     </Teleport>
+
+    <!-- 移动端专属选择服务器抽屉 -->
+    <MobileServerSelectionDrawer
+      v-if="props.isMobile"
+      :visible="showConnectionListPopup"
+      @close="showConnectionListPopup = false"
+      @select-connection="handlePopupConnect"
+      @request-add-connection="handleRequestAddFromPopup"
+      @request-edit-connection="handleRequestEditFromPopup"
+    />
     <!-- +++ Context Menu Instance (Ensure it's present) +++ -->
     <TabBarContextMenu
       :visible="contextMenuVisible"
