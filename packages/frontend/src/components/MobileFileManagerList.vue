@@ -61,6 +61,21 @@ const BUFFER_SIZE = 8;
 const navigatingFolderName = ref<string | null>(null);
 const isNavigatingParent = ref(false);
 
+// 列表入场动画触发键（在路径变更或数据加载完成时递增）
+const listAnimationKey = ref(0);
+
+// 控制新目录卡片交错入场动画的激活窗口（仅在进入新目录首屏 600ms 内启用，保证后续滚动性能）
+const isEnteringNewDirectory = ref(false);
+let enterAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+
+const triggerEnterAnimation = () => {
+  isEnteringNewDirectory.value = true;
+  if (enterAnimationTimer) clearTimeout(enterAnimationTimer);
+  enterAnimationTimer = setTimeout(() => {
+    isEnteringNewDirectory.value = false;
+  }, 600);
+};
+
 // 监听路径变动：重置滚动条至最顶部，并清除单项加载状态
 watch(
   () => props.currentPath,
@@ -68,6 +83,8 @@ watch(
     navigatingFolderName.value = null;
     isNavigatingParent.value = false;
     scrollTop.value = 0;
+    listAnimationKey.value++;
+    triggerEnterAnimation();
     nextTick(() => {
       if (containerRef.value) {
         containerRef.value.scrollTop = 0;
@@ -76,13 +93,17 @@ watch(
   }
 );
 
-// 监听全局加载结束：清除单项加载指示
+// 监听全局加载结束：清除单项加载指示，并在数据加载完成后触发列表动效
 watch(
   () => props.isLoading,
-  (loading) => {
+  (loading, oldLoading) => {
     if (!loading) {
       navigatingFolderName.value = null;
       isNavigatingParent.value = false;
+      if (oldLoading) {
+        listAnimationKey.value++;
+        triggerEnterAnimation();
+      }
     }
   }
 );
@@ -114,6 +135,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
+  if (enterAnimationTimer) {
+    clearTimeout(enterAnimationTimer);
+    enterAnimationTimer = null;
+  }
 });
 
 // 计算虚拟滚动切片
@@ -283,9 +308,8 @@ const handleToggleSelectAll = () => {
           ></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-[13px] font-medium text-foreground tracking-tight leading-tight flex items-center gap-1.5">
-            <span>{{ t('fileManager.parentDirectory', '返回上一级') }}</span>
-            <span v-if="isNavigatingParent" class="text-[10px] text-primary font-normal animate-pulse">进入中...</span>
+          <div class="text-[13px] font-medium text-foreground tracking-tight leading-tight">
+            {{ t('fileManager.parentDirectory', '返回上一级') }}
           </div>
           <div v-if="!isCompact" class="text-[11px] text-text-secondary font-mono">..</div>
         </div>
@@ -304,7 +328,8 @@ const handleToggleSelectAll = () => {
       <!-- 空目录或无搜索结果 -->
       <div
         v-if="!isLoading && items.length === 0"
-        class="py-16 flex flex-col items-center justify-center gap-2.5 text-text-secondary"
+        :key="`empty-${listAnimationKey}`"
+        class="py-16 flex flex-col items-center justify-center gap-2.5 text-text-secondary mobile-file-list-enter"
       >
         <div class="w-14 h-14 rounded-2xl bg-header/40 border border-border/50 flex items-center justify-center text-text-secondary/60 text-2xl">
           <i :class="searchQuery ? 'fas fa-search-minus' : 'fas fa-folder-open'"></i>
@@ -317,14 +342,14 @@ const handleToggleSelectAll = () => {
         </p>
       </div>
 
-      <!-- 文件列表容器（切换目录时平滑入场） -->
-      <div :key="currentPath" class="space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <!-- 文件列表容器（切换目录/加载完成时平滑淡入浮现） -->
+      <div :key="listAnimationKey" class="space-y-1.5 mobile-file-list-enter">
         <!-- 虚拟滚动顶部垫片 -->
         <div v-if="virtualRange.topPadding > 0" :style="{ height: `${virtualRange.topPadding}px` }"></div>
 
         <!-- 文件与文件夹卡片流 -->
         <div
-          v-for="({ item }) in virtualRange.visibleList"
+          v-for="({ item, index }) in virtualRange.visibleList"
           :key="item.filename"
           class="group w-full flex items-center transition-all duration-150 cursor-pointer border"
           :class="[
@@ -333,8 +358,10 @@ const handleToggleSelectAll = () => {
               ? 'bg-primary/15 border-primary/50 text-foreground shadow-2xs'
               : navigatingFolderName === item.filename
                 ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/40 text-foreground'
-                : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground'
+                : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground',
+            isEnteringNewDirectory ? 'mobile-card-enter' : ''
           ]"
+          :style="isEnteringNewDirectory ? { animationDelay: `${Math.min(index, 8) * 35}ms` } : undefined"
           @click="handleRowClick(item)"
           @touchstart="handleTouchStart(item, $event)"
           @touchmove="handleTouchMove($event)"
@@ -379,9 +406,8 @@ const handleToggleSelectAll = () => {
 
           <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
           <div class="min-w-0 flex-1 flex flex-col justify-center">
-            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight flex items-center gap-1.5">
-              <span class="truncate">{{ item.filename }}</span>
-              <span v-if="navigatingFolderName === item.filename" class="text-[10px] text-primary font-normal animate-pulse shrink-0">进入中...</span>
+            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight">
+              {{ item.filename }}
             </div>
             <!-- 详细模式下显示的日期、权限与类型 -->
             <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
@@ -561,6 +587,35 @@ const handleToggleSelectAll = () => {
 </template>
 
 <style scoped>
+@keyframes mobileListFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mobile-file-list-enter {
+  animation: mobileListFadeIn 0.22s ease-out both;
+}
+
+@keyframes mobileCardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-card-enter {
+  animation: mobileCardSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
 .fade-slide-enter-active,
 .fade-slide-leave-active {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
