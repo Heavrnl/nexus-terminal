@@ -1692,5 +1692,12 @@
     "toggleSplitDirection": "分割方向を切り替え (水平/垂直)",
     "closeSplit": "分割ペインを閉じる",
     "resetSplitRatio": "ダブルクリックで分割比率をリセット"
+  },
+  "terminal": {
+    "bufferText": {
+      "title": "ターミナルコピー",
+      "lines": "行",
+      "empty": "ターミナル出力がありません"
+    }
   }
 }

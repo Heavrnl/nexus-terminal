@@ -31,6 +31,13 @@ export const ALL_TOOLBAR_ITEMS: Record<string, ToolbarItemDefinition> = {
     icon: 'fas fa-history',
     description: '查看并重放过去执行过的历史命令',
   },
+  terminalBufferText: {
+    id: 'terminalBufferText',
+    name: '终端复制',
+    i18nKey: 'terminal.bufferText.title',
+    icon: 'fas fa-copy',
+    description: '提取终端输出文本，支持手机原生划选与复制',
+  },
   multiLine: {
     id: 'multiLine',
     name: '命令输入',
@@ -108,6 +115,7 @@ export const DEFAULT_ACTIVE_TOOLBAR_IDS: string[] = [
   'clearTerminal',
   'quickCommands',
   'commandHistory',
+  'terminalBufferText',
   'multiLine',
   'statusMonitor',
   'dockerManager',

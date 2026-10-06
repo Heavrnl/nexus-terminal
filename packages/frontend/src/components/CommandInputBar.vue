@@ -13,6 +13,7 @@ import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue';
 import MobileToolbarConfigModal from './MobileToolbarConfigModal.vue';
 import MobileStatusMonitorModal from './MobileStatusMonitorModal.vue';
 import MobileDockerManagerModal from './MobileDockerManagerModal.vue';
+import MobileTerminalTextModal from './MobileTerminalTextModal.vue';
 import { useMobileToolbarConfig } from '../composables/useMobileToolbarConfig';
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useLayoutStore } from '../stores/layout.store';
@@ -71,6 +72,7 @@ const showSuspendedSshSessionsModal = ref(false); // +++ Add state for suspended
 const showToolbarConfigModal = ref(false); // +++ 移动端自定义工具栏抽屉可见性 +++
 const showMobileStatusMonitorModal = ref(false); // +++ 移动端状态监视器抽屉可见性 +++
 const showMobileDockerManagerModal = ref(false); // +++ 移动端 Docker 管理器抽屉可见性 +++
+const showTerminalTextModal = ref(false); // +++ 移动端终端文本提取抽屉可见性 +++
 
 const { activeItemIds } = useMobileToolbarConfig();
 
@@ -461,6 +463,16 @@ const getBarButtonClass = (isActive: boolean = false) => {
           <i class="fas fa-history text-base"></i>
         </button>
 
+        <!-- 终端复制 -->
+        <button
+          v-else-if="itemId === 'terminalBufferText'"
+          @click="showTerminalTextModal = true"
+          :class="getBarButtonClass(showTerminalTextModal)"
+          :title="t('terminal.bufferText.title', '终端复制')"
+        >
+          <i class="fas fa-copy text-base"></i>
+        </button>
+
         <!-- 多行命令输入 -->
         <button
           v-else-if="itemId === 'multiLine'"
@@ -714,6 +726,12 @@ const getBarButtonClass = (isActive: boolean = false) => {
     v-if="props.isMobile"
     :is-visible="showMobileDockerManagerModal"
     @close="showMobileDockerManagerModal = false"
+  />
+  <!-- +++ Mobile Terminal Text Viewer Modal Instance +++ -->
+  <MobileTerminalTextModal
+    v-if="props.isMobile"
+    :is-visible="showTerminalTextModal"
+    @close="showTerminalTextModal = false"
   />
   <!-- File Manager Modal is now handled by a listener for 'fileManager:openModalRequest' event -->
 </template>

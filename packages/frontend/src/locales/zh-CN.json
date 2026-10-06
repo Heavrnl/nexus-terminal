@@ -1736,5 +1736,12 @@
     "toggleSplitDirection": "切换拆分方向 (水平/垂直)",
     "closeSplit": "关闭此拆分窗格",
     "resetSplitRatio": "双击复位为等分窗格"
+  },
+  "terminal": {
+    "bufferText": {
+      "title": "终端复制",
+      "lines": "行",
+      "empty": "当前终端暂无输出内容"
+    }
   }
 }

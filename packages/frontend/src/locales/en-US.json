@@ -1731,5 +1731,12 @@
     "toggleSplitDirection": "Toggle Split Orientation (Horizontal/Vertical)",
     "closeSplit": "Close Split Pane",
     "resetSplitRatio": "Double-click to reset split ratio"
+  },
+  "terminal": {
+    "bufferText": {
+      "title": "Terminal Copy",
+      "lines": "lines",
+      "empty": "No terminal output available"
+    }
   }
 }
