@@ -346,10 +346,12 @@ watch(popupTrigger, () => {
             <template #header-actions>
               <button
                 class="action-icon-btn close-editor-btn"
+                :class="{ 'is-mobile': props.isMobile }"
                 :title="t('fileManager.actions.closeEditor', '关闭编辑器')"
                 @click="handleCloseContainer"
               >
-                ✖
+                <i v-if="props.isMobile" class="fas fa-times text-xs"></i>
+                <template v-else>✖</template>
               </button>
             </template>
           </SingleEditorPane>
@@ -406,8 +408,8 @@ watch(popupTrigger, () => {
         </div>
       </div>
 
-      <!-- 弹窗右下角拖拽拉伸尺寸手柄 -->
-      <div class="resize-handle" @mousedown.prevent="startResize"></div>
+      <!-- 弹窗右下角拖拽拉伸尺寸手柄 (移动端全屏模式隐藏) -->
+      <div v-if="!props.isMobile" class="resize-handle" @mousedown.prevent="startResize"></div>
     </div>
   </div>
 </template>
@@ -528,6 +530,22 @@ watch(popupTrigger, () => {
 .close-editor-btn:hover {
   background-color: rgba(255, 0, 0, 0.2);
   color: #ff5555;
+}
+
+.close-editor-btn.is-mobile {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background-color: #2c2c2f;
+  border: 1px solid #444448;
+  color: #a1a1aa;
+}
+
+.close-editor-btn.is-mobile:active {
+  background-color: #dc262620;
+  border-color: #dc262650;
+  color: #ef4444;
 }
 
 .resize-handle {

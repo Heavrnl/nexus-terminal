@@ -130,8 +130,10 @@ const updateSelectWidth = () => {
     const textWidth = span.offsetWidth;
     document.body.removeChild(span);
 
-    // 加大宽度并确保有舒适的呼吸空间与箭头空位
-    select.style.width = `${Math.max(86, textWidth + 36)}px`;
+    // 加大宽度并确保有舒适的呼吸空间与箭头空位 (移动端自适应紧凑宽度)
+    const minW = props.isMobile ? 68 : 86;
+    const paddingW = props.isMobile ? 22 : 36;
+    select.style.width = `${Math.max(minW, textWidth + paddingW)}px`;
   });
 };
 
@@ -202,6 +204,7 @@ defineExpose({
     <FileEditorTabs
       :tabs="props.tabs"
       :active-tab-id="props.activeTabId"
+      :is-mobile="props.isMobile"
       @activate-tab="(id: string) => emit('activate-tab', id)"
       @close-tab="(id: string) => emit('close-tab', id)"
       @close-other-tabs="(id: string) => emit('close-other-tabs', id)"
@@ -213,14 +216,27 @@ defineExpose({
 
     <!-- 2. 编辑器工具头部 -->
     <div v-if="activeTab" class="editor-header" :class="{ 'is-mobile': props.isMobile }">
-      <div class="file-info-title">
-        <span class="file-path-text" :title="activeTab.filePath">
-          {{ t('fileManager.editingFile') }}<template v-if="props.sessionName">({{ props.sessionName }})</template>: {{ activeTab.filePath }}
-        </span>
-        <span v-if="activeTab.isModified" class="modified-indicator">*</span>
+      <div class="file-info-title" :class="{ 'is-mobile': props.isMobile }">
+        <template v-if="props.isMobile">
+          <i class="fas fa-file-code text-primary text-xs mr-1.5 shrink-0"></i>
+          <span class="file-name-text truncate font-medium text-xs text-foreground" :title="activeTab.filePath">
+            {{ activeTab.filename }}
+          </span>
+          <span
+            v-if="activeTab.isModified"
+            class="w-2 h-2 rounded-full bg-amber-400 shrink-0 ml-1.5 shadow-xs"
+            title="未保存变更"
+          ></span>
+        </template>
+        <template v-else>
+          <span class="file-path-text" :title="activeTab.filePath">
+            {{ t('fileManager.editingFile') }}<template v-if="props.sessionName">({{ props.sessionName }})</template>: {{ activeTab.filePath }}
+          </span>
+          <span v-if="activeTab.isModified" class="modified-indicator">*</span>
+        </template>
       </div>
 
-      <div class="editor-actions">
+      <div class="editor-actions" :class="{ 'is-mobile': props.isMobile }">
         <!-- Markdown 工具栏 -->
         <MarkdownViewToggle
           v-if="isMarkdownFile && !activeTab.isLoading"
@@ -230,11 +246,12 @@ defineExpose({
 
         <!-- 编码下拉框与保存按钮 (文本文件专用) -->
         <template v-if="!isImageFile">
-          <div v-if="!activeTab.isLoading" class="encoding-select-wrapper">
+          <div v-if="!activeTab.isLoading" class="encoding-select-wrapper" :class="{ 'is-mobile': props.isMobile }">
             <select
               ref="encodingSelectRef"
               :value="currentSelectedEncoding"
               class="encoding-select"
+              :class="{ 'is-mobile': props.isMobile }"
               :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
               @change="handleEncodingChange"
             >
@@ -245,33 +262,39 @@ defineExpose({
           </div>
           <span v-else class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
 
-          <!-- 保存状态反馈 -->
-          <span v-if="activeTab.saveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
-          <span v-if="activeTab.saveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
-          <span v-if="activeTab.saveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ activeTab.saveError }}</span>
+          <!-- 保存状态反馈 (桌面端展示文本) -->
+          <template v-if="!props.isMobile">
+            <span v-if="activeTab.saveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
+            <span v-if="activeTab.saveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
+            <span v-if="activeTab.saveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ activeTab.saveError }}</span>
+          </template>
 
           <!-- 移动端搜索按钮 -->
           <button
             v-if="props.isMobile && !activeTab.isLoading"
-            class="action-icon-btn search-btn"
+            class="action-icon-btn search-btn is-mobile"
             :title="t('fileManager.actions.search', '搜索')"
             @click="emit('open-search')"
           >
-            <i class="fas fa-search"></i>
+            <i class="fas fa-search text-xs"></i>
           </button>
 
-          <!-- 保存按钮 -->
+          <!-- 保存按钮 (移动端大拇指专属触控体验，集成状态动效) -->
           <button
             class="save-btn"
+            :class="{ 'is-mobile': props.isMobile, 'has-changes': activeTab.isModified }"
             :disabled="activeTab.isSaving || activeTab.isLoading || !!activeTab.loadingError || !activeTab.isModified"
             @click="handleSave"
           >
-            {{ t('fileManager.actions.save') }}
+            <i v-if="activeTab.saveStatus === 'saving'" class="fas fa-circle-notch fa-spin text-xs"></i>
+            <i v-else-if="activeTab.saveStatus === 'success'" class="fas fa-check text-xs text-emerald-400"></i>
+            <i v-else-if="props.isMobile" class="fas fa-save text-xs mr-1"></i>
+            <span>{{ t('fileManager.actions.save') }}</span>
           </button>
         </template>
 
-        <!-- VSCode 风格的分屏操作按钮组 -->
-        <div class="split-controls-group">
+        <!-- VSCode 风格的分屏操作按钮组 (仅桌面端显示) -->
+        <div v-if="!props.isMobile" class="split-controls-group">
           <!-- 未分屏时：展示向右拆分与向下拆分按钮 -->
           <template v-if="!props.isSplitActive">
             <button
@@ -655,5 +678,82 @@ defineExpose({
 
 .editor-error {
   color: #f14c4c;
+}
+
+/* ================= 移动端工具栏专属适配 ================= */
+.editor-header.is-mobile {
+  min-height: 38px;
+  height: 38px;
+  padding: 0 10px;
+  background-color: #202022;
+  border-bottom: 1px solid #333336;
+}
+
+.file-info-title.is-mobile {
+  max-width: 45%;
+  margin-right: 6px;
+}
+
+.file-info-title.is-mobile .file-name-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.editor-actions.is-mobile {
+  gap: 5px;
+}
+
+.encoding-select.is-mobile {
+  height: 26px;
+  min-width: 68px;
+  font-size: 11px;
+  padding: 0 14px 0 6px;
+  border-radius: 6px;
+  background-color: #2c2c2f;
+  border: 1px solid #444448;
+  color: #d4d4d8;
+}
+
+.action-icon-btn.search-btn.is-mobile {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background-color: #2c2c2f;
+  border: 1px solid #444448;
+  color: #a1a1aa;
+}
+
+.action-icon-btn.search-btn.is-mobile:active {
+  background-color: #3f3f46;
+  color: #ffffff;
+}
+
+.save-btn.is-mobile {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  background-color: #2563eb;
+  color: #ffffff;
+  gap: 4px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.save-btn.is-mobile:active:not(:disabled) {
+  transform: scale(0.96);
+  background-color: #1d4ed8;
+}
+
+.save-btn.is-mobile.has-changes {
+  background-color: #2563eb;
+}
+
+.save-btn.is-mobile:disabled {
+  background-color: #2e3035;
+  color: #71717a;
+  box-shadow: none;
 }
 </style>

@@ -13,6 +13,10 @@ const props = defineProps({
     type: String as PropType<string | null>,
     default: null,
   },
+  isMobile: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits<{
@@ -34,7 +38,52 @@ const contextMenuPosition = ref({ x: 0, y: 0 });
 const contextTargetTabId = ref<string | null>(null); // Keep for logic inside this component if needed elsewhere
 const menuTargetId = ref<string | null>(null); // + Ref specifically for passing to the menu prop
 
+// 触屏长按呼出右键菜单 (350ms)
+let touchTimer: ReturnType<typeof setTimeout> | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+let isLongPressTriggered = false;
+
+const handleTouchStart = (event: TouchEvent, tabId: string) => {
+  if (!props.isMobile) return;
+  const touch = event.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  isLongPressTriggered = false;
+
+  if (touchTimer) clearTimeout(touchTimer);
+  touchTimer = setTimeout(() => {
+    isLongPressTriggered = true;
+    if (navigator.vibrate) navigator.vibrate(40);
+    contextTargetTabId.value = tabId;
+    menuTargetId.value = tabId;
+    contextMenuPosition.value = { x: touch.clientX, y: touch.clientY };
+    contextMenuVisible.value = true;
+    document.addEventListener('click', closeContextMenuOnClickOutside, { capture: true, once: true });
+  }, 350);
+};
+
+const handleTouchMove = (event: TouchEvent) => {
+  if (!touchTimer) return;
+  const touch = event.touches[0];
+  if (Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY) > 10) {
+    clearTimeout(touchTimer);
+    touchTimer = null;
+  }
+};
+
+const handleTouchEnd = () => {
+  if (touchTimer) {
+    clearTimeout(touchTimer);
+    touchTimer = null;
+  }
+};
+
 const handleActivate = (tabId: string) => {
+  if (isLongPressTriggered) {
+    isLongPressTriggered = false;
+    return;
+  }
   emit('activate-tab', tabId);
 };
 
@@ -136,15 +185,16 @@ const contextMenuItems = computed(() => {
   return items;
 });
 
-// +++ 组件卸载前移除全局监听器 +++
+// +++ 组件卸载前移除全局监听器与定时器 +++
 onBeforeUnmount(() => {
-    document.removeEventListener('click', closeContextMenuOnClickOutside, { capture: true });
+  if (touchTimer) clearTimeout(touchTimer);
+  document.removeEventListener('click', closeContextMenuOnClickOutside, { capture: true });
 });
 
 </script>
 
 <template>
-  <div class="file-editor-tabs">
+  <div class="file-editor-tabs" :class="{ 'is-mobile': props.isMobile }">
     <div
       v-for="tab in tabs"
       :key="tab.id"
@@ -152,6 +202,10 @@ onBeforeUnmount(() => {
       class="tab-item"
       :class="{ active: tab.id === activeTabId }"
       @click="handleActivate(tab.id)"
+      @touchstart="handleTouchStart($event, tab.id)"
+      @touchmove="handleTouchMove"
+      @touchend="handleTouchEnd"
+      @touchcancel="handleTouchEnd"
       @contextmenu.prevent="(event) => { console.log(`[FileTabs Template Debug] Context menu for tab.id: ${tab.id}`); showContextMenu(event, tab.id); }"
       :title="tab.filePath"
     >
@@ -277,5 +331,66 @@ onBeforeUnmount(() => {
 .no-tabs-placeholder {
     flex-grow: 1; /* 占据剩余空间 */
     /* 可以添加样式 */
+}
+
+/* ================= 移动端专属适配样式 ================= */
+.file-editor-tabs.is-mobile {
+  height: 38px;
+  background-color: #1c1c1e;
+  border-bottom: 1px solid #333336;
+  scrollbar-width: none; /* Firefox 隐藏滚动条 */
+  -ms-overflow-style: none; /* IE/Edge 隐藏滚动条 */
+  -webkit-overflow-scrolling: touch; /* iOS 惯性滑动 */
+}
+
+.file-editor-tabs.is-mobile::-webkit-scrollbar {
+  display: none; /* 移动端隐藏细滚动条，释放触控空间 */
+}
+
+.file-editor-tabs.is-mobile .tab-item {
+  height: 38px;
+  padding: 0 8px 0 12px;
+  border-right: 1px solid #2d2d30;
+  font-size: 12px;
+  background-color: #222225;
+}
+
+.file-editor-tabs.is-mobile .tab-item:active {
+  background-color: #2a2a2e;
+}
+
+.file-editor-tabs.is-mobile .tab-item.active {
+  background-color: #18181a;
+  color: #ffffff;
+  border-bottom: 2px solid var(--nexus-primary, #3b82f6);
+  margin-bottom: 0;
+}
+
+.file-editor-tabs.is-mobile .tab-filename {
+  max-width: 120px;
+  font-weight: 500;
+}
+
+.file-editor-tabs.is-mobile .close-tab-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  margin-left: 6px;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+
+.file-editor-tabs.is-mobile .tab-item.active .close-tab-btn {
+  opacity: 1;
+}
+
+.file-editor-tabs.is-mobile .close-tab-btn:active {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ff6b6b;
 }
 </style>

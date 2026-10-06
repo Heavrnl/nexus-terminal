@@ -23,6 +23,10 @@ const props = defineProps({
     type: String as PropType<string | null>,
     default: null,
   },
+  isMobile: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
@@ -250,6 +254,7 @@ onBeforeUnmount(() => {
         :active-tab-id="primaryActiveTabId"
         :is-split-active="isSplitActive"
         :split-direction="splitDirection"
+        :is-mobile="props.isMobile"
         :session-name="currentSessionName"
         :font-family="currentEditorFontFamily"
         :font-size="currentEditorFontSize"
@@ -298,6 +303,7 @@ onBeforeUnmount(() => {
         :active-tab-id="secondaryActiveTabId"
         :is-split-active="isSplitActive"
         :split-direction="splitDirection"
+        :is-mobile="props.isMobile"
         :session-name="currentSessionName"
         :font-family="currentEditorFontFamily"
         :font-size="currentEditorFontSize"

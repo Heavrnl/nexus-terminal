@@ -292,15 +292,31 @@ defineExpose({
   min-height: 200px;
   text-align: left;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
+.codemirror-mobile-editor-container :deep(.cm-scroller) {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 底部防输入法软键盘与手势小白条遮挡的呼吸空间 */
+.codemirror-mobile-editor-container :deep(.cm-content) {
+  padding-bottom: 80px !important;
+}
+
+/* 移动端紧凑行号栏，最大化横向可用字符宽度 */
 .codemirror-mobile-editor-container :deep(.cm-gutters) {
-  background-color: #1E1E1E !important;
-  color: #858585 !important;
-  border-right: 1px solid var(--border-color, #cccccc) !important;
+  background-color: #1a1a1c !important;
+  color: #71717a !important;
+  border-right: 1px solid #2e2e32 !important;
+}
+
+.codemirror-mobile-editor-container :deep(.cm-lineNumbers .cm-gutterElement) {
+  padding: 0 4px 0 3px !important;
+  min-width: 22px;
 }
 
 .codemirror-mobile-editor-container :deep(.cm-selectionBackground) {
-  background-color: #5264ac !important;
+  background-color: #3b82f640 !important;
 }
 </style>
