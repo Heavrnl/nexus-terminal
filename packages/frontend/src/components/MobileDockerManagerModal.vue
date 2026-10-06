@@ -119,6 +119,16 @@ const viewContainerLogs = (containerId: string) => {
     handleClose();
   }
 };
+
+// 解析如 "val1 / val2" 格式的配对统计指标字符串，杜绝挤压截断
+const parsePairValues = (rawStr?: string) => {
+  if (!rawStr) return { left: '--', right: '' };
+  const parts = rawStr.split('/').map(s => s.trim());
+  if (parts.length >= 2) {
+    return { left: parts[0], right: parts[1] };
+  }
+  return { left: rawStr.trim(), right: '' };
+};
 </script>
 
 <template>
@@ -321,7 +331,7 @@ const viewContainerLogs = (containerId: string) => {
                       </span>
                     </div>
                     <!-- 镜像名称 -->
-                    <div class="text-[11px] font-mono text-text-secondary truncate mt-0.5" :title="container.Image">
+                    <div class="text-[11px] font-mono text-text-secondary break-all leading-snug mt-0.5" :title="container.Image">
                       {{ container.Image }}
                     </div>
                   </div>
@@ -447,22 +457,81 @@ const viewContainerLogs = (containerId: string) => {
                     <span v-if="container.stats" class="text-emerald-400 font-mono text-[9px]">LIVE</span>
                   </div>
 
-                  <div v-if="container.stats" class="grid grid-cols-2 gap-2 text-[11px]">
-                    <div class="p-1.5 rounded bg-header/40 border border-border/30">
-                      <div class="text-[10px] text-text-secondary">CPU 占用率</div>
-                      <div class="font-mono font-bold text-foreground mt-0.5">{{ container.stats.CPUPerc ?? 'N/A' }}</div>
+                  <div v-if="container.stats" class="space-y-1.5 text-[11px]">
+                    <!-- CPU 占用与活跃进程数 (双格紧凑并排) -->
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="p-2 rounded-lg bg-header/35 border border-border/30 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-[10px] text-text-secondary">
+                          <span>CPU 占用</span>
+                          <i class="fas fa-microchip text-[10px] text-sky-400"></i>
+                        </div>
+                        <div class="font-mono font-bold text-sm text-foreground mt-1">
+                          {{ container.stats.CPUPerc || '0.00%' }}
+                        </div>
+                      </div>
+
+                      <div class="p-2 rounded-lg bg-header/35 border border-border/30 flex flex-col justify-between">
+                        <div class="flex items-center justify-between text-[10px] text-text-secondary">
+                          <span>活跃进程</span>
+                          <i class="fas fa-layer-group text-[10px] text-indigo-400"></i>
+                        </div>
+                        <div class="font-mono font-bold text-sm text-foreground mt-1">
+                          {{ container.stats.PIDs || '0' }} <span class="text-[10px] font-normal text-text-secondary">个</span>
+                        </div>
+                      </div>
                     </div>
-                    <div class="p-1.5 rounded bg-header/40 border border-border/30">
-                      <div class="text-[10px] text-text-secondary">内存用量 (占比)</div>
-                      <div class="font-mono font-bold text-foreground mt-0.5 truncate">{{ container.stats.MemUsage ?? 'N/A' }} ({{ container.stats.MemPerc ?? '0%' }})</div>
+
+                    <!-- 物理内存用量 (整行全宽展示，两端对齐，彻底杜绝截断) -->
+                    <div class="p-2 rounded-lg bg-header/35 border border-border/30 space-y-1">
+                      <div class="flex items-center justify-between text-[10px]">
+                        <span class="text-text-secondary flex items-center gap-1">
+                          <i class="fas fa-memory text-[10px] text-emerald-400"></i>
+                          <span>物理内存 (Mem)</span>
+                        </span>
+                        <span class="px-1.5 py-0.2 rounded font-mono font-medium text-emerald-400 bg-emerald-500/10 text-[10px]">
+                          {{ container.stats.MemPerc || '0.0%' }}
+                        </span>
+                      </div>
+                      <div class="flex items-center justify-between text-[11px] font-mono text-foreground pt-0.5">
+                        <span class="text-text-secondary/90">已用: <span class="text-foreground font-semibold">{{ parsePairValues(container.stats.MemUsage).left }}</span></span>
+                        <span class="text-text-secondary/70">限额: <span class="text-foreground font-semibold">{{ parsePairValues(container.stats.MemUsage).right || '--' }}</span></span>
+                      </div>
                     </div>
-                    <div class="p-1.5 rounded bg-header/40 border border-border/30">
-                      <div class="text-[10px] text-text-secondary">网络 I/O</div>
-                      <div class="font-mono font-medium text-foreground mt-0.5 truncate">{{ container.stats.NetIO ?? 'N/A' }}</div>
+
+                    <!-- 网络吞吐 (Net I/O) (整行全宽展示，两端对齐) -->
+                    <div class="p-2 rounded-lg bg-header/35 border border-border/30 space-y-1">
+                      <div class="flex items-center justify-between text-[10px]">
+                        <span class="text-text-secondary flex items-center gap-1">
+                          <i class="fas fa-network-wired text-[10px] text-primary"></i>
+                          <span>网络吞吐 (Net I/O)</span>
+                        </span>
+                        <span class="text-[10px] text-text-secondary font-mono">流入 / 流出</span>
+                      </div>
+                      <div class="flex items-center justify-between text-[11px] font-mono pt-0.5">
+                        <span class="text-emerald-400 flex items-center gap-1">
+                          <i class="fas fa-arrow-down text-[9px]"></i>
+                          <span>{{ parsePairValues(container.stats.NetIO).left }}</span>
+                        </span>
+                        <span class="text-orange-400 flex items-center gap-1">
+                          <i class="fas fa-arrow-up text-[9px]"></i>
+                          <span>{{ parsePairValues(container.stats.NetIO).right || '--' }}</span>
+                        </span>
+                      </div>
                     </div>
-                    <div class="p-1.5 rounded bg-header/40 border border-border/30">
-                      <div class="text-[10px] text-text-secondary">磁盘 I/O / 进程数</div>
-                      <div class="font-mono font-medium text-foreground mt-0.5 truncate">{{ container.stats.BlockIO ?? '0B' }} / {{ container.stats.PIDs ?? 0 }}</div>
+
+                    <!-- 磁盘读写 (Block I/O) (整行全宽展示，两端对齐) -->
+                    <div class="p-2 rounded-lg bg-header/35 border border-border/30 space-y-1">
+                      <div class="flex items-center justify-between text-[10px]">
+                        <span class="text-text-secondary flex items-center gap-1">
+                          <i class="fas fa-hdd text-[10px] text-purple-400"></i>
+                          <span>磁盘 I/O (Block I/O)</span>
+                        </span>
+                        <span class="text-[10px] text-text-secondary font-mono">读取 / 写入</span>
+                      </div>
+                      <div class="flex items-center justify-between text-[11px] font-mono text-foreground pt-0.5">
+                        <span class="text-text-secondary/90">读: <span class="text-foreground font-semibold">{{ parsePairValues(container.stats.BlockIO).left }}</span></span>
+                        <span class="text-text-secondary/90">写: <span class="text-foreground font-semibold">{{ parsePairValues(container.stats.BlockIO).right || '--' }}</span></span>
+                      </div>
                     </div>
                   </div>
 
