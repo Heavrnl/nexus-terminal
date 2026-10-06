@@ -7,6 +7,7 @@ import type { SftpManagerInstance } from '../composables/useSftpActions';
 import PathHistoryDropdown from './PathHistoryDropdown.vue';
 import FavoritePathsModal from './FavoritePathsModal.vue';
 import { usePathHistoryStore } from '../stores/pathHistory.store';
+import { copyToClipboard } from '../utils/clipboard';
 
 const props = defineProps<{
   currentPath: string;
@@ -257,17 +258,17 @@ const handleDropdownItemClick = (item: FileListItem) => {
   closeDirDropdown();
 };
 
-// 一键复制当前绝对路径
+// 一键复制当前绝对路径 (兼容全平台与移动端局域网环境)
 const copyCurrentPath = async (e: MouseEvent) => {
   e.stopPropagation();
-  try {
-    await navigator.clipboard.writeText(props.currentPath || '/');
+  const success = await copyToClipboard(props.currentPath || '/');
+  if (success) {
     copySuccess.value = true;
     setTimeout(() => {
       copySuccess.value = false;
     }, 1500);
-  } catch (err) {
-    console.error('[Breadcrumbs] 复制路径失败:', err);
+  } else {
+    console.warn('[Breadcrumbs] 复制路径失败');
   }
 };
 

@@ -33,6 +33,8 @@ const isDirectory = computed(() => Boolean(props.item?.attrs.isDirectory));
 const isFile = computed(() => Boolean(props.item?.attrs.isFile));
 const isSymlink = computed(() => Boolean(props.item?.attrs.isSymbolicLink));
 
+import { copyToClipboard } from '../utils/clipboard';
+
 // 计算完整绝对路径
 const fullPath = computed(() => {
   if (!props.item) return '';
@@ -40,14 +42,14 @@ const fullPath = computed(() => {
   return `${base}${props.item.filename}`;
 });
 
-// 复制绝对路径到剪贴板
+// 复制绝对路径到剪贴板 (兼容局域网 HTTP 移动端浏览器)
 const copyFullPath = async () => {
   if (!fullPath.value) return;
-  try {
-    await navigator.clipboard.writeText(fullPath.value);
+  const success = await copyToClipboard(fullPath.value);
+  if (success) {
     uiNotificationsStore.showSuccess(t('common.copied', '已复制完整路径'));
     emit('close');
-  } catch (err) {
+  } else {
     uiNotificationsStore.showError(t('common.copyFailed', '复制路径失败'));
   }
 };

@@ -2,6 +2,7 @@ import { ref, type Ref, type ShallowRef } from 'vue';
 import type { FileListItem } from '../../types/sftp.types';
 import type { ClipboardState, CompressFormat } from './useFileManagerContextMenu';
 import type { createSftpActionsManager } from '../useSftpActions';
+import { copyToClipboard } from '../../utils/clipboard';
 
 type SftpManagerInstance = ReturnType<typeof createSftpActionsManager>;
 
@@ -202,11 +203,11 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
   const handleCopyPath = async (item: FileListItem) => {
     if (!currentSftpManager.value) return;
     const fullPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
-    try {
-      await navigator.clipboard.writeText(fullPath);
+    const success = await copyToClipboard(fullPath);
+    if (success) {
       notifySuccess?.(t('fileManager.notifications.pathCopied', 'Path copied to clipboard'));
-    } catch (err) {
-      console.error(`[FileManager ${sessionId}-${instanceId}] Failed to copy path: `, err);
+    } else {
+      console.warn(`[FileManager ${sessionId}-${instanceId}] Failed to copy path`);
       notifyError?.(t('fileManager.errors.copyPathFailed', 'Failed to copy path'));
     }
   };

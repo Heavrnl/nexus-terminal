@@ -193,13 +193,7 @@ const handleToggleSelectAll = () => {
       class="flex-grow min-h-0 overflow-y-auto overscroll-contain px-2.5 py-2 space-y-1.5 [scrollbar-width:thin] pb-24"
       @scroll="handleScroll"
     >
-      <!-- 加载中骨架遮罩 -->
-      <div v-if="isLoading && items.length === 0" class="py-12 flex flex-col items-center justify-center gap-3 text-text-secondary">
-        <i class="fas fa-spinner fa-spin text-2xl text-primary"></i>
-        <span class="text-xs">{{ t('fileManager.loading', '正在加载文件列表...') }}</span>
-      </div>
-
-      <!-- 常驻置顶：返回上一级目录卡片 -->
+      <!-- 常驻置顶：返回上一级目录卡片 (永远在首位，不受加载影响) -->
       <div
         v-if="hasParentLink"
         class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-header/40 hover:bg-header/80 active:bg-primary/10 border border-border/40 transition-colors cursor-pointer"
@@ -217,6 +211,12 @@ const handleToggleSelectAll = () => {
         <div class="text-text-secondary/50 text-xs">
           <i class="fas fa-chevron-up"></i>
         </div>
+      </div>
+
+      <!-- 加载中骨架遮罩 (位于返回上一级下方) -->
+      <div v-if="isLoading && items.length === 0" class="py-12 flex flex-col items-center justify-center gap-3 text-text-secondary">
+        <i class="fas fa-spinner fa-spin text-2xl text-primary"></i>
+        <span class="text-xs">{{ t('fileManager.loading', '正在加载文件列表...') }}</span>
       </div>
 
       <!-- 空目录或无搜索结果 -->
