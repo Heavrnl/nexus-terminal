@@ -302,15 +302,8 @@ const handleToggleSelectAll = () => {
           </div>
         </div>
 
-        <!-- 右侧：文件夹进入箭头或更多操作按钮 -->
-        <div class="flex items-center gap-1 shrink-0">
-          <!-- 文件夹轻触提示小箭头 -->
-          <i
-            v-if="item.attrs.isDirectory && !isMultiSelectMode"
-            class="fas fa-chevron-right text-text-secondary/40 text-xs px-1"
-          ></i>
-
-          <!-- 独立的操作抽屉触发按钮 -->
+        <!-- 右侧：更多操作按钮 -->
+        <div class="flex items-center shrink-0">
           <button
             class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
             :title="t('fileManager.moreActions', '操作菜单')"

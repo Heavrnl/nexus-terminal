@@ -297,8 +297,8 @@ defineExpose({
 
 <template>
   <div
-    class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0"
-    :class="{ 'ring-1 ring-primary/40 border-primary/50': isEditing }"
+    class="breadcrumbs-container relative flex items-center bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0"
+    :class="[isMobile ? 'h-10 px-2.5' : 'h-8 px-2', { 'ring-1 ring-primary/40 border-primary/50': isEditing }]"
   >
     <!-- 面包屑显示态 -->
     <div
@@ -316,8 +316,11 @@ defineExpose({
           <template v-if="seg.isRoot">
             <button
               type="button"
-              class="flex items-center justify-center w-6 h-6 rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 flex-shrink-0"
-              :class="{ 'text-foreground bg-black/5 dark:bg-white/5': breadcrumbSegments.length === 1 }"
+              class="flex items-center justify-center rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 active:scale-95 transition-colors duration-150 flex-shrink-0"
+              :class="[
+                isMobile ? 'w-7 h-7' : 'w-6 h-6',
+                { 'text-foreground bg-black/5 dark:bg-white/5': breadcrumbSegments.length === 1 }
+              ]"
               @click.stop="navigateTo('/')"
               :title="t('fileManager.actions.rootDirectory', '根目录')"
             >
@@ -327,9 +330,12 @@ defineExpose({
             <button
               v-if="breadcrumbSegments.length > 1"
               type="button"
-              class="slash-btn flex items-center justify-center h-5 w-4 rounded text-text-secondary/60 hover:text-primary hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 flex-shrink-0 font-mono text-xs select-none"
+              class="slash-btn flex items-center justify-center rounded text-text-secondary/60 hover:text-primary hover:bg-black/10 dark:hover:bg-white/10 active:scale-95 transition-colors duration-150 flex-shrink-0 font-mono text-xs select-none"
+              :class="[
+                isMobile ? 'h-6 w-4.5' : 'h-5 w-4',
+                { 'text-primary bg-primary/15 font-semibold': activeDropdownDir === '/' }
+              ]"
               @click.stop="toggleDirDropdown('/', $event)"
-              :class="{ 'text-primary bg-primary/15 font-semibold': activeDropdownDir === '/' }"
               title="展开目录子项"
             >
               /
@@ -340,8 +346,11 @@ defineExpose({
           <template v-else>
             <button
               type="button"
-              class="flex items-center px-1.5 py-0.5 rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 font-medium truncate max-w-[140px] flex-shrink-0"
-              :class="{ 'text-foreground font-semibold bg-black/5 dark:bg-white/5': idx === breadcrumbSegments.length - 1 }"
+              class="flex items-center rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 active:scale-95 transition-colors duration-150 font-medium truncate max-w-[140px] flex-shrink-0"
+              :class="[
+                isMobile ? 'h-7 px-2 text-xs' : 'px-1.5 py-0.5',
+                { 'text-foreground font-semibold bg-black/5 dark:bg-white/5': idx === breadcrumbSegments.length - 1 }
+              ]"
               @click.stop="navigateTo(seg.path)"
               :title="seg.path"
             >
@@ -350,9 +359,12 @@ defineExpose({
             <!-- 段落后的斜杠按钮 -->
             <button
               type="button"
-              class="slash-btn flex items-center justify-center h-5 w-4 rounded text-text-secondary/60 hover:text-primary hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 flex-shrink-0 font-mono text-xs select-none"
+              class="slash-btn flex items-center justify-center rounded text-text-secondary/60 hover:text-primary hover:bg-black/10 dark:hover:bg-white/10 active:scale-95 transition-colors duration-150 flex-shrink-0 font-mono text-xs select-none"
+              :class="[
+                isMobile ? 'h-6 w-4.5' : 'h-5 w-4',
+                { 'text-primary bg-primary/15 font-semibold': activeDropdownDir === seg.path }
+              ]"
               @click.stop="toggleDirDropdown(seg.path, $event)"
-              :class="{ 'text-primary bg-primary/15 font-semibold': activeDropdownDir === seg.path }"
               title="展开目录子项"
             >
               /
@@ -380,7 +392,8 @@ defineExpose({
         @keydown="handlePathInputKeydown"
         @input="handlePathInputChange"
         @blur="handlePathInputBlur"
-        class="w-full h-6 px-1.5 py-0.5 bg-background border border-primary/50 rounded text-foreground font-mono text-xs outline-none focus:ring-1 focus:ring-primary"
+        class="w-full px-2 py-0.5 bg-background border border-primary/50 rounded text-foreground font-mono text-xs outline-none focus:ring-1 focus:ring-primary"
+        :class="isMobile ? 'h-7.5' : 'h-6'"
         placeholder="/path/to/directory"
       />
       <!-- 历史路径下拉 -->
@@ -394,16 +407,17 @@ defineExpose({
     </div>
 
     <!-- 右侧工具操作集合（复制路径、收藏夹星标、刷新） -->
-    <div class="flex items-center gap-1 ml-2 flex-shrink-0 text-text-secondary">
+    <div class="flex items-center gap-1.5 ml-2 flex-shrink-0 text-text-secondary">
       <!-- 复制当前路径按钮 -->
       <button
         type="button"
-        class="flex items-center justify-center w-6 h-6 rounded hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground transition-colors duration-150"
+        class="flex items-center justify-center rounded-lg hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground active:scale-95 transition-all duration-150"
+        :class="isMobile ? 'w-7.5 h-7.5' : 'w-6 h-6'"
         @click="copyCurrentPath"
         :title="copySuccess ? '已复制到剪贴板！' : '复制当前路径'"
       >
-        <i v-if="!copySuccess" class="far fa-copy text-[11px]"></i>
-        <i v-else class="fas fa-check text-[11px] text-green-500"></i>
+        <i v-if="!copySuccess" class="far fa-copy text-xs"></i>
+        <i v-else class="fas fa-check text-xs text-emerald-500"></i>
       </button>
 
       <!-- 常用路径收藏夹按钮 -->
@@ -411,15 +425,17 @@ defineExpose({
         <button
           ref="favoritePathsButtonRef"
           type="button"
-          class="flex items-center justify-center w-6 h-6 rounded hover:bg-black/10 dark:hover:bg-white/10 hover:text-yellow-500 transition-colors duration-150"
+          class="flex items-center justify-center rounded-lg hover:bg-black/10 dark:hover:bg-white/10 hover:text-amber-400 active:scale-95 transition-all duration-150"
+          :class="isMobile ? 'w-7.5 h-7.5' : 'w-6 h-6'"
           @click.stop="showFavoritePathsModal = !showFavoritePathsModal"
           :title="t('fileManager.favoritePathsTooltip', '常用路径收藏夹')"
         >
-          <i class="fas fa-star text-[11px]"></i>
+          <i class="fas fa-star text-xs text-amber-400/90"></i>
         </button>
         <FavoritePathsModal
           :is-visible="showFavoritePathsModal"
           :trigger-element="favoritePathsButtonRef"
+          :is-mobile="isMobile"
           @close="showFavoritePathsModal = false"
           @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"
         />
@@ -428,12 +444,13 @@ defineExpose({
       <!-- 快速刷新当前目录 -->
       <button
         type="button"
-        class="flex items-center justify-center w-6 h-6 rounded hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground transition-colors duration-150"
+        class="flex items-center justify-center rounded-lg hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground active:scale-95 transition-all duration-150"
+        :class="isMobile ? 'w-7.5 h-7.5' : 'w-6 h-6'"
         @click.stop="emit('refresh')"
         :disabled="!isConnected || isLoading"
         :title="t('fileManager.actions.refresh', '刷新目录')"
       >
-        <i class="fas fa-sync-alt text-[10px]" :class="{ 'fa-spin': isLoading }"></i>
+        <i class="fas fa-sync-alt text-xs" :class="{ 'fa-spin': isLoading }"></i>
       </button>
     </div>
 

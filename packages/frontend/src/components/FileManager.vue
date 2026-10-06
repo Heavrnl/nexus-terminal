@@ -1296,6 +1296,7 @@ defineExpose({ focusSearchInput, startPathEdit });
      :item="actionItem"
      :items="actionItems"
      :initial-value="actionInitialValue"
+     :is-mobile="props.isMobile"
      @close="handleModalClose"
      @confirm="handleModalConfirm"
    />
