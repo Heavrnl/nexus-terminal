@@ -1311,6 +1311,8 @@
     "show": "显示顶部导航"
   },
   "commandHistory": {
+    "title": "命令历史",
+    "modalTitle": "命令历史",
     "searchPlaceholder": "搜索历史记录...",
     "clear": "清空",
     "copy": "复制",

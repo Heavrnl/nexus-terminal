@@ -49,6 +49,8 @@
     "title": "監査ログ"
   },
   "commandHistory": {
+    "title": "コマンド履歴",
+    "modalTitle": "コマンド履歴",
     "clear": "クリア",
     "confirmClear": "すべての履歴をクリアしますか？",
     "copied": "クリップボードにコピーしました",

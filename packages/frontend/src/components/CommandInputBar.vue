@@ -8,6 +8,7 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useQuickCommandsStore } from '../stores/quickCommands.store';
 import { useCommandHistoryStore } from '../stores/commandHistory.store';
 import QuickCommandsModal from './QuickCommandsModal.vue'; 
+import CommandHistoryModal from './CommandHistoryModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
@@ -50,6 +51,7 @@ const props = defineProps<{
 const isSearching = ref(false);
 const searchTerm = ref('');
 const showQuickCommands = ref(false); // +++ Add state for modal visibility +++
+const showCommandHistoryModal = ref(false); // +++ Add state for command history modal +++
 const showSuspendedSshSessionsModal = ref(false); // +++ Add state for suspended SSH sessions modal +++
 // *** 移除本地的搜索结果 ref ***
 // const searchResultCount = ref(0);
@@ -306,6 +308,15 @@ const closeQuickCommandsModal = () => {
   showQuickCommands.value = false;
 };
 
+// +++ Functions to control the command history modal +++
+const openCommandHistoryModal = () => {
+  showCommandHistoryModal.value = true;
+};
+
+const closeCommandHistoryModal = () => {
+  showCommandHistoryModal.value = false;
+};
+
 // +++ Functions to control the suspended SSH sessions modal +++
 const openSuspendedSshSessionsModal = () => {
   showSuspendedSshSessionsModal.value = true;
@@ -364,6 +375,15 @@ const handleQuickCommandExecute = (command: string) => {
         :title="t('quickCommands.title', '快捷指令')"
       >
         <i class="fas fa-bolt text-base"></i>
+      </button>
+       <!-- +++ Command History Button (Mobile only) +++ -->
+       <button
+        v-if="props.isMobile"
+        @click="openCommandHistoryModal"
+        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :title="t('commandHistory.title', '命令历史')"
+      >
+        <i class="fas fa-history text-base"></i>
       </button>
       <!-- Focus Switcher Config Button (Hide on mobile) -->
       <button
@@ -499,6 +519,11 @@ const handleQuickCommandExecute = (command: string) => {
     :is-visible="showQuickCommands"
     @close="closeQuickCommandsModal"
     @execute-command="handleQuickCommandExecute"
+  />
+  <!-- +++ Command History Modal Instance +++ -->
+  <CommandHistoryModal
+    :is-visible="showCommandHistoryModal"
+    @close="closeCommandHistoryModal"
   />
   <!-- +++ Suspended SSH Sessions Modal Instance +++ -->
   <SuspendedSshSessionsModal

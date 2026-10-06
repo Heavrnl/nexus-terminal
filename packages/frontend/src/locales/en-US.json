@@ -1307,6 +1307,8 @@
     "show": "Show Top Navigation"
   },
   "commandHistory": {
+    "title": "Command History",
+    "modalTitle": "Command History",
     "searchPlaceholder": "Search history...",
     "clear": "Clear",
     "copy": "Copy",
