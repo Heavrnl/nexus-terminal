@@ -364,6 +364,7 @@
     "favoritePathsTooltip": "お気に入りのパス",
     "actions": {
       "cancel": "キャンセル",
+      "rootDirectory": "ルートディレクトリ",
       "cdToTerminal": "ターミナルのディレクトリを現在のパスに変更",
       "changePermissions": "権限を変更",
       "closeEditor": "エディターを閉じる",

@@ -294,15 +294,6 @@ defineExpose({
     class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150"
     :class="{ 'ring-1 ring-primary/40 border-primary/50': isEditing }"
   >
-    <!-- 左侧文件系统图标 -->
-    <div
-      class="flex items-center text-text-secondary mr-1 flex-shrink-0 cursor-pointer hover:text-foreground"
-      @click="navigateTo('/')"
-      :title="t('fileManager.actions.parentDirectory', 'Root directory /')"
-    >
-      <i class="fas fa-folder-tree text-xs text-primary/80"></i>
-    </div>
-
     <!-- 面包屑显示态 -->
     <div
       v-if="!isEditing"
@@ -312,20 +303,20 @@ defineExpose({
       <!-- 可点击的面包屑段落流 -->
       <div class="flex items-center flex-shrink-0 max-w-full overflow-x-auto no-scrollbar py-0.5">
         <template v-for="(seg, idx) in breadcrumbSegments" :key="seg.path">
-          <!-- 根目录特殊渲染 -->
+          <!-- 根目录纯图标按钮 -->
           <template v-if="seg.isRoot">
             <button
               type="button"
-              class="flex items-center gap-1 px-1.5 py-0.5 rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 font-mono flex-shrink-0"
-              :class="{ 'text-foreground font-semibold': breadcrumbSegments.length === 1 }"
+              class="flex items-center justify-center w-6 h-6 rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 flex-shrink-0"
+              :class="{ 'text-foreground bg-black/5 dark:bg-white/5': breadcrumbSegments.length === 1 }"
               @click.stop="navigateTo('/')"
-              :title="t('fileManager.actions.parentDirectory', 'Root /')"
+              :title="t('fileManager.actions.rootDirectory', '根目录')"
             >
-              <i class="fas fa-hdd text-[11px] opacity-75"></i>
-              <span>/</span>
+              <i class="fas fa-hdd text-xs text-primary/80"></i>
             </button>
-            <!-- 根目录后的斜杠按钮 -->
+            <!-- 根目录与下一级之间的斜杠按钮（在有子目录时显示） -->
             <button
+              v-if="breadcrumbSegments.length > 1"
               type="button"
               class="slash-btn flex items-center justify-center h-5 w-4 rounded text-text-secondary/60 hover:text-primary hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 flex-shrink-0 font-mono text-xs select-none"
               @click.stop="toggleDirDropdown('/', $event)"

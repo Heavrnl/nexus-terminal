@@ -422,6 +422,7 @@
     "actions": {
       "refresh": "Refresh",
       "parentDirectory": "Parent Directory",
+      "rootDirectory": "Root Directory",
       "uploadFile": "Upload File",
       "upload": "Upload",
       "newFolder": "New Folder",
