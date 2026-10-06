@@ -1714,5 +1714,12 @@
     "flipH": "Flip Horizontally",
     "reset": "Reset Transforms",
     "loadError": "Failed to load image or unsupported format"
+  },
+  "editor": {
+    "splitRight": "Split Editor Right",
+    "splitDown": "Split Editor Down",
+    "toggleSplitDirection": "Toggle Split Orientation (Horizontal/Vertical)",
+    "closeSplit": "Close Split Pane",
+    "resetSplitRatio": "Double-click to reset split ratio"
   }
 }

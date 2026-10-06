@@ -22,6 +22,8 @@ const emit = defineEmits<{
   (e: 'close-other-tabs', tabId: string): void;
   (e: 'close-tabs-to-right', tabId: string): void;
   (e: 'close-tabs-to-left', tabId: string): void;
+  (e: 'split-right', tabId: string): void;
+  (e: 'split-down', tabId: string): void;
 }>();
 
 const { t } = useI18n();
@@ -92,6 +94,12 @@ const handleContextMenuAction = (payload: { action: string; targetId: string | n
     case 'close-left':
       emit('close-tabs-to-left', targetId);
       break;
+    case 'split-right':
+      emit('split-right', targetId);
+      break;
+    case 'split-down':
+      emit('split-down', targetId);
+      break;
     default:
       console.warn(`[FileTabs] Unknown context menu action: ${action}`);
   }
@@ -119,6 +127,11 @@ const contextMenuItems = computed(() => {
   if (currentIndex > 0) {
     items.push({ label: 'tabs.contextMenu.closeLeft', action: 'close-left' });
   }
+
+  // VSCode 分屏拆分菜单项
+  items.push({ isSeparator: true, label: '', action: '' });
+  items.push({ label: 'editor.splitRight', action: 'split-right' });
+  items.push({ label: 'editor.splitDown', action: 'split-down' });
 
   return items;
 });

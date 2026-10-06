@@ -1718,5 +1718,12 @@
     "flipH": "水平镜像翻转",
     "reset": "重置所有变换",
     "loadError": "图片加载失败或格式不受支持"
+  },
+  "editor": {
+    "splitRight": "向右拆分编辑器 (Split Right)",
+    "splitDown": "向下拆分编辑器 (Split Down)",
+    "toggleSplitDirection": "切换拆分方向 (水平/垂直)",
+    "closeSplit": "关闭此拆分窗格",
+    "resetSplitRatio": "双击复位为等分窗格"
   }
 }

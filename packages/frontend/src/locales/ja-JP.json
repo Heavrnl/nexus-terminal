@@ -1675,5 +1675,12 @@
     "flipH": "左右反転",
     "reset": "変換をリセット",
     "loadError": "画像の読み込みに失敗したかサポートされていない形式です"
+  },
+  "editor": {
+    "splitRight": "右にエディターを分割",
+    "splitDown": "下にエディターを分割",
+    "toggleSplitDirection": "分割方向を切り替え (水平/垂直)",
+    "closeSplit": "分割ペインを閉じる",
+    "resetSplitRatio": "ダブルクリックで分割比率をリセット"
   }
 }
