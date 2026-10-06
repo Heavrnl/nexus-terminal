@@ -80,13 +80,24 @@
   --base-margin: 0.5rem;         /* 基础外边距 */
 }
 
-/* 应用基础样式 */
+/* 应用基础样式与移动端全屏视口锁定 */
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
-  margin: 0; /* 移除默认 body margin */
   font-family: var(--font-family-sans-serif);
   background-color: var(--app-bg-color);
   color: var(--text-color);
-  line-height: 1.6; /* 改善可读性 */
+  line-height: 1.6;
 }
 
 /* 全局链接样式 */

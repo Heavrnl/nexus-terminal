@@ -311,7 +311,7 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
       </nav>
     </header>
 
-    <main>
+    <main :class="{ 'overflow-hidden': isWorkspaceRoute, 'overflow-y-auto': !isWorkspaceRoute }">
       <!-- 使用 KeepAlive 包裹 RouterView，并指定缓存 WorkspaceView -->
       <RouterView v-slot="{ Component }">
         <KeepAlive :include="['WorkspaceView', 'ConnectionsView']">
@@ -370,14 +370,17 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
 #app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  font-family: var(--font-family-sans-serif); /* 使用字体变量 */
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: var(--font-family-sans-serif);
 }
-
 
 main {
-  flex-grow: 1;
-
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+  position: relative;
 }
-
 </style>

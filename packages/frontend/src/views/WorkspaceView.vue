@@ -827,15 +827,9 @@ const closeFileManagerModal = () => {
   display: flex;
   background-color: transparent;
   flex-direction: column;
-  height: 100dvh; /* 使用动态视口高度 */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  transition: height 0.3s ease; /* 可选：添加过渡效果 */
-}
-
-/* 当 Header 可见时，调整高度 */
-.workspace-view.with-header {
-  /* 假设 Header 高度为 55px (根据 App.vue CSS) */
-  height: calc(100dvh - 55px); /* 使用动态视口高度计算 */
 }
 
 .main-content-area {
@@ -872,10 +866,10 @@ const closeFileManagerModal = () => {
 
 /* --- Mobile Layout Styles --- */
 .workspace-view.is-mobile {
-  /* Ensure flex column layout */
-  display: flex; /* Uncommented */
-  flex-direction: column; /* Uncommented */
-  /* Height is already handled by .workspace-view and .with-header */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .workspace-view.is-mobile .main-content-area {
@@ -884,12 +878,12 @@ const closeFileManagerModal = () => {
 }
 
 .mobile-content-area {
-  display: flex; /* Use flex for the terminal container */
-  flex-direction: column; /* Stack elements vertically if needed */
-  flex-grow: 1; /* Allow this area to take up remaining space */
-  overflow: hidden; /* Prevent overflow */
-  position: relative; /* Needed for potential absolute positioning inside */
-  /* Remove desktop margins/borders */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
   margin: 0;
   border: none;
   border-radius: 0;
@@ -902,18 +896,15 @@ const closeFileManagerModal = () => {
 }
 
 .mobile-command-bar {
-  flex-shrink: 0; /* Prevent command bar from shrinking */
-  /* Add specific styles if needed, e.g., border-top */
+  flex-shrink: 0;
   border-top: 1px solid var(--border-color, #ccc);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .mobile-virtual-keyboard {
   flex-shrink: 0; /* 防止虚拟键盘缩小 */
   width: 100%; /* 确保宽度为 100% */
   box-sizing: border-box; /* 边框和内边距包含在宽度内 */
-  /* 可以添加更多样式，例如背景色、边框等 */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-
-
-
 </style>
