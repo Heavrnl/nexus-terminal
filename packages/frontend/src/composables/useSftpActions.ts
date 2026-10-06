@@ -3,6 +3,7 @@ import type { FileListItem, FileAttributes, EditorFileContent, SftpReadFileSucce
 import type { WebSocketMessage, MessagePayload, MessageHandler } from '../types/websocket.types';
 
 import { useUiNotificationsStore } from '../stores/uiNotifications.store'; 
+import { workspaceEmitter } from './workspaceEvents'; 
 
 /**
  * @interface WebSocketDependencies
@@ -1064,6 +1065,14 @@ export function createSftpActionsManager(
         } else {
              console.warn(`[SFTP ${instanceSessionId}] Move success, but destination node ${destinationDir} not found in tree.`);
         }
+
+        // 3. 广播跨窗格移动完成通知，驱动源目录和目标目录实例自动同步刷新
+        const effectiveSourceDir = sourcePaths[0]?.substring(0, sourcePaths[0].lastIndexOf('/')) || '/';
+        workspaceEmitter.emit('fileManager:itemsMoved', {
+            sessionId: instanceSessionId,
+            sourceDir: effectiveSourceDir,
+            targetDir: destinationDir,
+        });
     };
 
 

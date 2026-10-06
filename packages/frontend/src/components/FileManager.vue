@@ -16,6 +16,7 @@ import { useFileManagerKeyboardNavigation } from '../composables/file-manager/us
 import { useFileManagerVirtualScroll } from '../composables/file-manager/useFileManagerVirtualScroll';
 import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
+import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
@@ -472,11 +473,22 @@ const {
 // --- 目录加载与导航 ---
 // loadDirectory is provided by props.sftpManager
 
+const subscribeToWorkspaceEvent = useWorkspaceEventSubscriber();
+const unsubscribeFromWorkspaceEvent = useWorkspaceEventOff();
+
+const handleMoveItems = (sourcePaths: string[], destinationDir: string) => {
+  if (!currentSftpManager.value || sourcePaths.length === 0) return;
+
+  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 执行移动操作: sources=${sourcePaths.join(', ')} -> dest=${destinationDir}`);
+  currentSftpManager.value.moveItems(sourcePaths, destinationDir);
+};
+
 // --- 拖放逻辑 (使用 Composable) ---
 const {
   // isDraggingOver, // 不再直接使用容器的悬停状态
   showExternalDropOverlay, // 控制蒙版显示
   dragOverTarget, // 行拖拽悬停目标 (内部)
+  isContainerDropTarget, // 跨窗格拖拽到列表空白区域的高亮指示
   // draggedItem, // 内部状态，不需要在 FileManager 中直接使用
   // --- 事件处理器 ---
   handleDragEnter,
@@ -490,21 +502,17 @@ const {
   handleDragLeaveRow,
   handleDropOnRow,
 } = useFileManagerDragAndDrop({
+  sessionId: computed(() => props.sessionId),
+  instanceId: props.instanceId,
   isConnected: computed(() => props.wsDeps.isConnected.value), 
-  // 修改：传递 manager 的 currentPath (保持 computed)
   currentPath: computed(() => currentSftpManager.value?.currentPath.value ?? '/'),
   fileListContainerRef: fileListContainerRef,
-  // 修改：传递一个包装函数给 joinPath
   joinPath: (base: string, target: string): string => {
-      return currentSftpManager.value?.joinPath(base, target) ?? `${base}/${target}`.replace(/\/+/g, '/'); // 提供简单的默认实现
+      return currentSftpManager.value?.joinPath(base, target) ?? `${base}/${target}`.replace(/\/+/g, '/');
   },
   onFileUpload: startFileUpload,
-  // 修改：确保在调用前检查 currentSftpManager.value
-  onItemMove: (item, newName) => {
-      currentSftpManager.value?.renameItem(item, newName);
-  },
+  onMoveItems: handleMoveItems,
   selectedItems: selectedItems,
-  // 修改：传递 manager 的 fileList ref (保持 computed)
   fileList: computed(() => currentSftpManager.value?.fileList.value ?? []),
 });
 
@@ -766,7 +774,21 @@ watch(() => props.sessionId, (newSessionId, oldSessionId) => {
 let unregisterSearchFocusAction: (() => void) | null = null;
 let unregisterPathFocusAction: (() => void) | null = null;
 
+let unregisterItemsMovedEvent: (() => void) | null = null;
+
 onMounted(() => {
+  const handleItemsMovedNotification = (payload: { sessionId: string; sourceDir: string; targetDir: string }) => {
+    if (payload.sessionId === props.sessionId) {
+      const current = currentSftpManager.value?.currentPath.value;
+      if (current && (current === payload.sourceDir || current === payload.targetDir)) {
+        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到移动文件广播，自动静默刷新当前目录: ${current}`);
+        currentSftpManager.value?.loadDirectory(current, true);
+      }
+    }
+  };
+  subscribeToWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
+  unregisterItemsMovedEvent = () => unsubscribeFromWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
+
   const focusSearchActionWrapper = async (): Promise<boolean | undefined> => {
     if (props.sessionId === sessionStore.activeSessionId) {
       return focusSearchInput();
@@ -786,16 +808,20 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
- if (unregisterSearchFocusAction) {
-   unregisterSearchFocusAction();
- }
- unregisterSearchFocusAction = null;
+  if (unregisterItemsMovedEvent) {
+    unregisterItemsMovedEvent();
+    unregisterItemsMovedEvent = null;
+  }
+  if (unregisterSearchFocusAction) {
+    unregisterSearchFocusAction();
+  }
+  unregisterSearchFocusAction = null;
 
- if (unregisterPathFocusAction) {
-   unregisterPathFocusAction();
- }
- unregisterPathFocusAction = null;
- sessionStore.removeSftpManager(props.sessionId, props.instanceId);
+  if (unregisterPathFocusAction) {
+    unregisterPathFocusAction();
+  }
+  unregisterPathFocusAction = null;
+  sessionStore.removeSftpManager(props.sessionId, props.instanceId);
 });
 
 // +++ 监听蒙版可见性，动态调整高度 +++
@@ -955,7 +981,8 @@ defineExpose({ focusSearchInput, startPathEdit });
     <!-- File List Container -->
     <div
       ref="fileListContainerRef"
-      class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable]"
+      class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable] transition-colors duration-150"
+      :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
       @dragenter.prevent="handleDragEnter"
       @dragover.prevent="handleDragOver"
       @dragleave.prevent="handleDragLeave"
@@ -980,6 +1007,17 @@ defineExpose({ focusSearchInput, startPathEdit });
           @drop.prevent="handleOverlayDrop"
         >
           {{ t('fileManager.dropFilesHere', 'Drop files here to upload') }}
+        </div>
+
+        <!-- 跨窗格拖拽到当前目录的放置提示 -->
+        <div
+          v-if="isContainerDropTarget"
+          class="absolute inset-0 z-40 flex items-center justify-center bg-primary/10 pointer-events-none border-2 border-dashed border-primary/60 rounded-md backdrop-blur-[0.5px]"
+        >
+          <div class="px-3.5 py-1.5 rounded-lg bg-header/95 border border-primary/40 text-foreground text-xs font-medium shadow-xl flex items-center gap-2">
+            <i class="fas fa-file-import text-primary animate-bounce"></i>
+            <span>松开移动到当前目录</span>
+          </div>
         </div>
 
         <!-- File Table -->
@@ -1090,7 +1128,7 @@ defineExpose({ focusSearchInput, startPathEdit });
 
               <tr v-for="({ item, index }) in visibleItems"
                   :key="item.filename"
-                  :draggable="item.filename !== '..'" @dragstart="handleDragStart(item)" @dragend="handleDragEnd"
+                  :draggable="item.filename !== '..'" @dragstart="handleDragStart(item, $event)" @dragend="handleDragEnd"
                   @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
                   class="transition-colors duration-150 select-none"
                   :class="[

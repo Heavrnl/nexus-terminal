@@ -50,6 +50,7 @@ export type WorkspaceEventPayloads = {
 'ui:openTransferProgressModal': void; // 请求打开文件传输进度模态框
   // 'ui:toggleVirtualKeyboard': void; // 如果决定迁移 CommandInputBar 的这个事件
   'fileManager:openModalRequest': { sessionId: string }; // 请求打开文件管理器模态框
+  'fileManager:itemsMoved': { sessionId: string; sourceDir: string; targetDir: string }; // 跨窗格/内部文件移动完成通知
 
   // Suspended SSH Session Events
   'suspendedSession:actionCompleted': void; // Emitted when a resume/remove action is completed

@@ -704,11 +704,79 @@ watchEffect(() => {
     });
   }
 });
- 
+
+// --- 支持拖拽文件/文件夹直接在终端输入路径 ---
+const isDraggingOverTerminal = ref(false);
+
+const handleTerminalDragEnter = (event: DragEvent) => {
+  if (event.dataTransfer?.types.includes('text/plain') || event.dataTransfer?.types.includes('Files') || event.dataTransfer?.types.includes('application/x-nexus-sftp-items')) {
+    event.preventDefault();
+    isDraggingOverTerminal.value = true;
+  }
+};
+
+const handleTerminalDragOver = (event: DragEvent) => {
+  if (event.dataTransfer?.types.includes('text/plain') || event.dataTransfer?.types.includes('Files') || event.dataTransfer?.types.includes('application/x-nexus-sftp-items')) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    isDraggingOverTerminal.value = true;
+  }
+};
+
+const handleTerminalDragLeave = (event: DragEvent) => {
+  const related = event.relatedTarget as Node | null;
+  if (!terminalOuterWrapperRef.value || !related || !terminalOuterWrapperRef.value.contains(related)) {
+    isDraggingOverTerminal.value = false;
+  }
+};
+
+const handleTerminalDrop = (event: DragEvent) => {
+  isDraggingOverTerminal.value = false;
+  event.preventDefault();
+
+  // 1. 优先读取 text/plain（FileManager 会放入带引号的绝对路径，格式如 "/var/log/nginx" ）
+  let textToInsert = event.dataTransfer?.getData('text/plain') || '';
+
+  // 2. 如果是从外部拖拽的文件，拼接其文件名并加上空格
+  if (!textToInsert && event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+    textToInsert = Array.from(event.dataTransfer.files).map(f => `"${f.name}"`).join(' ') + ' ';
+  }
+
+  if (textToInsert) {
+    // 像用户打字一样，直接发送到终端
+    const activeSession = sessionStore.sessions.get(props.sessionId);
+    if (activeSession?.terminalManager) {
+      activeSession.terminalManager.sendData(textToInsert);
+    } else {
+      emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, data: textToInsert });
+    }
+    // 聚焦回终端
+    terminal?.focus();
+  }
+};
 </script>
 
 <template>
-  <div ref="terminalOuterWrapperRef" class="terminal-outer-wrapper">
+  <div
+    ref="terminalOuterWrapperRef"
+    class="terminal-outer-wrapper transition-all duration-150 relative"
+    :class="{ 'ring-2 ring-primary ring-inset': isDraggingOverTerminal }"
+    @dragenter="handleTerminalDragEnter"
+    @dragover="handleTerminalDragOver"
+    @dragleave="handleTerminalDragLeave"
+    @drop="handleTerminalDrop"
+  >
+    <!-- 拖拽悬停视觉提示 -->
+    <div
+      v-if="isDraggingOverTerminal"
+      class="absolute inset-0 z-50 flex items-center justify-center bg-primary/10 pointer-events-none backdrop-blur-[1px]"
+    >
+      <div class="px-3.5 py-1.5 rounded-lg bg-header/90 border border-primary/50 text-foreground text-xs font-mono shadow-xl flex items-center gap-2">
+        <i class="fas fa-terminal text-primary animate-pulse"></i>
+        <span>松开在终端中输入绝对路径</span>
+      </div>
+    </div>
+
     <!-- xterm 实际挂载点 -->
     <div ref="terminalRef" class="terminal-inner-container"></div>
   </div>
