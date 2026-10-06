@@ -675,7 +675,7 @@ const getBarButtonClass = (isActive: boolean = false) => {
     <div
       v-if="props.isMobile"
       v-show="isMobileMultiLineOpen"
-      class="w-full max-h-[38vh] h-44 p-1.5 bg-background border-t border-border/50 shrink-0"
+      class="w-full max-h-[38vh] h-44 bg-background border-t border-border/50 shrink-0 overflow-hidden"
     >
       <MultiLineCommandInput :is-mobile="props.isMobile" class="h-full w-full" />
     </div>

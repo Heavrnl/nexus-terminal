@@ -226,7 +226,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="multi-line-panel flex flex-col h-full w-full min-w-0 min-h-0 bg-background border border-border/50 rounded-lg overflow-hidden select-none">
+  <div
+    class="multi-line-panel flex flex-col h-full w-full min-w-0 min-h-0 bg-background select-none overflow-hidden"
+    :class="isMobile ? 'border-0 rounded-none' : 'border border-border/50 rounded-lg'"
+  >
     <!-- 顶部操作栏 -->
     <div class="panel-header flex items-center justify-between gap-1 px-2 py-1 border-b border-border/50 bg-background-secondary/40 shrink-0 min-w-0 overflow-hidden">
       <!-- 左侧操作组：复制、粘贴、清空 -->
