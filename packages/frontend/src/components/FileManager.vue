@@ -344,6 +344,27 @@ const handleItemAction = (item: FileListItem) => {
   }
 };
 
+// 移动端列表紧凑模式 (默认开启，支持 localStorage 持久化记忆)
+const getInitialCompactMode = (): boolean => {
+  try {
+    const saved = localStorage.getItem('nexus:mobile_file_manager_compact');
+    return saved !== null ? saved === 'true' : true;
+  } catch {
+    return true;
+  }
+};
+
+const isCompactMode = ref<boolean>(getInitialCompactMode());
+
+const toggleCompactMode = () => {
+  isCompactMode.value = !isCompactMode.value;
+  try {
+    localStorage.setItem('nexus:mobile_file_manager_compact', String(isCompactMode.value));
+  } catch (err) {
+    console.warn('[FileManager] 保存移动端紧凑模式偏好失败:', err);
+  }
+};
+
 // 切换多选模式 (主要用于移动端)
 const toggleMultiSelectMode = () => {
     isMultiSelectMode.value = !isMultiSelectMode.value;
@@ -1016,6 +1037,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
       :is-mobile="props.isMobile"
       :is-multi-select-mode="isMultiSelectMode"
+      :is-compact-mode="isCompactMode"
       :show-popup-file-editor="showPopupFileEditorBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
@@ -1025,6 +1047,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       @new-folder="handleNewFolderContextMenuClick"
       @new-file="handleNewFileContextMenuClick"
       @toggle-multi-select="toggleMultiSelectMode"
+      @toggle-compact-mode="toggleCompactMode"
       @keydown-search="handleKeydown"
     />
 
@@ -1055,6 +1078,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         :search-query="searchQuery"
         :selected-items="selectedItems"
         :is-multi-select-mode="isMultiSelectMode"
+        :is-compact="isCompactMode"
         :is-connected="Boolean(props.wsDeps.isConnected.value)"
         :has-clipboard-content="clipboardState.hasContent"
         @open-parent="handleGoParent"

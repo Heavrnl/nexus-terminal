@@ -11,11 +11,13 @@ const props = defineProps<{
   showPopupFileEditor: boolean;
   searchQuery: string;
   isSearchActive: boolean;
+  isCompactMode?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
+  (e: 'toggle-compact-mode'): void;
   (e: 'cd-to-terminal'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
@@ -168,6 +170,17 @@ defineExpose({
             title="搜索文件"
           >
             <i class="fas fa-search text-xs"></i>
+          </button>
+
+          <!-- 列表紧凑模式收缩按钮 -->
+          <button
+            type="button"
+            class="w-8 h-8 rounded-xl border flex items-center justify-center text-xs active:scale-95 transition-all"
+            :class="isCompactMode ? 'bg-primary/15 border-primary/40 text-primary font-medium' : 'bg-header/60 border border-border/50 text-text-secondary hover:text-foreground'"
+            @click.stop="emit('toggle-compact-mode')"
+            :title="isCompactMode ? '当前为紧凑模式（点击展开详细）' : '当前为详细模式（点击收缩列表）'"
+          >
+            <i :class="isCompactMode ? 'fas fa-compress-alt text-xs' : 'fas fa-expand-alt text-xs'"></i>
           </button>
         </div>
 

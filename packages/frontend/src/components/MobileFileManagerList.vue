@@ -5,17 +5,23 @@ import type { FileListItem } from '../types/sftp.types';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
 
-const props = defineProps<{
-  items: FileListItem[];
-  isLoading: boolean;
-  hasParentLink: boolean;
-  currentPath: string;
-  searchQuery: string;
-  selectedItems: Set<string>;
-  isMultiSelectMode: boolean;
-  isConnected: boolean;
-  hasClipboardContent?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    items: FileListItem[];
+    isLoading: boolean;
+    hasParentLink: boolean;
+    currentPath: string;
+    searchQuery: string;
+    selectedItems: Set<string>;
+    isMultiSelectMode: boolean;
+    isConnected: boolean;
+    hasClipboardContent?: boolean;
+    isCompact?: boolean;
+  }>(),
+  {
+    isCompact: true,
+  }
+);
 
 const emit = defineEmits<{
   (e: 'open-parent'): void;
@@ -39,8 +45,8 @@ const containerRef = ref<HTMLDivElement | null>(null);
 const scrollTop = ref(0);
 const containerHeight = ref(500);
 
-// 单行卡片基准高度 (px)
-const CARD_HEIGHT = 58;
+// 单行卡片基准高度 (px)：紧凑模式 42px，详细模式 58px
+const CARD_HEIGHT = computed(() => (props.isCompact ? 42 : 58));
 const BUFFER_SIZE = 8;
 
 const updateContainerDimensions = () => {
@@ -77,6 +83,7 @@ const totalItemsCount = computed(() => props.items.length);
 const shouldUseVirtualScroll = computed(() => totalItemsCount.value > 50);
 
 const virtualRange = computed(() => {
+  const itemHeight = CARD_HEIGHT.value;
   if (!shouldUseVirtualScroll.value) {
     return {
       start: 0,
@@ -88,14 +95,14 @@ const virtualRange = computed(() => {
   }
 
   const effectiveScrollTop = Math.max(0, scrollTop.value);
-  const rawStart = Math.floor(effectiveScrollTop / CARD_HEIGHT) - BUFFER_SIZE;
+  const rawStart = Math.floor(effectiveScrollTop / itemHeight) - BUFFER_SIZE;
   const start = Math.max(0, rawStart);
-  const visibleCount = Math.ceil(containerHeight.value / CARD_HEIGHT);
-  const rawEnd = Math.floor(effectiveScrollTop / CARD_HEIGHT) + visibleCount + BUFFER_SIZE;
+  const visibleCount = Math.ceil(containerHeight.value / itemHeight);
+  const rawEnd = Math.floor(effectiveScrollTop / itemHeight) + visibleCount + BUFFER_SIZE;
   const end = Math.min(totalItemsCount.value, rawEnd);
 
-  const topPadding = start * CARD_HEIGHT;
-  const bottomPadding = Math.max(0, (totalItemsCount.value - end) * CARD_HEIGHT);
+  const topPadding = start * itemHeight;
+  const bottomPadding = Math.max(0, (totalItemsCount.value - end) * itemHeight);
 
   const visibleList: Array<{ item: FileListItem; index: number }> = [];
   for (let i = start; i < end; i++) {
@@ -196,17 +203,25 @@ const handleToggleSelectAll = () => {
       <!-- 常驻置顶：返回上一级目录卡片 (永远在首位，不受加载影响) -->
       <div
         v-if="hasParentLink"
-        class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-header/40 hover:bg-header/80 active:bg-primary/10 border border-border/40 transition-colors cursor-pointer"
+        class="w-full flex items-center border border-border/40 transition-colors cursor-pointer shrink-0"
+        :class="[
+          isCompact
+            ? 'gap-2.5 px-3 py-1.5 rounded-lg bg-header/40 hover:bg-header/80 active:bg-primary/10'
+            : 'gap-3 px-3.5 py-2.5 rounded-xl bg-header/40 hover:bg-header/80 active:bg-primary/10'
+        ]"
         @click="emit('open-parent')"
       >
-        <div class="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-          <i class="fas fa-level-up-alt text-primary text-base"></i>
+        <div
+          class="rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0"
+          :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
+        >
+          <i class="fas fa-level-up-alt text-primary" :class="isCompact ? 'text-sm' : 'text-base'"></i>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-sm font-medium text-foreground tracking-tight">
+          <div class="text-[13px] font-medium text-foreground tracking-tight leading-tight">
             {{ t('fileManager.parentDirectory', '返回上一级') }}
           </div>
-          <div class="text-[11px] text-text-secondary font-mono">..</div>
+          <div v-if="!isCompact" class="text-[11px] text-text-secondary font-mono">..</div>
         </div>
         <div class="text-text-secondary/50 text-xs">
           <i class="fas fa-chevron-up"></i>
@@ -242,8 +257,9 @@ const handleToggleSelectAll = () => {
       <div
         v-for="({ item }) in virtualRange.visibleList"
         :key="item.filename"
-        class="group w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 cursor-pointer border"
+        class="group w-full flex items-center transition-all duration-150 cursor-pointer border"
         :class="[
+          isCompact ? 'gap-2.5 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl',
           selectedItems.has(item.filename)
             ? 'bg-primary/15 border-primary/50 text-foreground shadow-2xs'
             : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground'
@@ -269,22 +285,27 @@ const handleToggleSelectAll = () => {
         </div>
 
         <!-- 文件/文件夹图标 -->
-        <div class="w-9 h-9 rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0">
+        <div
+          class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0"
+          :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
+        >
           <i
             :class="[
-              item.attrs.isDirectory ? 'fas fa-folder text-amber-400 text-lg' :
-              item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400 text-base' :
-              `${getFileIconClass(item.filename)} text-base`
+              item.attrs.isDirectory ? 'fas fa-folder text-amber-400' :
+              item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400' :
+              `${getFileIconClass(item.filename)}`,
+              isCompact ? (item.attrs.isDirectory ? 'text-base' : 'text-sm') : (item.attrs.isDirectory ? 'text-lg' : 'text-base')
             ]"
           ></i>
         </div>
 
-        <!-- 中间信息：文件名与元数据 -->
+        <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
         <div class="min-w-0 flex-1 flex flex-col justify-center">
           <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight">
             {{ item.filename }}
           </div>
-          <div class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
+          <!-- 详细模式下显示的日期、权限与类型 -->
+          <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
             <span v-if="item.attrs.isFile" class="font-mono text-text-secondary/90">
               {{ formatFileSize(item.attrs.size) }}
             </span>
@@ -305,7 +326,8 @@ const handleToggleSelectAll = () => {
         <!-- 右侧：更多操作按钮 -->
         <div class="flex items-center shrink-0">
           <button
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
+            class="rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
+            :class="isCompact ? 'w-7 h-7' : 'w-8 h-8'"
             :title="t('fileManager.moreActions', '操作菜单')"
             @click="handleMoreClick(item, $event)"
           >
