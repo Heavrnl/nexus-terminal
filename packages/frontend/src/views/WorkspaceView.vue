@@ -814,15 +814,31 @@ const closeFileManagerModal = () => {
     <!-- VNC Modal is now rendered in App.vue -->
 
     <!-- FileManager Modal Container -->
-    <div v-show="showFileManagerModal && currentFileManagerSessionId && fileManagerPropsMap.get(currentFileManagerSessionId)" class="fixed inset-0 flex items-center justify-center z-50 p-4" :style="{ backgroundColor: 'var(--overlay-bg-color)' }" @click.self="closeFileManagerModal">
-      <div class="bg-background rounded-lg shadow-xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden border border-border">
-        <div class="flex justify-between items-center p-3 border-b border-border flex-shrink-0 bg-header">
-          <h2 class="text-lg font-semibold text-foreground">{{ t('fileManager.modalTitle', '文件管理器') }} ({{ currentFileManagerSessionId ? (sessionStore.sessions.get(currentFileManagerSessionId)?.connectionName || currentFileManagerSessionId) : '未知会话' }})</h2>
-          <button @click="closeFileManagerModal" class="text-text-secondary hover:text-foreground transition-colors">
-            <i class="fas fa-times text-xl"></i>
+    <div
+      v-show="showFileManagerModal && currentFileManagerSessionId && fileManagerPropsMap.get(currentFileManagerSessionId)"
+      class="fixed inset-0 z-50 transition-colors"
+      :class="isMobile ? 'flex flex-col justify-end' : 'flex items-center justify-center p-4'"
+      :style="{ backgroundColor: 'var(--overlay-bg-color)' }"
+      @click.self="closeFileManagerModal"
+    >
+      <div
+        class="bg-background shadow-xl w-full flex flex-col overflow-hidden border border-border"
+        :class="isMobile ? 'rounded-t-2xl max-h-[92vh] h-[92vh] border-b-0 pb-[env(safe-area-inset-bottom,0px)]' : 'rounded-lg max-w-4xl h-[85vh]'"
+      >
+        <!-- 移动端顶部药丸手柄条 -->
+        <div v-if="isMobile" class="pt-2.5 pb-1 flex justify-center shrink-0 cursor-pointer" @click="closeFileManagerModal">
+          <div class="w-10 h-1 bg-border/80 rounded-full"></div>
+        </div>
+        <div class="flex justify-between items-center px-4 py-2.5 border-b border-border flex-shrink-0 bg-header">
+          <h2 class="text-sm sm:text-lg font-semibold text-foreground truncate flex items-center gap-2">
+            <i class="fas fa-folder-open text-primary text-sm sm:text-base"></i>
+            <span>{{ t('fileManager.modalTitle', '文件管理器') }} ({{ currentFileManagerSessionId ? (sessionStore.sessions.get(currentFileManagerSessionId)?.connectionName || currentFileManagerSessionId) : '未知会话' }})</span>
+          </h2>
+          <button @click="closeFileManagerModal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-header text-text-secondary hover:text-foreground transition-colors shrink-0">
+            <i class="fas fa-times text-base sm:text-xl"></i>
           </button>
         </div>
-        <div class="flex-grow overflow-hidden">
+        <div class="flex-grow overflow-hidden relative">
           <template v-for="propsData in fileManagerPropsMap.values()" :key="`${propsData.sessionId}-${isMobile}`">
             <div v-show="propsData.sessionId === currentFileManagerSessionId" class="h-full">
               <FileManager

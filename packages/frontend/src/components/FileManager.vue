@@ -22,6 +22,8 @@ import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
 import FileManagerHeader from './FileManagerHeader.vue';
 import FileManagerBreadcrumbs from './FileManagerBreadcrumbs.vue';
+import MobileFileManagerList from './MobileFileManagerList.vue';
+import MobileFileActionSheet from './MobileFileActionSheet.vue';
 import type { FileListItem } from '../types/sftp.types';
 import type { WebSocketMessage } from '../types/websocket.types';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
@@ -426,6 +428,69 @@ const {
 
 const triggerDownload = (items: FileListItem[]) => baseTriggerDownload(items, props.dbConnectionId);
 const triggerDownloadDirectory = (item: FileListItem) => baseTriggerDownloadDirectory(item, props.dbConnectionId);
+
+// --- 移动端文件专属交互与 ActionSheet 管理 ---
+const activeMobileActionItem = ref<FileListItem | null>(null);
+const showMobileActionSheet = ref(false);
+
+const handleOpenMobileActionSheet = (item: FileListItem) => {
+  activeMobileActionItem.value = item;
+  showMobileActionSheet.value = true;
+};
+
+const handleCloseMobileActionSheet = () => {
+  showMobileActionSheet.value = false;
+  activeMobileActionItem.value = null;
+};
+
+const handleMobileToggleSelect = (item: FileListItem) => {
+  if (selectedItems.value.has(item.filename)) {
+    selectedItems.value.delete(item.filename);
+  } else {
+    selectedItems.value.add(item.filename);
+  }
+};
+
+const handleMobileSelectAll = () => {
+  filteredFileList.value.forEach(item => selectedItems.value.add(item.filename));
+};
+
+const handleMobileDeselectAll = () => {
+  clearSelection();
+};
+
+const handleMobileBatchDownload = () => {
+  const items = filteredFileList.value.filter(item => selectedItems.value.has(item.filename));
+  if (items.length > 0) {
+    triggerDownload(items);
+  }
+};
+
+const handleMobileSingleCopy = (item: FileListItem) => {
+  selectedItems.value.clear();
+  selectedItems.value.add(item.filename);
+  handleCopy();
+};
+
+const handleMobileSingleCut = (item: FileListItem) => {
+  selectedItems.value.clear();
+  selectedItems.value.add(item.filename);
+  handleCut();
+};
+
+const handleMobileSingleDelete = (item: FileListItem) => {
+  selectedItems.value.clear();
+  selectedItems.value.add(item.filename);
+  handleDeleteSelectedClick();
+};
+
+const handleMobileCdTerminal = (path: string) => {
+  const command = `cd "${path}"\n`;
+  const activeSession = sessionStore.activeSession;
+  if (activeSession?.terminalManager) {
+    activeSession.terminalManager.sendData(command);
+  }
+};
 
 // --- 上下文菜单逻辑 (使用 Composable, 需要 Selection 和 Action Handlers) ---
 const {
@@ -980,6 +1045,34 @@ defineExpose({ focusSearchInput, startPathEdit });
 
     <!-- File List Viewport Wrapper (视口定位层，确保提示始终居中于可视区域) -->
     <div class="flex-grow min-h-0 relative overflow-hidden flex flex-col">
+      <!-- 移动端专属流式卡片列表 -->
+      <MobileFileManagerList
+        v-if="props.isMobile"
+        :items="filteredFileList"
+        :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
+        :has-parent-link="hasParentLink"
+        :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+        :search-query="searchQuery"
+        :selected-items="selectedItems"
+        :is-multi-select-mode="isMultiSelectMode"
+        :is-connected="Boolean(props.wsDeps.isConnected.value)"
+        :has-clipboard-content="clipboardState.hasContent"
+        @open-parent="handleGoParent"
+        @item-click="(item) => handleItemAction(item)"
+        @toggle-select="handleMobileToggleSelect"
+        @open-action-sheet="handleOpenMobileActionSheet"
+        @select-all="handleMobileSelectAll"
+        @deselect-all="handleMobileDeselectAll"
+        @batch-download="handleMobileBatchDownload"
+        @batch-copy="handleCopy"
+        @batch-cut="handleCut"
+        @batch-paste="handlePaste"
+        @batch-delete="handleDeleteSelectedClick"
+        @exit-multi-select="() => { isMultiSelectMode = false; clearSelection(); }"
+      />
+
+      <!-- 桌面端表格视图与拖拽层 -->
+      <template v-else>
       <!-- 跨窗格拖拽到当前目录的放置提示 (不受内部滚动条影响，吸附在视口正中) -->
       <div
         v-if="isContainerDropTarget"
@@ -1179,6 +1272,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         </table>
         <!-- Removed separate loading/empty divs -->
      </div>
+      </template>
     </div>
 
      <!-- 使用 FileUploadPopup 组件 -->
@@ -1206,8 +1300,26 @@ defineExpose({ focusSearchInput, startPathEdit });
      @confirm="handleModalConfirm"
    />
 
-  <!-- Favorite Paths Modal is now positioned near its button -->
+   <!-- Favorite Paths Modal is now positioned near its button -->
 
+    <!-- 移动端专属文件操作抽屉 -->
+    <MobileFileActionSheet
+      v-if="props.isMobile"
+      :is-visible="showMobileActionSheet"
+      :item="activeMobileActionItem"
+      :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+      :is-connected="Boolean(props.wsDeps.isConnected.value)"
+      @close="handleCloseMobileActionSheet"
+      @open-file="(item) => handleItemAction(item)"
+      @download="(item) => triggerDownload([item])"
+      @download-dir="(item) => triggerDownloadDirectory(item)"
+      @rename="(item) => handleRenameContextMenuClick(item)"
+      @copy="handleMobileSingleCopy"
+      @cut="handleMobileSingleCut"
+      @delete="handleMobileSingleDelete"
+      @chmod="(item) => handleChangePermissionsContextMenuClick(item)"
+      @cd-terminal="handleMobileCdTerminal"
+    />
 
 </div>
 </template>
