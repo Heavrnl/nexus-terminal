@@ -430,6 +430,7 @@ const {
   handleCopy,
   handleCut,
   handlePaste,
+  clearClipboard,
   handleCompress,
   handleDecompress,
   handleCopyPath,
@@ -487,16 +488,36 @@ const handleMobileBatchDownload = () => {
   }
 };
 
+// 移动端批量复制：执行复制后清空已选，自动退出多选模式，激活底部剪贴坞
+const handleMobileBatchCopy = () => {
+  handleCopy();
+  clearSelection();
+  isMultiSelectMode.value = false;
+};
+
+// 移动端批量剪切：执行剪切后清空已选，自动退出多选模式，激活底部剪贴坞
+const handleMobileBatchCut = () => {
+  handleCut();
+  clearSelection();
+  isMultiSelectMode.value = false;
+};
+
+// 移动端单文件复制：执行复制后清空已选，激活底部剪贴坞
 const handleMobileSingleCopy = (item: FileListItem) => {
   selectedItems.value.clear();
   selectedItems.value.add(item.filename);
   handleCopy();
+  clearSelection();
+  isMultiSelectMode.value = false;
 };
 
+// 移动端单文件剪切：执行剪切后清空已选，激活底部剪贴坞
 const handleMobileSingleCut = (item: FileListItem) => {
   selectedItems.value.clear();
   selectedItems.value.add(item.filename);
   handleCut();
+  clearSelection();
+  isMultiSelectMode.value = false;
 };
 
 const handleMobileSingleDelete = (item: FileListItem) => {
@@ -1081,6 +1102,9 @@ defineExpose({ focusSearchInput, startPathEdit });
         :is-compact="isCompactMode"
         :is-connected="Boolean(props.wsDeps.isConnected.value)"
         :has-clipboard-content="clipboardState.hasContent"
+        :clipboard-operation="clipboardState.operation"
+        :clipboard-count="clipboardSourcePaths.length"
+        :clipboard-source-base-dir="clipboardSourceBaseDir"
         @open-parent="handleGoParent"
         @item-click="(item) => handleItemAction(item)"
         @toggle-select="handleMobileToggleSelect"
@@ -1088,10 +1112,11 @@ defineExpose({ focusSearchInput, startPathEdit });
         @select-all="handleMobileSelectAll"
         @deselect-all="handleMobileDeselectAll"
         @batch-download="handleMobileBatchDownload"
-        @batch-copy="handleCopy"
-        @batch-cut="handleCut"
+        @batch-copy="handleMobileBatchCopy"
+        @batch-cut="handleMobileBatchCut"
         @batch-paste="handlePaste"
         @batch-delete="handleDeleteSelectedClick"
+        @cancel-clipboard="clearClipboard"
         @exit-multi-select="() => { isMultiSelectMode = false; clearSelection(); }"
       />
 

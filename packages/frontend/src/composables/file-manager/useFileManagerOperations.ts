@@ -190,6 +190,12 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
     }
   };
 
+  const clearClipboard = () => {
+    clipboardState.value = { hasContent: false };
+    clipboardSourcePaths.value = [];
+    clipboardSourceBaseDir.value = '';
+  };
+
   const handleCompress = (items: FileListItem[], format: CompressFormat) => {
     if (!currentSftpManager.value) return;
     currentSftpManager.value.compressItems(items, format);
@@ -300,6 +306,7 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
     handleCopy,
     handleCut,
     handlePaste,
+    clearClipboard,
     handleCompress,
     handleDecompress,
     handleCopyPath,

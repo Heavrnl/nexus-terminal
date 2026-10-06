@@ -16,10 +16,17 @@ const props = withDefaults(
     isMultiSelectMode: boolean;
     isConnected: boolean;
     hasClipboardContent?: boolean;
+    clipboardOperation?: 'copy' | 'cut' | null;
+    clipboardCount?: number;
+    clipboardSourceBaseDir?: string;
     isCompact?: boolean;
   }>(),
   {
     isCompact: true,
+    hasClipboardContent: false,
+    clipboardOperation: null,
+    clipboardCount: 0,
+    clipboardSourceBaseDir: '',
   }
 );
 
@@ -36,6 +43,7 @@ const emit = defineEmits<{
   (e: 'batch-paste'): void;
   (e: 'batch-delete'): void;
   (e: 'exit-multi-select'): void;
+  (e: 'cancel-clipboard'): void;
 }>();
 
 const { t } = useI18n();
@@ -164,6 +172,12 @@ const handleRowClick = (item: FileListItem) => {
   }
 
   if (props.isMultiSelectMode) {
+    // 多选模式下：文件夹点击主体直接进入该目录，需要选择文件夹时轻触左侧复选框
+    if (item.attrs.isDirectory) {
+      emit('item-click', item);
+      return;
+    }
+    // 普通文件点击主体即切换选择状态
     emit('toggle-select', item);
     return;
   }
@@ -270,15 +284,16 @@ const handleToggleSelectAll = () => {
         @touchend="handleTouchEnd"
         @touchcancel="handleTouchEnd"
       >
-        <!-- 多选模式下的复选框 -->
+        <!-- 多选模式下的复选框 (加大独立触控热区，防误触) -->
         <div
           v-if="isMultiSelectMode"
-          class="shrink-0 flex items-center justify-center w-5 h-5"
+          class="shrink-0 flex items-center justify-center w-8 h-8 -ml-1 cursor-pointer"
           @click.stop="emit('toggle-select', item)"
+          title="选择此项"
         >
           <div
-            class="w-4.5 h-4.5 rounded-full border flex items-center justify-center transition-colors"
-            :class="selectedItems.has(item.filename) ? 'bg-primary border-primary text-white' : 'border-border bg-header/40'"
+            class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all"
+            :class="selectedItems.has(item.filename) ? 'bg-primary border-primary text-white scale-105 shadow-xs' : 'border-border/80 bg-header/60'"
           >
             <i v-if="selectedItems.has(item.filename)" class="fas fa-check text-[10px]"></i>
           </div>
@@ -323,8 +338,18 @@ const handleToggleSelectAll = () => {
           </div>
         </div>
 
-        <!-- 右侧：更多操作按钮 -->
-        <div class="flex items-center shrink-0">
+        <!-- 右侧：进入引导或更多操作按钮 -->
+        <div class="flex items-center shrink-0 gap-1.5">
+          <!-- 多选模式下文件夹右侧显示“进入”引导标签 -->
+          <div
+            v-if="isMultiSelectMode && item.attrs.isDirectory"
+            class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[11px] font-medium shrink-0 pointer-events-none"
+          >
+            <span>进入</span>
+            <i class="fas fa-chevron-right text-[9px]"></i>
+          </div>
+
+          <!-- 更多操作按钮 -->
           <button
             class="rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-primary/20 hover:bg-header/80 transition-colors"
             :class="isCompact ? 'w-7 h-7' : 'w-8 h-8'"
@@ -384,16 +409,6 @@ const handleToggleSelectAll = () => {
             <i class="fas fa-cut text-xs"></i>
           </button>
 
-          <!-- 粘贴 (若剪贴板有内容) -->
-          <button
-            v-if="hasClipboardContent"
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-primary hover:text-primary-hover active:bg-header border border-primary/40 bg-primary/10"
-            title="粘贴到当前目录"
-            @click="emit('batch-paste')"
-          >
-            <i class="fas fa-paste text-xs"></i>
-          </button>
-
           <!-- 批量下载 -->
           <button
             class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-header border border-border/40"
@@ -421,6 +436,52 @@ const handleToggleSelectAll = () => {
             class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-header ml-1"
             title="退出多选"
             @click="emit('exit-multi-select')"
+          >
+            <i class="fas fa-times text-xs"></i>
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 底部专属剪贴板操作坞 (Floating Clipboard Dock - 复制/剪切后跨目录常驻) -->
+    <Transition name="fade-slide">
+      <div
+        v-if="hasClipboardContent && !isMultiSelectMode && selectedItems.size === 0"
+        class="absolute bottom-2.5 left-2.5 right-2.5 z-40 bg-background/95 backdrop-blur-md border border-primary/50 shadow-2xl rounded-2xl p-2.5 flex items-center justify-between gap-2"
+      >
+        <!-- 左侧状态与来源指示 -->
+        <div class="flex items-center gap-2.5 min-w-0 pl-1">
+          <div
+            class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+            :class="clipboardOperation === 'cut' ? 'bg-indigo-500/15 text-indigo-400' : 'bg-primary/15 text-primary'"
+          >
+            <i :class="clipboardOperation === 'cut' ? 'fas fa-cut' : 'fas fa-copy'" class="text-xs"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-foreground truncate leading-tight">
+              {{ clipboardOperation === 'cut' ? '已剪切' : '已复制' }} {{ clipboardCount || 1 }} 个项目
+            </div>
+            <div class="text-[10px] text-text-secondary truncate font-mono mt-0.5 leading-tight">
+              轻触「粘贴至此」完成写入
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧动作：粘贴至此与取消 -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            class="h-8 px-3 rounded-xl bg-primary text-white text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all shadow-md cursor-pointer"
+            @click="emit('batch-paste')"
+          >
+            <i class="fas fa-paste text-xs"></i>
+            <span>粘贴至此</span>
+          </button>
+          <button
+            type="button"
+            class="w-8 h-8 rounded-xl flex items-center justify-center text-text-secondary hover:text-foreground active:bg-header cursor-pointer transition-colors"
+            title="取消剪贴板"
+            @click="emit('cancel-clipboard')"
           >
             <i class="fas fa-times text-xs"></i>
           </button>
