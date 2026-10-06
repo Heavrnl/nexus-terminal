@@ -78,6 +78,7 @@
   },
   "common": {
     "confirm": "確認",
+    "confirmationTitle": "確認",
     "ok": "確認",
     "success": "成功",
     "error": "失敗",
@@ -360,6 +361,7 @@
   },
   "fileManager": {
     "modalTitle": "ファイルマネージャー",
+    "favoritePathsTooltip": "お気に入りのパス",
     "actions": {
       "cancel": "キャンセル",
       "cdToTerminal": "ターミナルのディレクトリを現在のパスに変更",

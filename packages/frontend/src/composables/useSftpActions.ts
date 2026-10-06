@@ -42,6 +42,7 @@ export interface SftpManagerInstance {
    compressItems: (items: FileListItem[], format: 'zip' | 'targz' | 'tarbz2') => Promise<void>; // Assume async
    decompressItem: (item: FileListItem) => Promise<void>; // Assume async
    joinPath: (base: string, name: string) => string;
+   listDirectoryContents: (path: string) => Promise<FileListItem[]>;
    setInitialLoadDone: (value: boolean) => void;
 
    // Cleanup function
@@ -1195,6 +1196,75 @@ export function createSftpActionsManager(
         return []; // 如果节点未找到或子节点未加载，返回空列表
     });
 
+    /**
+     * 独立拉取并预览指定路径的目录清单，优先使用内存文件树缓存，不改变当前工作路径 (currentPath)
+     */
+    const listDirectoryContents = (targetPath: string): Promise<FileListItem[]> => {
+        return new Promise((resolve, reject) => {
+            if (!isSftpReady.value) {
+                const errMsg = t('fileManager.errors.sftpNotReady');
+                return reject(new Error(errMsg));
+            }
+
+            // 1. 如果目标节点的子项已经加载过，直接返回缓存
+            const cachedNode = findNodeByPath(fileTree, targetPath);
+            if (cachedNode && cachedNode.childrenLoaded && cachedNode.children) {
+                return resolve(cachedNode.children.map(child => ({
+                    filename: child.filename,
+                    longname: child.longname,
+                    attrs: child.attrs,
+                })));
+            }
+
+            // 2. 否则发送独立 readdir 请求拉取清单
+            const requestId = generateRequestId();
+            let unregisterSuccess: (() => void) | null = null;
+            let unregisterError: (() => void) | null = null;
+
+            const timeoutId = setTimeout(() => {
+                unregisterSuccess?.();
+                unregisterError?.();
+                reject(new Error(t('fileManager.errors.loadDirectoryFailed')));
+            }, 10000);
+
+            unregisterSuccess = onMessage('sftp:readdir:success', (payload: MessagePayload, message: WebSocketMessage) => {
+                if (message.requestId === requestId) {
+                    clearTimeout(timeoutId);
+                    unregisterSuccess?.();
+                    unregisterError?.();
+
+                    const fileListPayload = (payload as FileListItem[]) || [];
+                    // 将结果缓存在文件树中
+                    const targetNode = findNodeByPath(fileTree, targetPath, true);
+                    if (targetNode) {
+                        const mergedChildren: FileTreeNode[] = fileListPayload.map(item => reactive({
+                            filename: item.filename,
+                            longname: item.longname,
+                            attrs: item.attrs,
+                            children: item.attrs.isDirectory ? null : [],
+                            childrenLoaded: !item.attrs.isDirectory,
+                        }));
+                        mergedChildren.sort((a, b) => sortFiles(a as any, b as any));
+                        targetNode.children = mergedChildren;
+                        targetNode.childrenLoaded = true;
+                    }
+
+                    resolve(fileListPayload);
+                }
+            });
+
+            unregisterError = onMessage('sftp:readdir:error', (payload: MessagePayload, message: WebSocketMessage) => {
+                if (message.requestId === requestId) {
+                    clearTimeout(timeoutId);
+                    unregisterSuccess?.();
+                    unregisterError?.();
+                    reject(new Error(typeof payload === 'string' ? payload : 'readdir error'));
+                }
+            });
+
+            sendMessage({ type: 'sftp:readdir', requestId, payload: { path: targetPath } });
+        });
+    };
 
     return {
         // State
@@ -1219,13 +1289,13 @@ export function createSftpActionsManager(
        compressItems, // +++ 暴露 compressItems +++
        decompressItem, // +++ 暴露 decompressItem +++
        joinPath, // 暴露辅助函数
+       listDirectoryContents, // +++ 暴露预览目录清单方法 +++
        // clearSftpError, // 移除 clearSftpError
 
         // Cleanup function
        currentPath: currentPathRef, // (类型已在接口中定义为 Readonly<Ref>)
        setInitialLoadDone: (value: boolean) => { initialLoadDone.value = value; }, // +++ 暴露设置初始加载状态的方法 +++
 
-        // Cleanup function
         // Cleanup function
         cleanup,
     };

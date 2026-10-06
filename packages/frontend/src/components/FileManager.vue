@@ -20,6 +20,7 @@ import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
 import FileManagerHeader from './FileManagerHeader.vue';
+import FileManagerBreadcrumbs from './FileManagerBreadcrumbs.vue';
 import type { FileListItem } from '../types/sftp.types';
 import type { WebSocketMessage } from '../types/websocket.types';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
@@ -117,6 +118,7 @@ const {
 
 // --- UI 状态 Refs ---
 const headerRef = ref<InstanceType<typeof FileManagerHeader> | null>(null);
+const breadcrumbsRef = ref<InstanceType<typeof FileManagerBreadcrumbs> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const sortKey = ref<keyof FileListItem | 'type' | 'size' | 'mtime'>('filename');
 const sortDirection = ref<'asc' | 'desc'>('asc');
@@ -747,7 +749,7 @@ watch(() => focusSwitcherStore.activateFileManagerSearchTrigger, (newValue, oldV
 // --- 监听 sessionId prop 的变化 ---
 watch(() => props.sessionId, (newSessionId, oldSessionId) => {
     if (newSessionId && newSessionId !== oldSessionId) {
-        headerRef.value?.closePathHistory();
+        breadcrumbsRef.value?.cancelEdit();
         // 1. 重新初始化 SFTP 管理器
         initializeSftpManager(newSessionId, props.instanceId);
 
@@ -877,6 +879,22 @@ const handleWheel = (event: WheelEvent) => {
     }
 };
 
+// --- 面包屑直接打开文件处理 ---
+const handleBreadcrumbOpenFile = (fileItem: FileListItem, fullPath?: string) => {
+  const filePath = fullPath || (currentSftpManager.value ? currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, fileItem.filename) : fileItem.filename);
+  const fileInfo: FileInfo = { name: fileItem.filename, fullPath: filePath };
+
+  if (settingsStore.showPopupFileEditorBoolean) {
+    fileEditorStore.triggerPopup(filePath, props.sessionId);
+  }
+
+  if (shareFileEditorTabsBoolean.value) {
+    fileEditorStore.openFile(filePath, props.sessionId, props.instanceId);
+  } else {
+    sessionStore.openFileInSession(props.sessionId, fileInfo);
+  }
+};
+
 // +++ 暴露给外部与焦点切换器的操作 +++
 const focusSearchInput = (): boolean => {
   if (props.sessionId !== sessionStore.activeSessionId) {
@@ -887,7 +905,7 @@ const focusSearchInput = (): boolean => {
 
 const startPathEdit = () => {
   if (props.sessionId === sessionStore.activeSessionId) {
-    headerRef.value?.startPathEdit();
+    breadcrumbsRef.value?.startEdit();
   }
 };
 
@@ -899,7 +917,7 @@ defineExpose({ focusSearchInput, startPathEdit });
     <!-- 隐藏文件上传 input（由 Header 或拖拽触发） -->
     <input type="file" ref="fileInputRef" @change="handleFileSelected" multiple class="hidden" />
 
-    <!-- 顶部工具栏与路径导航组件 -->
+    <!-- 顶部单行操作工具栏 -->
     <FileManagerHeader
       ref="headerRef"
       :current-path="currentSftpManager?.currentPath?.value ?? '/'"
@@ -910,16 +928,27 @@ defineExpose({ focusSearchInput, startPathEdit });
       :show-popup-file-editor="showPopupFileEditorBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
-      @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
       @cd-to-terminal="sendCdCommandToTerminal"
       @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
-      @go-parent="handleGoParent"
       @open-popup-editor="openPopupEditor"
       @upload-files="triggerFileUpload"
       @new-folder="handleNewFolderContextMenuClick"
       @new-file="handleNewFileContextMenuClick"
       @toggle-multi-select="toggleMultiSelectMode"
       @keydown-search="handleKeydown"
+    />
+
+    <!-- 第二层：全宽 Windows Explorer 风格面包屑交互地址栏 -->
+    <FileManagerBreadcrumbs
+      ref="breadcrumbsRef"
+      :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+      :is-connected="Boolean(props.wsDeps.isConnected.value)"
+      :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
+      :is-mobile="props.isMobile"
+      :sftp-manager="currentSftpManager"
+      @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
+      @open-file="handleBreadcrumbOpenFile"
+      @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
     />
 
 

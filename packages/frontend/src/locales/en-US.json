@@ -417,6 +417,7 @@
     "currentPath": "Current Path",
     "loading": "Loading directory...",
     "emptyDirectory": "Directory is empty",
+    "favoritePathsTooltip": "Favorite Paths",
     "uploadTasks": "Upload Tasks",
     "actions": {
       "refresh": "Refresh",
@@ -1100,7 +1101,8 @@
     "minimize": "Minimize",
     "send": "Send",
     "updateSuccess": "Update successful",
-    "copied": "Copied to clipboard"
+    "copied": "Copied to clipboard",
+    "confirmationTitle": "Confirmation"
   },
   "layoutConfigurator": {
     "title": "Layout Configurator",

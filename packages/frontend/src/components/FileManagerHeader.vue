@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { storeToRefs } from 'pinia';
-import PathHistoryDropdown from './PathHistoryDropdown.vue';
-import FavoritePathsModal from './FavoritePathsModal.vue';
-import { usePathHistoryStore } from '../stores/pathHistory.store';
 
 const props = defineProps<{
   currentPath: string;
@@ -20,10 +16,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
-  (e: 'navigate-to-path', path: string): void;
   (e: 'cd-to-terminal'): void;
   (e: 'refresh'): void;
-  (e: 'go-parent'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
   (e: 'new-folder'): void;
@@ -33,146 +27,10 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const pathHistoryStore = usePathHistoryStore();
-const { selectedIndex: pathSelectedIndex, filteredHistory: filteredPathHistory } = storeToRefs(pathHistoryStore);
 
-// --- 路径编辑与历史下拉状态 ---
-const isEditingPath = ref(false);
-const editablePath = ref('');
-const pathInputRef = ref<HTMLInputElement | null>(null);
-const pathInputWrapperRef = ref<HTMLDivElement | null>(null);
-const pathHistoryDropdownRef = ref<InstanceType<typeof PathHistoryDropdown> | null>(null);
-const showPathHistoryDropdown = ref(false);
-
-// --- 常用路径收藏夹状态 ---
-const showFavoritePathsModal = ref(false);
-const favoritePathsButtonRef = ref<HTMLButtonElement | null>(null);
-
-// --- 搜索输入框引用 ---
+// --- 搜索输入框引用与交互 ---
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
-watch(() => props.currentPath, (newPath) => {
-  if (!isEditingPath.value) {
-    editablePath.value = newPath;
-  }
-}, { immediate: true });
-
-// --- 路径历史操作 ---
-const openPathHistory = () => {
-  showPathHistoryDropdown.value = true;
-  if (pathHistoryStore.historyList.length === 0) {
-    pathHistoryStore.fetchHistory();
-  }
-  pathHistoryStore.setSearchTerm(editablePath.value);
-};
-
-const closePathHistory = () => {
-  showPathHistoryDropdown.value = false;
-  pathHistoryStore.resetSelection();
-};
-
-const handlePathInputFocus = () => {
-  isEditingPath.value = true;
-  if (props.isLoading || !props.isConnected) return;
-  editablePath.value = props.currentPath;
-  openPathHistory();
-  nextTick(() => {
-    pathInputRef.value?.select();
-  });
-};
-
-const handlePathInputChange = () => {
-  if (showPathHistoryDropdown.value) {
-    pathHistoryStore.setSearchTerm(editablePath.value);
-  }
-};
-
-const handlePathInputKeydown = (event: KeyboardEvent) => {
-  if (!showPathHistoryDropdown.value) {
-    if (event.key === 'Enter') {
-      confirmPathEdit();
-    } else if (event.key === 'Escape') {
-      cancelPathEdit();
-    }
-    return;
-  }
-
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault();
-      pathHistoryStore.selectNextPath();
-      break;
-    case 'ArrowUp':
-      event.preventDefault();
-      pathHistoryStore.selectPreviousPath();
-      break;
-    case 'Enter':
-      event.preventDefault();
-      if (pathSelectedIndex.value >= 0 && filteredPathHistory.value[pathSelectedIndex.value]) {
-        confirmPathNavigation(filteredPathHistory.value[pathSelectedIndex.value].path);
-      } else {
-        confirmPathEdit();
-      }
-      closePathHistory();
-      break;
-    case 'Escape':
-      event.preventDefault();
-      closePathHistory();
-      break;
-  }
-};
-
-const confirmPathNavigation = (targetPath: string) => {
-  const trimmed = targetPath.trim();
-  isEditingPath.value = false;
-  closePathHistory();
-  if (trimmed && trimmed !== props.currentPath) {
-    emit('navigate-to-path', trimmed);
-    pathHistoryStore.addPath(trimmed);
-  }
-};
-
-const confirmPathEdit = () => {
-  confirmPathNavigation(editablePath.value);
-};
-
-const cancelPathEdit = () => {
-  isEditingPath.value = false;
-  closePathHistory();
-  editablePath.value = props.currentPath;
-};
-
-const startPathEdit = () => {
-  if (props.isLoading || !props.isConnected) return;
-  editablePath.value = props.currentPath;
-  isEditingPath.value = true;
-  openPathHistory();
-  nextTick(() => {
-    pathInputRef.value?.focus();
-    pathInputRef.value?.select();
-  });
-};
-
-const handlePathInputBlur = (event: FocusEvent) => {
-  setTimeout(() => {
-    const activeEl = document.activeElement;
-    const dropdownEl = pathHistoryDropdownRef.value?.$el;
-    if (dropdownEl && dropdownEl.contains(activeEl)) {
-      return;
-    }
-    if (pathInputRef.value !== activeEl) {
-      isEditingPath.value = false;
-      closePathHistory();
-    }
-  }, 150);
-};
-
-const handlePathSelectedFromDropdown = (path: string) => {
-  editablePath.value = path;
-  confirmPathNavigation(path);
-};
-
-// --- 搜索框交互 ---
 const activateSearch = () => {
   emit('update:isSearchActive', true);
   nextTick(() => {
@@ -211,199 +69,140 @@ const focusSearchInput = (): boolean => {
 // 暴露用于外部焦点的引用和操作方法
 defineExpose({
   searchInputRef,
-  pathInputRef,
-  startPathEdit,
   focusSearchInput,
-  closePathHistory,
 });
 </script>
 
 <template>
-  <div class="flex items-center justify-between flex-wrap gap-2 p-2 bg-header flex-shrink-0">
-    <!-- 路径与导航操作包裹层 -->
-    <div class="flex items-center gap-2 flex-grow min-w-0">
-      <div class="flex items-center flex-shrink-0">
-        <!-- CD 到终端按钮 -->
-        <button
-          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-          @click.stop="emit('cd-to-terminal')"
-          :disabled="!isConnected || isEditingPath"
-          :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
-        >
-          <i class="fas fa-terminal text-base"></i>
-        </button>
-        <!-- 刷新按钮 -->
-        <button
-          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-          @click.stop="emit('refresh')"
-          :disabled="!isConnected || isEditingPath"
-          :title="t('fileManager.actions.refresh')"
-        >
-          <i class="fas fa-sync-alt text-base"></i>
-        </button>
-        <!-- 返回上一级目录按钮 -->
-        <button
-          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-          @click.stop="emit('go-parent')"
-          :disabled="!isConnected || currentPath === '/' || isEditingPath"
-          :title="t('fileManager.actions.parentDirectory')"
-        >
-          <i class="fas fa-arrow-up text-base"></i>
-        </button>
-        <!-- 搜索区域 -->
-        <div class="flex items-center flex-shrink-0">
-          <button
-            v-if="!isSearchActive"
-            class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-black/10 hover:enabled:text-foreground"
-            @click.stop="activateSearch"
-            :disabled="!isConnected"
-            :title="t('fileManager.searchPlaceholder')"
-          >
-            <i class="fas fa-search text-base"></i>
-          </button>
-          <div v-else class="relative flex items-center min-w-[150px] flex-shrink">
-            <i class="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none"></i>
-            <input
-              ref="searchInputRef"
-              type="text"
-              :value="searchQuery"
-              @input="onSearchInput"
-              :placeholder="t('fileManager.searchPlaceholder')"
-              class="flex-grow bg-background border border-border rounded pl-7 pr-2 py-1 text-foreground text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary min-w-[10px] transition-colors duration-200"
-              data-focus-id="fileManagerSearch"
-              @blur="deactivateSearch"
-              @keyup.esc="cancelSearch"
-              @keydown.up.prevent="emit('keydown-search', $event)"
-              @keydown.down.prevent="emit('keydown-search', $event)"
-              @keydown.enter.prevent="emit('keydown-search', $event)"
-            />
-          </div>
-        </div>
-        <!-- 常用路径收藏夹按钮 -->
-        <div class="relative flex-shrink-0">
-          <button
-            ref="favoritePathsButtonRef"
-            class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-200 hover:enabled:bg-black/10 hover:enabled:text-foreground"
-            @click="showFavoritePathsModal = !showFavoritePathsModal"
-          >
-            <i class="fas fa-star text-base"></i>
-          </button>
-          <FavoritePathsModal
-            :is-visible="showFavoritePathsModal"
-            :trigger-element="favoritePathsButtonRef"
-            @close="showFavoritePathsModal = false"
-            @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"
-          />
-        </div>
-      </div>
-
-      <!-- 路径文本与输入栏 -->
-      <div
-        ref="pathInputWrapperRef"
-        class="relative flex items-center bg-background border border-border rounded px-1.5 py-0.5"
-        :class="{ 'flex-grow min-w-0': isEditingPath || showPathHistoryDropdown, 'w-fit max-w-full': !isEditingPath && !showPathHistoryDropdown }"
+  <div class="h-9 px-2 bg-header flex items-center justify-between border-b border-border/50 select-none flex-shrink-0">
+    <!-- 左侧快捷导航与搜索工具 -->
+    <div class="flex items-center gap-1 min-w-0">
+      <!-- CD 到终端按钮 -->
+      <button
+        type="button"
+        class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground"
+        @click.stop="emit('cd-to-terminal')"
+        :disabled="!isConnected"
+        :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
       >
-        <span
-          v-show="!isEditingPath && !showPathHistoryDropdown"
-          @click="startPathEdit"
-          class="text-text-secondary pr-2 cursor-text truncate"
+        <i class="fas fa-terminal text-xs"></i>
+      </button>
+
+      <!-- 刷新按钮 -->
+      <button
+        type="button"
+        class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground"
+        @click.stop="emit('refresh')"
+        :disabled="!isConnected || isLoading"
+        :title="t('fileManager.actions.refresh')"
+      >
+        <i class="fas fa-sync-alt text-xs" :class="{ 'fa-spin': isLoading }"></i>
+      </button>
+
+      <!-- 分隔微线 -->
+      <div class="h-4 w-px bg-border/60 mx-1"></div>
+
+      <!-- 搜索区域 -->
+      <div class="flex items-center flex-shrink-0">
+        <button
+          v-if="!isSearchActive"
+          type="button"
+          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground"
+          @click.stop="activateSearch"
+          :disabled="!isConnected"
+          :title="t('fileManager.searchPlaceholder')"
         >
-          <strong
-            :title="t('fileManager.editPathTooltip')"
-            class="font-medium text-link px-1 rounded transition-colors duration-200"
-            :class="{
-              'hover:bg-black/5': isConnected,
-              'opacity-60 cursor-not-allowed': !isConnected
-            }"
+          <i class="fas fa-search text-xs"></i>
+        </button>
+        <div v-else class="relative flex items-center min-w-[140px] max-w-[220px]">
+          <i class="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-text-secondary/70 text-[11px] pointer-events-none"></i>
+          <input
+            ref="searchInputRef"
+            type="text"
+            :value="searchQuery"
+            @input="onSearchInput"
+            :placeholder="t('fileManager.searchPlaceholder')"
+            class="w-full bg-background border border-border/80 rounded pl-6 pr-6 py-0.5 text-foreground text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-150"
+            data-focus-id="fileManagerSearch"
+            @blur="deactivateSearch"
+            @keyup.esc="cancelSearch"
+            @keydown.up.prevent="emit('keydown-search', $event)"
+            @keydown.down.prevent="emit('keydown-search', $event)"
+            @keydown.enter.prevent="emit('keydown-search', $event)"
+          />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-[10px]"
+            @click.stop="cancelSearch"
           >
-            {{ currentPath || '/' }}
-          </strong>
-        </span>
-        <input
-          v-show="isEditingPath || showPathHistoryDropdown"
-          ref="pathInputRef"
-          type="text"
-          v-model="editablePath"
-          class="flex-grow bg-transparent text-foreground p-0.5 outline-none min-w-[100px]"
-          data-focus-id="fileManagerPathInput"
-          @focus="handlePathInputFocus"
-          @input="handlePathInputChange"
-          @keydown="handlePathInputKeydown"
-          @blur="handlePathInputBlur"
-        />
-        <PathHistoryDropdown
-          v-if="showPathHistoryDropdown"
-          ref="pathHistoryDropdownRef"
-          @pathSelected="handlePathSelectedFromDropdown"
-          @closeDropdown="closePathHistory"
-          class="left-0 right-0 top-full mt-1"
-        />
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- 主操作按钮区 -->
-    <div class="flex items-center gap-2 flex-shrink-0">
-      <!-- 打开编辑器按钮 -->
+    <!-- 右侧主要操作按钮组 -->
+    <div class="flex items-center gap-1 flex-shrink-0">
+      <!-- 移动端多选切换按钮 -->
       <button
-        v-if="showPopupFileEditor"
-        @click="emit('open-popup-editor')"
-        :disabled="!isConnected"
-        :title="t('fileManager.actions.openEditor', 'Open Popup Editor')"
-        class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-        :class="{ 'px-1.5': isMobile }"
+        v-if="isMobile"
+        type="button"
+        @click="emit('toggle-multi-select')"
+        :title="isMultiSelectMode ? t('fileManager.actions.exitMultiSelect', 'Exit Multi-Select Mode') : t('fileManager.actions.multiSelect', 'Enter Multi-Select Mode')"
+        class="flex items-center justify-center h-7 px-2 rounded text-xs transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+        :class="isMultiSelectMode ? 'bg-primary text-white font-medium' : 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'"
       >
-        <i class="far fa-edit text-sm"></i>
-        <span v-if="!isMobile">{{ t('fileManager.actions.openEditor', 'Open Editor') }}</span>
-      </button>
-
-      <!-- 上传按钮 -->
-      <button
-        @click="emit('upload-files')"
-        :disabled="!isConnected"
-        :title="t('fileManager.actions.uploadFile')"
-        class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-        :class="{ 'px-1.5': isMobile }"
-      >
-        <i class="fas fa-upload text-sm"></i>
-        <span v-if="!isMobile">{{ t('fileManager.actions.upload') }}</span>
-      </button>
-
-      <!-- 新建文件夹按钮 -->
-      <button
-        @click="emit('new-folder')"
-        :disabled="!isConnected"
-        :title="t('fileManager.actions.newFolder')"
-        class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-        :class="{ 'px-1.5': isMobile }"
-      >
-        <i class="fas fa-folder-plus text-sm"></i>
-        <span v-if="!isMobile">{{ t('fileManager.actions.newFolder') }}</span>
+        <i class="fas fa-check-square text-xs"></i>
       </button>
 
       <!-- 新建文件按钮 -->
       <button
+        type="button"
         @click="emit('new-file')"
         :disabled="!isConnected"
         :title="t('fileManager.actions.newFile')"
-        class="flex items-center gap-1 px-2.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:enabled:bg-header hover:enabled:border-primary hover:enabled:text-primary"
-        :class="{ 'px-1.5': isMobile }"
+        class="flex items-center gap-1.5 h-7 px-2 rounded text-xs text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        <i class="far fa-file-alt text-sm"></i>
-        <span v-if="!isMobile">{{ t('fileManager.actions.newFile') }}</span>
+        <i class="far fa-file-alt text-xs text-primary/80"></i>
+        <span v-if="!isMobile" class="text-[12px]">{{ t('fileManager.actions.newFile') }}</span>
       </button>
 
-      <!-- 移动端多选切换按钮 -->
+      <!-- 新建文件夹按钮 -->
       <button
-        v-if="isMobile"
-        @click="emit('toggle-multi-select')"
-        :title="isMultiSelectMode ? t('fileManager.actions.exitMultiSelect', 'Exit Multi-Select Mode') : t('fileManager.actions.multiSelect', 'Enter Multi-Select Mode')"
-        class="flex items-center gap-1 px-1.5 py-1 bg-background border border-border rounded text-foreground text-xs transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-        :class="{
-          'hover:bg-header hover:border-primary hover:text-primary': !isMultiSelectMode,
-          'bg-primary text-white border-primary': isMultiSelectMode
-        }"
+        type="button"
+        @click="emit('new-folder')"
+        :disabled="!isConnected"
+        :title="t('fileManager.actions.newFolder')"
+        class="flex items-center gap-1.5 h-7 px-2 rounded text-xs text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        <i class="fas fa-check-square text-sm"></i>
+        <i class="fas fa-folder-plus text-xs text-yellow-500/85"></i>
+        <span v-if="!isMobile" class="text-[12px]">{{ t('fileManager.actions.newFolder') }}</span>
+      </button>
+
+      <!-- 上传文件按钮 -->
+      <button
+        type="button"
+        @click="emit('upload-files')"
+        :disabled="!isConnected"
+        :title="t('fileManager.actions.uploadFile')"
+        class="flex items-center gap-1.5 h-7 px-2 rounded text-xs text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <i class="fas fa-arrow-up-from-bracket text-xs text-sky-500/85"></i>
+        <span v-if="!isMobile" class="text-[12px]">{{ t('fileManager.actions.upload') }}</span>
+      </button>
+
+      <!-- 打开独立代码编辑器按钮 -->
+      <button
+        v-if="showPopupFileEditor"
+        type="button"
+        @click="emit('open-popup-editor')"
+        :disabled="!isConnected"
+        :title="t('fileManager.actions.openEditor', 'Open Editor')"
+        class="flex items-center gap-1.5 h-7 px-2 rounded text-xs text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        <i class="far fa-edit text-xs"></i>
+        <span v-if="!isMobile" class="text-[12px]">{{ t('fileManager.actions.openEditor', 'Open Editor') }}</span>
       </button>
     </div>
   </div>

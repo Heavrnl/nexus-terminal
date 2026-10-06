@@ -418,6 +418,7 @@
     "currentPath": "当前路径",
     "loading": "正在加载目录...",
     "emptyDirectory": "目录为空",
+    "favoritePathsTooltip": "常用路径收藏夹",
     "uploadTasks": "上传任务",
     "actions": {
       "refresh": "刷新",
@@ -1097,6 +1098,7 @@
     "minimize": "最小化",
     "send": "发送",
     "copied": "已复制到剪贴板",
+    "confirmationTitle": "确认操作",
     "ok": "确认",
     "success": "成功",
     "error": "失败",
