@@ -441,6 +441,7 @@
       "refresh": "刷新",
       "parentDirectory": "上一级",
       "rootDirectory": "根目录",
+      "alreadyRoot": "已是根目录",
       "uploadFile": "上传文件",
       "upload": "上传",
       "newFolder": "新建文件夹",

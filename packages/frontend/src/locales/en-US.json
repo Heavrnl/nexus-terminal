@@ -440,6 +440,7 @@
       "refresh": "Refresh",
       "parentDirectory": "Parent Directory",
       "rootDirectory": "Root Directory",
+      "alreadyRoot": "Already at root directory",
       "uploadFile": "Upload File",
       "upload": "Upload",
       "newFolder": "New Folder",
