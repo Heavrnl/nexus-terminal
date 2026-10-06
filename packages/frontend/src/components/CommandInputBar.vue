@@ -234,8 +234,80 @@ watch(() => focusSwitcherStore.activateTerminalSearchTrigger, () => {
     }
 });
 
+// --- 移动端多行命令输入状态 ---
+const isMobileMultiLineOpen = ref(false);
+const mobileMultiLineContent = ref('');
+const mobileTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const mobileDrafts: Record<string, string> = {};
+
+// 切换移动端多行输入框展开/收回
+const toggleMobileMultiLine = () => {
+  isMobileMultiLineOpen.value = !isMobileMultiLineOpen.value;
+  if (isMobileMultiLineOpen.value) {
+    nextTick(() => {
+      mobileTextareaRef.value?.focus();
+    });
+  }
+};
+
+// 监听会话变更，同步移动端多行命令草稿
+watch(activeSessionId, (newId, oldId) => {
+  if (oldId) {
+    mobileDrafts[oldId] = mobileMultiLineContent.value;
+  }
+  if (newId) {
+    mobileMultiLineContent.value = mobileDrafts[newId] || '';
+  } else {
+    mobileMultiLineContent.value = '';
+  }
+});
+
+// 发送移动端多行命令
+const handleSendMobileMultiLineCommand = () => {
+  const raw = mobileMultiLineContent.value;
+  if (!raw.trim()) return;
+
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  let commandToSend = lines.join('\r');
+  if (commandToSend.endsWith('\r')) {
+    commandToSend = commandToSend.slice(0, -1);
+  }
+
+  emitWorkspaceEvent('terminal:sendCommand', {
+    command: commandToSend,
+    sessionId: activeSessionId.value ?? undefined
+  });
+
+  if (activeSessionId.value) {
+    commandHistoryStore.addCommand(raw.trim());
+  }
+
+  mobileMultiLineContent.value = '';
+  if (activeSessionId.value) {
+    mobileDrafts[activeSessionId.value] = '';
+  }
+};
+
+// 移动端文本域快捷键支持
+const handleMobileTextareaKeydown = (event: KeyboardEvent) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    handleSendMobileMultiLineCommand();
+  }
+};
+
 // --- Focus Actions ---
 const focusCommandInput = (): boolean => {
+  if (props.isMobile) {
+    if (!isMobileMultiLineOpen.value) {
+      isMobileMultiLineOpen.value = true;
+    }
+    nextTick(() => {
+      mobileTextareaRef.value?.focus();
+    });
+    return true;
+  }
   if (commandInputRef.value) {
     commandInputRef.value.focus();
     return true;
@@ -331,8 +403,8 @@ const handleQuickCommandExecute = (command: string) => {
 </script>
 
 <template>
-  <div :class="$attrs.class" class="flex items-center py-1.5 bg-background"> <!-- Bind $attrs.class, removed px-2 and gap-1 -->
-    <div class="flex-grow flex items-center bg-transparent relative gap-1 px-2 w-full"> <!-- Added px-2 here, ensure full width -->
+  <div :class="$attrs.class" class="flex flex-col bg-background border-t border-border/30">
+    <div class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full">
       <!-- Clear Terminal Button -->
       <button
         @click="emitWorkspaceEvent('terminal:clear')"
@@ -359,17 +431,16 @@ const handleQuickCommandExecute = (command: string) => {
       >
         <i class="fas fa-keyboard text-base"></i> <!-- Removed text-primary -->
       </button>
-      <!-- Command Input (Hide on mobile when searching) -->
+      <!-- Desktop: Command Input -->
       <input
-        v-if="!props.isMobile || !isSearching"
+        v-if="!props.isMobile"
         type="text"
         v-model="currentSessionCommandInput"
         :placeholder="t('commandInputBar.placeholder')"
         class="flex-grow min-w-0 px-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300 ease-in-out"
         :class="{
-          'basis-3/4': !props.isMobile && isSearching,      // Desktop searching: 3/4 width
-          'basis-full': !props.isMobile && !isSearching,   // Desktop non-searching: full width
-          'w-0': props.isMobile  // Mobile non-searching: adjust width to fit
+          'basis-3/4': isSearching,
+          'basis-full': !isSearching,
         }"
         ref="commandInputRef"
         data-focus-id="commandInput"
@@ -377,14 +448,24 @@ const handleQuickCommandExecute = (command: string) => {
         @blur="handleCommandInputBlur"
       />
 
-      <!-- Search Input (Show when searching, adjust width on mobile) -->
+      <!-- Mobile: 命令输入按钮 (仅图标，点击展开/收回多行输入框) -->
+      <button
+        v-else
+        @click="toggleMobileMultiLine"
+        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :class="isMobileMultiLineOpen ? 'border-primary bg-primary/10 text-primary' : ''"
+        :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
+      >
+        <i class="fas fa-terminal text-base"></i>
+      </button>
+
+      <!-- Desktop: Search Input (Show when searching) -->
       <input
-        v-if="isSearching"
+        v-if="isSearching && !props.isMobile"
         type="text"
         v-model="searchTerm"
         :placeholder="t('commandInputBar.searchPlaceholder')"
-        class="flex-grow min-w-0 px-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300 ease-in-out"
-        :class="{ 'basis-1/4': !props.isMobile, 'w-0': props.isMobile }"
+        class="flex-grow min-w-0 px-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300 ease-in-out basis-1/4"
         data-focus-id="terminalSearch"
         @keydown.enter.prevent="findNext"
         @keydown.shift.enter.prevent="findPrevious"
@@ -462,6 +543,45 @@ const handleQuickCommandExecute = (command: string) => {
       </div>
     </div>
 
+    <!-- 移动端多行命令输入区域 (点击按钮展开/再次点击收回) -->
+    <div
+      v-if="props.isMobile && isMobileMultiLineOpen"
+      class="flex flex-col gap-2 p-2 bg-background border-t border-border/50 shadow-inner"
+    >
+      <!-- 多行输入文本框 -->
+      <div class="relative w-full">
+        <textarea
+          ref="mobileTextareaRef"
+          v-model="mobileMultiLineContent"
+          :placeholder="t('commandInputBar.multiLineTextareaPlaceholder', '在此输入单行或多行命令（支持粘贴脚本，逐行执行）...')"
+          rows="3"
+          class="w-full px-3 py-2 text-sm bg-input text-foreground border border-border/60 rounded-lg font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary shadow-inner placeholder:text-text-secondary/60 leading-relaxed"
+          @keydown="handleMobileTextareaKeydown"
+        ></textarea>
+        <!-- 文本框内右上角快速清空按钮 -->
+        <button
+          v-if="mobileMultiLineContent"
+          @click="mobileMultiLineContent = ''"
+          class="absolute right-2 top-2 w-6 h-6 flex items-center justify-center text-text-secondary/60 hover:text-text-secondary hover:bg-border/40 rounded transition-colors"
+          :title="t('common.clear', '清空')"
+        >
+          <i class="fas fa-times text-xs"></i>
+        </button>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="flex items-center justify-end">
+        <!-- 发送按钮 -->
+        <button
+          @click="handleSendMobileMultiLineCommand"
+          :disabled="!mobileMultiLineContent.trim()"
+          class="px-4 py-1.5 text-xs font-medium rounded-md bg-button text-button-text hover:bg-button-hover active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center gap-1.5 shadow-sm"
+        >
+          <i class="fas fa-paper-plane text-xs"></i>
+          <span>{{ t('commandInputBar.send', '发送') }}</span>
+        </button>
+      </div>
+    </div>
   </div>
   <!-- +++ Quick Commands Modal Instance +++ -->
   <QuickCommandsModal

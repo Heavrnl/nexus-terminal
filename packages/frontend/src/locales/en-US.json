@@ -1266,7 +1266,15 @@
     "findPrevious": "Find previous",
     "findNext": "Find next",
     "configureFocusSwitch": "Configure Focus Switcher",
-    "clearTerminal": "Clear Terminal"
+    "clearTerminal": "Clear Terminal",
+    "openMultiLine": "Expand multi-line command input",
+    "closeMultiLine": "Collapse multi-line command input",
+    "mobileButtonPlaceholder": "Enter command...",
+    "multiLineOpened": "Collapse multi-line",
+    "multiLineTextareaPlaceholder": "Enter single or multi-line commands here (scripts will execute line by line)...",
+    "multiLineHint": "Press Enter for new line, tap Send to execute",
+    "collapse": "Collapse",
+    "send": "Send"
   },
   "layout": {
     "loading": "Loading...",

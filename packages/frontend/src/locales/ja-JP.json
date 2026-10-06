@@ -74,7 +74,15 @@
     "openSearch": "ターミナル検索を開く",
     "placeholder": "ここにコマンドを入力して Enter キーを押すと、ターミナルに送信されます...",
     "searchPlaceholder": "ターミナル内で検索...",
-    "clearTerminal": "ターミナルをクリア"
+    "clearTerminal": "ターミナルをクリア",
+    "openMultiLine": "複数行コマンド入力を展開",
+    "closeMultiLine": "複数行コマンド入力を折りたたむ",
+    "mobileButtonPlaceholder": "コマンドを入力...",
+    "multiLineOpened": "複数行を折りたたむ",
+    "multiLineTextareaPlaceholder": "ここに単一行または複数行のコマンドを入力（スクリプトの貼り付けに対応、1行ずつ実行）...",
+    "multiLineHint": "Enterで改行、送信をタップして実行",
+    "collapse": "折りたたむ",
+    "send": "送信"
   },
   "common": {
     "confirm": "確認",

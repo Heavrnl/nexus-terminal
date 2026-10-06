@@ -1270,7 +1270,15 @@
     "findPrevious": "查找上一个",
     "findNext": "查找下一个",
     "configureFocusSwitch": "配置焦点切换器",
-    "clearTerminal": "清空终端"
+    "clearTerminal": "清空终端",
+    "openMultiLine": "展开多行命令输入框",
+    "closeMultiLine": "收起多行命令输入框",
+    "mobileButtonPlaceholder": "输入命令...",
+    "multiLineOpened": "收起多行命令",
+    "multiLineTextareaPlaceholder": "在此输入单行或多行命令（支持粘贴脚本，逐行执行）...",
+    "multiLineHint": "换行按回车，点击发送逐行执行",
+    "collapse": "收起",
+    "send": "发送"
   },
   "layout": {
     "loading": "加载中...",
