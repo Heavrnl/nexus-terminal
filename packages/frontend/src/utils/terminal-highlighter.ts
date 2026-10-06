@@ -106,7 +106,6 @@ export function getBuiltinDefaultPatterns(type?: string): string[] {
     case 'date':
       return [
         '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
-        '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
       ];
     case 'ip':
       return [
@@ -173,7 +172,7 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
             console.warn(`[Highlighter] 正则匹配项编译失败 (${group.name}: ${item.pattern}):`, e);
           }
         } else if (item.type === 'builtin' && item.builtinType) {
-          const patterns = getBuiltinDefaultPatterns(item.builtinType);
+          const patterns = item.pattern ? [item.pattern] : getBuiltinDefaultPatterns(item.builtinType);
           const spec = SPECIFICITY_WEIGHTS[item.builtinType] || SPECIFICITY_WEIGHTS.regex;
           for (const p of patterns) {
             try {

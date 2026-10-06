@@ -48,10 +48,10 @@ describe('Terminal Highlighter (工业级 Span 仲裁渲染引擎)', () => {
       expect(output).toContain('\x1b[38;2;148;163;184m2026-10-06 19:36:39+0800\x1b[39m');
     });
 
-    it('应匹配 Syslog 传统格式: Oct  6 19:36:39 server sshd[1234]: Accepted connection', () => {
+    it('默认单条时间戳规则不应误伤非 ISO 的 Syslog 文本，但能正确识别其中的 IP', () => {
       const input = 'Oct  6 19:36:39 server sshd[1234]: Accepted connection from 192.168.1.2';
       const output = highlightTerminalString(input, matchers);
-      expect(output).toContain('\x1b[38;2;148;163;184mOct  6 19:36:39\x1b[39m');
+      expect(output).not.toContain('\x1b[38;2;148;163;184mOct  6 19:36:39\x1b[39m');
       // 同时应匹配 IP
       expect(output).toContain('\x1b[38;2;192;132;252m192.168.1.2\x1b[39m');
     });

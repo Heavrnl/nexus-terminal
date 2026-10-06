@@ -35,7 +35,22 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
           enabled.value = parsed.enabled;
         }
         if (Array.isArray(parsed.groups) && parsed.groups.length > 0) {
-          groups.value = parsed.groups;
+          groups.value = parsed.groups.map((g) => {
+            const cleanedGroup = {
+              ...g,
+              name: g.name.replace(/\s*\([^)]*\)$/, ''),
+            };
+            if (cleanedGroup.id === 'group_date') {
+              if (Array.isArray(cleanedGroup.matchers)) {
+                cleanedGroup.matchers = cleanedGroup.matchers.filter((m) => m.id !== 'date_syslog');
+              }
+              if (Array.isArray(cleanedGroup.patterns)) {
+                cleanedGroup.patterns = cleanedGroup.patterns.filter((p) => !p.includes('Jan|Feb'));
+              }
+              cleanedGroup.description = '自动识别标准 ISO8601、点号/逗号毫秒以及带时区偏移的时间格式';
+            }
+            return cleanedGroup;
+          });
           return;
         }
       }
@@ -182,8 +197,8 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
   };
 
   const deleteGroup = (id: string) => {
-    // 内置分组保护，只允许删除用户自建分组
-    groups.value = groups.value.filter((g) => g.id !== id || g.isBuiltin);
+    // 允许删除任意分组（包括默认预设项，误删可通过恢复预设还原）
+    groups.value = groups.value.filter((g) => g.id !== id);
   };
 
   const resetToDefault = () => {

@@ -29,6 +29,7 @@
   --color-split-line-hover: var(--split-line-hover-color);
   --color-input-focus-border: var(--input-focus-border-color);
   --color-overlay: var(--overlay-bg-color);
+  --color-input: var(--app-bg-color);
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
@@ -233,6 +234,17 @@ input:focus, textarea:focus, select:focus {
     border-color: var(--input-focus-border-color) !important; /* Use new variable, !important might be needed depending on specificity */
     outline: 0;
     box-shadow: 0 0 0 3px rgba(var(--input-focus-glow-rgb), 0.2) !important; /* Use new variable, !important might be needed */
+}
+
+/* 全局 select 与 option 背景色与文字色适配自定义主题 */
+select {
+    background-color: var(--app-bg-color);
+    color: var(--text-color);
+}
+
+select option {
+    background-color: var(--app-bg-color);
+    color: var(--text-color);
 }
 
 /* Ensure icons inside primary buttons are white */

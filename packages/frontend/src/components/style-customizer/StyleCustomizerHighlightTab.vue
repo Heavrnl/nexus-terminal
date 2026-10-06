@@ -30,13 +30,13 @@ const PALETTE_COLORS = [
 
 // 内置类型候选项
 const BUILTIN_TYPE_OPTIONS: { value: BuiltinMatcherType; label: string }[] = [
-  { value: 'date', label: '🕒 时间戳 (ISO / 逗号点号毫秒 / Syslog)' },
-  { value: 'error', label: '🔴 错误状态与非零退出码 (ERROR / FATAL / exit code)' },
-  { value: 'warning', label: '🟡 警告与超时状态 (WARN / timeout / retry)' },
-  { value: 'success', label: '🟢 成功与健康运行 (Up / healthy / active / OK)' },
-  { value: 'info', label: '🔵 日志级别 (INFO / DEBUG / TRACE)' },
-  { value: 'ip', label: '🟣 网络 IP 地址与端口 (IPv4 / Port)' },
-  { value: 'url', label: '🌐 Web 链接 (HTTP / HTTPS / URLs)' },
+  { value: 'date', label: '🕒 时间戳' },
+  { value: 'error', label: '🔴 错误与异常' },
+  { value: 'warning', label: '🟡 警告与告警' },
+  { value: 'success', label: '🟢 成功与运行状态' },
+  { value: 'info', label: '🔵 日志级别' },
+  { value: 'ip', label: '🟣 IP 地址与端口' },
+  { value: 'url', label: '🌐 Web 链接' },
 ];
 
 // 实时预览样本定义
@@ -416,9 +416,9 @@ const handleResetToDefault = () => {
       </div>
     </div>
 
-    <!-- 3. 高亮语义分组卡片列表 -->
-    <div class="border border-border rounded-lg overflow-hidden bg-background shadow-2xs">
-      <div class="px-3.5 py-2.5 border-b border-border bg-header/30 flex items-center justify-between">
+    <!-- 3. 高亮语义分组卡片列表 (独立胶囊卡片流) -->
+    <div class="space-y-3">
+      <div class="flex items-center justify-between px-1">
         <span class="text-sm font-semibold text-foreground">
           {{ t('styleCustomizer.groupsList', '高亮语义分组') }}
           <span class="font-normal text-text-secondary text-xs">({{ highlightStore.groups.length }})</span>
@@ -428,13 +428,13 @@ const handleResetToDefault = () => {
         </span>
       </div>
 
-      <div class="divide-y divide-border/30">
+      <div class="space-y-2.5">
         <div
           v-for="(group, index) in highlightStore.groups"
           :key="group.id"
-          class="p-3.5 hover:bg-muted/15 transition-colors space-y-2.5"
+          class="p-3.5 bg-background border border-border/80 hover:border-primary/50 rounded-xl shadow-2xs hover:shadow-xs transition-all space-y-2.5"
         >
-          <!-- 卡片头部：开关 + 标题 + 徽章 + 样式属性与操作按钮 -->
+          <!-- 胶囊卡片头部：开关 + 标题 + 规则统计 + 样式属性与操作按钮 -->
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0 flex-1">
               <ToggleSwitch
@@ -448,20 +448,6 @@ const handleResetToDefault = () => {
                 :class="{ 'opacity-50 line-through': !group.enabled }"
               >
                 {{ group.name }}
-              </span>
-
-              <!-- 内置 / 自定义徽标 -->
-              <span
-                v-if="group.isBuiltin"
-                class="px-1.5 py-0.5 text-[10px] rounded bg-muted text-text-secondary font-mono border border-border/40 shrink-0"
-              >
-                内置
-              </span>
-              <span
-                v-else
-                class="px-1.5 py-0.5 text-[10px] rounded bg-primary/10 text-primary font-mono border border-primary/20 shrink-0"
-              >
-                自定义
               </span>
 
               <!-- 规则统计标记 -->
@@ -541,9 +527,8 @@ const handleResetToDefault = () => {
                 <i class="fas fa-pen text-xs"></i>
               </button>
 
-              <!-- 删除 (仅自建分组允许删除，内置受保护) -->
+              <!-- 删除 (允许删除任意分组) -->
               <button
-                v-if="!group.isBuiltin"
                 @click="highlightStore.deleteGroup(group.id)"
                 class="w-7 h-7 rounded-md border border-border bg-background hover:bg-red-500/10 text-text-secondary hover:text-red-500 transition-colors flex items-center justify-center"
                 title="删除分组"
@@ -623,7 +608,7 @@ const handleResetToDefault = () => {
                 type="text"
                 v-model="groupForm.name"
                 placeholder="例如：Docker 容器 / 核心告警"
-                class="w-full px-3 py-1.5 text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                class="w-full px-3 py-1.5 text-sm rounded-lg border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
               />
             </div>
             <div>
@@ -634,7 +619,7 @@ const handleResetToDefault = () => {
                 type="text"
                 v-model="groupForm.description"
                 placeholder="说明该分组的匹配用途"
-                class="w-full px-3 py-1.5 text-sm rounded-lg border border-border bg-input text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                class="w-full px-3 py-1.5 text-sm rounded-lg border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
               />
             </div>
           </div>
@@ -650,12 +635,12 @@ const handleResetToDefault = () => {
                 <input
                   type="color"
                   v-model="groupForm.color"
-                  class="w-7 h-7 rounded border border-border cursor-pointer p-0 bg-input shrink-0"
+                  class="w-7 h-7 rounded border border-border cursor-pointer p-0 bg-background shrink-0"
                 />
                 <input
                   type="text"
                   v-model="groupForm.color"
-                  class="w-20 px-2 py-1 text-xs font-mono uppercase rounded border border-border bg-input text-foreground outline-none"
+                  class="w-20 px-2 py-1 text-xs font-mono uppercase rounded border border-border bg-background text-foreground outline-none"
                 />
                 <div class="flex items-center gap-1">
                   <button
@@ -767,9 +752,15 @@ const handleResetToDefault = () => {
                 <div v-if="item.type === 'builtin'" class="flex-1 min-w-0">
                   <select
                     v-model="item.builtinType"
-                    class="w-full px-2.5 py-1 text-xs rounded border border-border bg-input text-foreground outline-none"
+                    class="w-full px-2.5 py-1 text-xs border border-border rounded-md shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
+                    style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
                   >
-                    <option v-for="opt in BUILTIN_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
+                    <option
+                      v-for="opt in BUILTIN_TYPE_OPTIONS"
+                      :key="opt.value"
+                      :value="opt.value"
+                      class="bg-background text-foreground"
+                    >
                       {{ opt.label }}
                     </option>
                   </select>
@@ -781,7 +772,7 @@ const handleResetToDefault = () => {
                     type="text"
                     v-model="item.keyword"
                     placeholder="输入匹配词，如 container"
-                    class="flex-1 px-2.5 py-1 text-xs rounded border border-border bg-input text-foreground outline-none"
+                    class="flex-1 px-2.5 py-1 text-xs rounded border border-border bg-background text-foreground outline-none"
                   />
                   <label class="flex items-center gap-1 cursor-pointer shrink-0 text-text-secondary hover:text-foreground">
                     <input type="checkbox" v-model="item.wholeWord" class="rounded border-border text-primary text-[10px]" />
@@ -802,7 +793,7 @@ const handleResetToDefault = () => {
                       v-model="item.pattern"
                       @input="validateRegexItem(item)"
                       placeholder="输入正则表达式，如 exit code \d+"
-                      class="flex-1 px-2 py-1 font-mono text-xs rounded border border-border bg-input text-foreground outline-none"
+                      class="flex-1 px-2 py-1 font-mono text-xs rounded border border-border bg-background text-foreground outline-none"
                     />
                     <span class="text-primary font-mono text-xs select-none">/g</span>
                   </div>

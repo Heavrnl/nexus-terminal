@@ -7,8 +7,8 @@ import type { TerminalHighlightGroup } from '../types/terminal-highlight.types';
 export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   {
     id: 'group_date',
-    name: '时间戳 (Date & Time)',
-    description: '自动识别标准 ISO8601、点号/逗号毫秒、带时区偏移以及 Syslog 传统格式日志时间',
+    name: '时间戳',
+    description: '自动识别标准 ISO8601、点号/逗号毫秒以及带时区偏移的时间格式',
     isBuiltin: true,
     enabled: true,
     color: '#94a3b8', // 石板灰蓝
@@ -22,22 +22,15 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
         builtinType: 'date',
         pattern: '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
       },
-      {
-        id: 'date_syslog',
-        type: 'builtin',
-        builtinType: 'date',
-        pattern: '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
-      },
     ],
     keywords: [],
     patterns: [
       '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
-      '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
     ],
   },
   {
     id: 'group_error',
-    name: '错误与异常 (Error / Failure)',
+    name: '错误与异常',
     description: '匹配常见错误日志级别、服务挂掉、拒绝连接与非零退出码状态',
     isBuiltin: true,
     enabled: true,
@@ -64,7 +57,7 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   },
   {
     id: 'group_warning',
-    name: '警告与告警 (Warning / Alert)',
+    name: '警告与告警',
     description: '匹配警告日志级别、超时、重试、性能降级与挂起状态',
     isBuiltin: true,
     enabled: true,
@@ -87,7 +80,7 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   },
   {
     id: 'group_success',
-    name: '成功与运行状态 (Success / Running)',
+    name: '成功与运行状态',
     description: '匹配 Docker 容器正常运行、服务健康、测试通过或连接成功状态',
     isBuiltin: true,
     enabled: true,
@@ -109,7 +102,7 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   },
   {
     id: 'group_info',
-    name: '日志级别 (Info / Debug)',
+    name: '日志级别',
     description: '匹配常规信息通知、调试以及链路追踪输出',
     isBuiltin: true,
     enabled: true,
@@ -129,7 +122,7 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   },
   {
     id: 'group_ip',
-    name: 'IP 地址与端口 (Network IP)',
+    name: 'IP 地址与端口',
     description: '匹配标准 IPv4 主机地址以及端口号 (如 192.168.1.1:8080)',
     isBuiltin: true,
     enabled: true,
@@ -152,7 +145,7 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   },
   {
     id: 'group_url',
-    name: 'Web 链接 (URLs)',
+    name: 'Web 链接',
     description: '匹配标准 HTTP / HTTPS 网址协议与外部超链接',
     isBuiltin: true,
     enabled: true,
