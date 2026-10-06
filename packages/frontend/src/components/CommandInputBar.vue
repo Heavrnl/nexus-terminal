@@ -11,6 +11,7 @@ import QuickCommandsModal from './QuickCommandsModal.vue';
 import SuspendedSshSessionsModal from './SuspendedSshSessionsModal.vue'; 
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import MultiLineCommandInput from './MultiLineCommandInput.vue';
 
 
 defineOptions({ inheritAttrs: false });
@@ -236,65 +237,10 @@ watch(() => focusSwitcherStore.activateTerminalSearchTrigger, () => {
 
 // --- 移动端多行命令输入状态 ---
 const isMobileMultiLineOpen = ref(false);
-const mobileMultiLineContent = ref('');
-const mobileTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const mobileDrafts: Record<string, string> = {};
 
 // 切换移动端多行输入框展开/收回
 const toggleMobileMultiLine = () => {
   isMobileMultiLineOpen.value = !isMobileMultiLineOpen.value;
-  if (isMobileMultiLineOpen.value) {
-    nextTick(() => {
-      mobileTextareaRef.value?.focus();
-    });
-  }
-};
-
-// 监听会话变更，同步移动端多行命令草稿
-watch(activeSessionId, (newId, oldId) => {
-  if (oldId) {
-    mobileDrafts[oldId] = mobileMultiLineContent.value;
-  }
-  if (newId) {
-    mobileMultiLineContent.value = mobileDrafts[newId] || '';
-  } else {
-    mobileMultiLineContent.value = '';
-  }
-});
-
-// 发送移动端多行命令
-const handleSendMobileMultiLineCommand = () => {
-  const raw = mobileMultiLineContent.value;
-  if (!raw.trim()) return;
-
-  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalized.split('\n');
-  let commandToSend = lines.join('\r');
-  if (commandToSend.endsWith('\r')) {
-    commandToSend = commandToSend.slice(0, -1);
-  }
-
-  emitWorkspaceEvent('terminal:sendCommand', {
-    command: commandToSend,
-    sessionId: activeSessionId.value ?? undefined
-  });
-
-  if (activeSessionId.value) {
-    commandHistoryStore.addCommand(raw.trim());
-  }
-
-  mobileMultiLineContent.value = '';
-  if (activeSessionId.value) {
-    mobileDrafts[activeSessionId.value] = '';
-  }
-};
-
-// 移动端文本域快捷键支持
-const handleMobileTextareaKeydown = (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault();
-    handleSendMobileMultiLineCommand();
-  }
 };
 
 // --- Focus Actions ---
@@ -303,9 +249,6 @@ const focusCommandInput = (): boolean => {
     if (!isMobileMultiLineOpen.value) {
       isMobileMultiLineOpen.value = true;
     }
-    nextTick(() => {
-      mobileTextareaRef.value?.focus();
-    });
     return true;
   }
   if (commandInputRef.value) {
@@ -543,44 +486,12 @@ const handleQuickCommandExecute = (command: string) => {
       </div>
     </div>
 
-    <!-- 移动端多行命令输入区域 (点击按钮展开/再次点击收回) -->
+    <!-- 移动端多行命令输入组件展开区域 (点击上方图标展开/再次点击收回) -->
     <div
       v-if="props.isMobile && isMobileMultiLineOpen"
-      class="flex flex-col gap-2 p-2 bg-background border-t border-border/50 shadow-inner"
+      class="w-full h-48 p-1.5 bg-background border-t border-border/50 shrink-0"
     >
-      <!-- 多行输入文本框 -->
-      <div class="relative w-full">
-        <textarea
-          ref="mobileTextareaRef"
-          v-model="mobileMultiLineContent"
-          :placeholder="t('commandInputBar.multiLineTextareaPlaceholder', '在此输入单行或多行命令（支持粘贴脚本，逐行执行）...')"
-          rows="3"
-          class="w-full px-3 py-2 text-sm bg-input text-foreground border border-border/60 rounded-lg font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary shadow-inner placeholder:text-text-secondary/60 leading-relaxed"
-          @keydown="handleMobileTextareaKeydown"
-        ></textarea>
-        <!-- 文本框内右上角快速清空按钮 -->
-        <button
-          v-if="mobileMultiLineContent"
-          @click="mobileMultiLineContent = ''"
-          class="absolute right-2 top-2 w-6 h-6 flex items-center justify-center text-text-secondary/60 hover:text-text-secondary hover:bg-border/40 rounded transition-colors"
-          :title="t('common.clear', '清空')"
-        >
-          <i class="fas fa-times text-xs"></i>
-        </button>
-      </div>
-
-      <!-- 底部操作栏 -->
-      <div class="flex items-center justify-end">
-        <!-- 发送按钮 -->
-        <button
-          @click="handleSendMobileMultiLineCommand"
-          :disabled="!mobileMultiLineContent.trim()"
-          class="px-4 py-1.5 text-xs font-medium rounded-md bg-button text-button-text hover:bg-button-hover active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 flex items-center gap-1.5 shadow-sm"
-        >
-          <i class="fas fa-paper-plane text-xs"></i>
-          <span>{{ t('commandInputBar.send', '发送') }}</span>
-        </button>
-      </div>
+      <MultiLineCommandInput class="h-full w-full" />
     </div>
   </div>
   <!-- +++ Quick Commands Modal Instance +++ -->
