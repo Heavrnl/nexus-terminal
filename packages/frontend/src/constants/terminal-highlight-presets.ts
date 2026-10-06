@@ -2,24 +2,27 @@ import type { TerminalHighlightGroup } from '../types/terminal-highlight.types';
 
 /**
  * 经典终端高亮语义分组预设列表 (内置语义分类卡片)
+ * 每个分组都可以自由组合：内置分类、关键词列表与正则表达式
  */
 export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
   {
     id: 'group_date',
     name: '时间戳 (Date & Time)',
-    description: '自动识别标准 ISO8601、带逗号/点号毫秒、Syslog 以及方括号等日志时间格式',
+    description: '自动识别标准 ISO8601、点号/逗号毫秒、带时区偏移以及 Syslog 传统格式日志时间',
     isBuiltin: true,
     enabled: true,
     color: '#94a3b8', // 石板灰蓝
     bold: false,
     underline: false,
     priority: 3, // 高优先级锁定
-    matchType: 'builtin',
     builtinType: 'date',
     keywords: [],
+    keywordWholeWord: true,
     patterns: [
+      // ISO 8601 及常见日期时间 (支持点号与逗号毫秒、Z 以及带或不带冒号的时区偏移)
       '\\b\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b',
-      '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}\\b',
+      // Syslog 传统日期时间格式 (例如: Oct  6 19:36:39 或 Oct 16 19:36:39.123)
+      '\\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d+)?\\b',
     ],
   },
   {
@@ -32,8 +35,9 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    matchType: 'builtin',
     builtinType: 'error',
+    keywordWholeWord: true,
+    keywordCaseSensitive: false,
     keywords: [
       'ERROR',
       'FATAL',
@@ -51,7 +55,10 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
       'invalid',
       'inactive',
     ],
-    patterns: ['\\bexit code [1-9]\\d*\\b'],
+    patterns: [
+      '\\bexit code [1-9]\\d*\\b',
+      '\\bcontainer .*? exited\\b',
+    ],
     flags: 'gi',
   },
   {
@@ -64,8 +71,9 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    matchType: 'builtin',
     builtinType: 'warning',
+    keywordWholeWord: true,
+    keywordCaseSensitive: false,
     keywords: ['WARN', 'WARNING', 'ALERT', 'caution', 'timeout', 'retry', 'pending', 'degraded'],
     patterns: [],
     flags: 'gi',
@@ -80,8 +88,9 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: true,
     underline: false,
     priority: 2,
-    matchType: 'builtin',
     builtinType: 'success',
+    keywordWholeWord: true,
+    keywordCaseSensitive: false,
     keywords: ['Up', 'running', 'healthy', 'SUCCESS', 'OK', 'active', 'enabled', 'connected', 'PASSED', 'true'],
     patterns: [],
   },
@@ -95,8 +104,9 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: false,
     underline: false,
     priority: 1,
-    matchType: 'builtin',
     builtinType: 'info',
+    keywordWholeWord: true,
+    keywordCaseSensitive: false,
     keywords: ['INFO', 'NOTICE', 'DEBUG', 'TRACE', 'VERBOSE'],
     patterns: [],
   },
@@ -110,8 +120,8 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: false,
     underline: false,
     priority: 3, // 高优先级区间
-    matchType: 'builtin',
     builtinType: 'ip',
+    keywordWholeWord: true,
     keywords: [],
     patterns: [
       '\\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?::\\d{1,5})?\\b',
@@ -127,7 +137,6 @@ export const DEFAULT_HIGHLIGHT_GROUPS: TerminalHighlightGroup[] = [
     bold: false,
     underline: true,
     priority: 3, // 高优先级区间
-    matchType: 'builtin',
     builtinType: 'url',
     keywords: [],
     patterns: ['https?:\\/\\/[^\\s/$.?#].[^\\s]*'],

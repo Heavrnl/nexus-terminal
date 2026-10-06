@@ -134,7 +134,7 @@ const handleOpenEditModal = (group: TerminalHighlightGroup) => {
   groupForm.value = {
     name: group.name,
     description: group.description || '',
-    matchType: group.matchType,
+    matchType: group.matchType || (group.patterns && group.patterns.length > 0 ? 'regex' : 'keywords'),
     keywordsInput: '',
     keywords: [...(group.keywords || [])],
     patternsInput: (group.patterns || []).join('\n'),

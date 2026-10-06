@@ -21,11 +21,24 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } | nul
 }
 
 /**
- * 转义正则特殊字符
+ * 正则特殊字符转义
  */
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+/**
+ * 语义类型特异性权重表 (Semantic Specificity Weights)
+ * 当两个规则发生重叠冲突时，用于确定谁更具有语义排他性
+ */
+export const SPECIFICITY_WEIGHTS: Record<string, number> = {
+  url: 100,         // Web URL 结构最长且最具体
+  date: 95,         // 日期时间具有明确结构
+  ip: 85,           // IPv4 地址
+  regex: 70,        // 自定义或内置正则模式
+  keyword_whole: 60,// 全词关键词
+  keyword_partial: 40, // 模糊包含关键词
+};
 
 /**
  * 预编译后的匹配器单元 (Compiled Matcher)
@@ -33,29 +46,28 @@ function escapeRegExp(str: string): string {
 export interface CompiledMatcher {
   groupId: string;
   regex: RegExp;
-  priority: number;
-  prefix: string; // 注入的 ANSI 序列
-  suffix: string; // 复原的 ANSI 序列
+  priority: number;     // 用户指定的优先级 (1~3)
+  specificity: number;  // 语义特异性 (40~100)
+  prefix: string;       // 注入的 ANSI 序列
+  suffix: string;       // 复原的 ANSI 序列
 }
 
 export type CompiledHighlightPipeline = CompiledMatcher[];
-
-// 兼容别名导出
 export type CompiledHighlightRule = CompiledMatcher;
 
 /**
  * 构建分组对应的 ANSI 开头与结尾序列
  */
 export function buildAnsiStyleTokens(group: Partial<TerminalHighlightGroup>): { prefix: string; suffix: string } {
-  let prefix = '';
-  let suffix = '';
+  const prefixes: string[] = [];
+  const suffixes: string[] = [];
 
   // 1. 前景色 (24-bit TrueColor)
   if (group.color) {
     const rgb = hexToRgb(group.color);
     if (rgb) {
-      prefix += `\x1b[38;2;${rgb.r};${rgb.g};${rgb.b}m`;
-      suffix += '\x1b[39m'; // 恢复默认前景色
+      prefixes.push(`\x1b[38;2;${rgb.r};${rgb.g};${rgb.b}m`);
+      suffixes.unshift('\x1b[39m'); // 镜像对称至最后
     }
   }
 
@@ -63,28 +75,31 @@ export function buildAnsiStyleTokens(group: Partial<TerminalHighlightGroup>): { 
   if (group.bgColor) {
     const bgRgb = hexToRgb(group.bgColor);
     if (bgRgb) {
-      prefix += `\x1b[48;2;${bgRgb.r};${bgRgb.g};${bgRgb.b}m`;
-      suffix += '\x1b[49m'; // 恢复默认背景色
+      prefixes.push(`\x1b[48;2;${bgRgb.r};${bgRgb.g};${bgRgb.b}m`);
+      suffixes.unshift('\x1b[49m'); // 恢复默认背景色
     }
   }
 
   // 3. 加粗
   if (group.bold) {
-    prefix += '\x1b[1m';
-    suffix += '\x1b[22m'; // 关闭粗体
+    prefixes.push('\x1b[1m');
+    suffixes.unshift('\x1b[22m'); // 关闭粗体
   }
 
   // 4. 下划线
   if (group.underline) {
-    prefix += '\x1b[4m';
-    suffix += '\x1b[24m'; // 关闭下划线
+    prefixes.push('\x1b[4m');
+    suffixes.unshift('\x1b[24m'); // 关闭下划线
   }
 
-  return { prefix, suffix };
+  return {
+    prefix: prefixes.join(''),
+    suffix: suffixes.join(''),
+  };
 }
 
 /**
- * 预编译所有激活的语义分组为 Matcher 集合
+ * 预编译分组列表为 Matcher 集合 (一个分组可同时拥有关键词和正则)
  */
 export function compileHighlightGroups(groups: TerminalHighlightGroup[]): CompiledMatcher[] {
   const matchers: CompiledMatcher[] = [];
@@ -98,38 +113,54 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
     const priority = group.priority || 2;
     const flags = group.flags && group.flags.includes('g') ? group.flags : `${group.flags || ''}g`;
 
-    // 1. 关键词规则编译为词边界正则: \b(?:word1|word2)\b
+    // 确定当前分组的特异性基线
+    const groupSpecificity = group.builtinType && SPECIFICITY_WEIGHTS[group.builtinType]
+      ? SPECIFICITY_WEIGHTS[group.builtinType]
+      : SPECIFICITY_WEIGHTS.regex;
+
+    // 1. 编译关键词规则 (支持严格连字符词边界与大小写选项)
     if (Array.isArray(group.keywords) && group.keywords.length > 0) {
       const validKeywords = group.keywords
         .map((k) => (typeof k === 'string' ? k.trim() : ''))
         .filter((k) => k.length > 0);
 
       if (validKeywords.length > 0) {
-        // 按长度降序排，避免前缀误抢
+        // 按长度降序排，避免前缀抢占
         validKeywords.sort((a, b) => b.length - a.length);
 
-        // 分类处理纯英文词与带特殊符号词
-        const escaped = validKeywords.map((k) => {
-          const esc = escapeRegExp(k);
-          return /^\w+$/.test(k) ? `\\b${esc}\\b` : esc;
-        });
+        const isWholeWord = group.keywordWholeWord !== false; // 默认全词匹配
+        const isCaseSensitive = !!group.keywordCaseSensitive;
+        const kwFlags = (isCaseSensitive ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`));
+
+        // 连字符/下划线感知的严格词边界: (?<![a-zA-Z0-9_-])word(?![a-zA-Z0-9_-])
+        // 这样可以彻底避免 docker 误伤 docker-compose 或 mydockerapp
+        const escapedList = validKeywords.map((k) => escapeRegExp(k));
+        const patternBody = escapedList.join('|');
+
+        let fullPattern: string;
+        if (isWholeWord) {
+          fullPattern = `(?<![a-zA-Z0-9_-])(?:${patternBody})(?![a-zA-Z0-9_-])`;
+        } else {
+          fullPattern = `(?:${patternBody})`;
+        }
 
         try {
-          const kwRegex = new RegExp(`(?:${escaped.join('|')})`, flags);
+          const kwRegex = new RegExp(fullPattern, kwFlags);
           matchers.push({
             groupId: group.id,
             regex: kwRegex,
             priority,
+            specificity: isWholeWord ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
             prefix,
             suffix,
           });
         } catch (e) {
-          console.warn(`[Highlighter] 关键词组合正则编译失败 (${group.name}):`, e);
+          console.warn(`[Highlighter] 关键词规则编译失败 (${group.name}):`, e);
         }
       }
     }
 
-    // 2. 正则表达式编译
+    // 2. 编译正则表达式列表
     if (Array.isArray(group.patterns) && group.patterns.length > 0) {
       for (const pattern of group.patterns) {
         if (!pattern || typeof pattern !== 'string') continue;
@@ -139,6 +170,7 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
             groupId: group.id,
             regex: pRegex,
             priority,
+            specificity: groupSpecificity,
             prefix,
             suffix,
           });
@@ -152,35 +184,34 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
   return matchers;
 }
 
-// 兼容别名
 export const compileHighlightRules = compileHighlightGroups as any;
 
 /**
  * 匹配区间 (Span) 结构
  */
-interface MatchSpan {
+export interface MatchSpan {
   start: number;
   end: number;
   length: number;
   priority: number;
+  specificity: number;
   prefix: string;
   suffix: string;
 }
 
 /**
- * 对纯文本片段执行多 Matcher 扫描、Span 冲突仲裁与单次线性装配
+ * 对纯文本片段执行多 Matcher 扫描、Span 冲突仲裁与单次切片装配
  */
 export function highlightPlainTextSegmentWithSpans(text: string, matchers: CompiledMatcher[]): string {
   if (!text || matchers.length === 0) return text;
 
-  // 1. 并发扫描所有 Matcher 收集命中的候选 Spans
+  // 1. 多 Matcher 扫描收集命中的候选 Spans
   const candidateSpans: MatchSpan[] = [];
 
   for (const matcher of matchers) {
     matcher.regex.lastIndex = 0;
     let match: RegExpExecArray | null;
 
-    // 避免空匹配导致无限循环
     while ((match = matcher.regex.exec(text)) !== null) {
       const matchText = match[0];
       if (!matchText || matchText.length === 0) {
@@ -193,21 +224,22 @@ export function highlightPlainTextSegmentWithSpans(text: string, matchers: Compi
         end: match.index + matchText.length,
         length: matchText.length,
         priority: matcher.priority,
+        specificity: matcher.specificity,
         prefix: matcher.prefix,
         suffix: matcher.suffix,
       });
 
-      // 未带 g 标记则跳出
       if (!matcher.regex.global) break;
     }
   }
 
   if (candidateSpans.length === 0) return text;
 
-  // 2. 冲突仲裁与区间合并 (Interval Conflict Resolution)
-  // 排序规则：优先比 priority (降序)，次要比 length (降序，越长越具体)，再次比 start (升序)
+  // 2. 冲突仲裁排序：
+  // 综合排序策略：priority (用户权重) -> specificity (语义特异性) -> length (长匹配优先) -> start (先出现优先)
   candidateSpans.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
+    if (b.specificity !== a.specificity) return b.specificity - a.specificity;
     if (b.length !== a.length) return b.length - a.length;
     return a.start - b.start;
   });
@@ -215,7 +247,7 @@ export function highlightPlainTextSegmentWithSpans(text: string, matchers: Compi
   const acceptedSpans: MatchSpan[] = [];
 
   for (const candidate of candidateSpans) {
-    // 检查是否与已采纳的更高优先级区间发生重叠
+    // 检查是否与已采纳的更高优先/更具特异性的区间发生重叠
     const isOverlapping = acceptedSpans.some(
       (accepted) => candidate.start < accepted.end && candidate.end > accepted.start
     );
@@ -225,10 +257,10 @@ export function highlightPlainTextSegmentWithSpans(text: string, matchers: Compi
     }
   }
 
-  // 3. 将采纳的 Spans 按文本起始位置升序排序
+  // 3. 将最终采纳的 Spans 按文本起始位置升序排列
   acceptedSpans.sort((a, b) => a.start - b.start);
 
-  // 4. 单次遍历无损切片组装 (Single-pass Assembly)
+  // 4. 单次线性无损切片组装 (Single-pass Assembly)
   let result = '';
   let lastIndex = 0;
 
@@ -253,7 +285,7 @@ export function highlightPlainTextSegmentWithSpans(text: string, matchers: Compi
 const ANSI_PATTERN = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
 
 /**
- * 对终端输出字符串进行 ANSI 保护并执行工业级区间高亮
+ * 对终端输出字符串进行 ANSI 保护并执行 Span 仲裁语法着色
  */
 export function highlightTerminalString(input: string, matchers: CompiledMatcher[]): string {
   if (!input || matchers.length === 0) return input;
@@ -265,7 +297,7 @@ export function highlightTerminalString(input: string, matchers: CompiledMatcher
     return highlightPlainTextSegmentWithSpans(input, matchers);
   }
 
-  // 包含已有 ANSI 序列：按 ANSI 控制码分割保护，仅对纯文本段执行高亮
+  // 包含已有 ANSI 序列：按控制码分割保护，仅对纯文本段执行高亮，原生控制序列 100% 原样保留
   ANSI_PATTERN.lastIndex = 0;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
