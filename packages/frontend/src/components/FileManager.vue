@@ -913,7 +913,7 @@ defineExpose({ focusSearchInput, startPathEdit });
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden bg-background text-foreground text-sm font-sans">
+  <div class="flex flex-col h-full min-h-0 overflow-hidden bg-background text-foreground text-sm font-sans">
     <!-- 隐藏文件上传 input（由 Header 或拖拽触发） -->
     <input type="file" ref="fileInputRef" @change="handleFileSelected" multiple class="hidden" />
 
@@ -939,6 +939,7 @@ defineExpose({ focusSearchInput, startPathEdit });
     <!-- 第二层：全宽 Windows Explorer 风格面包屑交互地址栏 -->
     <FileManagerBreadcrumbs
       ref="breadcrumbsRef"
+      class="flex-shrink-0"
       :current-path="currentSftpManager?.currentPath?.value ?? '/'"
       :is-connected="Boolean(props.wsDeps.isConnected.value)"
       :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
@@ -954,7 +955,7 @@ defineExpose({ focusSearchInput, startPathEdit });
     <!-- File List Container -->
     <div
       ref="fileListContainerRef"
-      class="flex-grow overflow-y-auto relative outline-none"
+      class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable]"
       @dragenter.prevent="handleDragEnter"
       @dragover.prevent="handleDragOver"
       @dragleave.prevent="handleDragLeave"
@@ -990,11 +991,11 @@ defineExpose({ focusSearchInput, startPathEdit });
                 <col :style="{ width: `${colWidths.permissions}px` }">
                 <col :style="{ width: `${colWidths.modified}px` }">
            </colgroup>
-          <thead class="sticky top-0 z-10 bg-header">
+          <thead class="sticky top-0 z-10 bg-header select-none">
             <tr>
               <th
                 @click="handleSort('type')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5"
+                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
                 :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }"
               >
                 {{ t('fileManager.headers.type') }}
@@ -1003,7 +1004,7 @@ defineExpose({ focusSearchInput, startPathEdit });
               </th>
               <th
                 @click="handleSort('filename')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5"
+                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
                 :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
               >
                 {{ t('fileManager.headers.name') }}
@@ -1012,7 +1013,7 @@ defineExpose({ focusSearchInput, startPathEdit });
               </th>
               <th
                 @click="handleSort('size')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5"
+                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
                 :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
               >
                 {{ t('fileManager.headers.size') }}
@@ -1020,7 +1021,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                 <span class="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-primary/20" @mousedown.prevent="startResize($event, 2)" @click.stop></span>
               </th>
               <th
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider select-none"
+                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider select-none whitespace-nowrap"
                 :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
               >
                 {{ t('fileManager.headers.permissions') }}
@@ -1028,7 +1029,7 @@ defineExpose({ focusSearchInput, startPathEdit });
               </th>
               <th
                 @click="handleSort('mtime')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5"
+                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
                 :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
               >
                 {{ t('fileManager.headers.modified') }}

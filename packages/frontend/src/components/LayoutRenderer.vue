@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
                           :is="currentMainComponent"
                           :key="layoutNode.id"
                           v-bind="componentProps"
-                          class="flex-grow overflow-auto"
+                          class="flex-grow min-h-0 overflow-auto"
                           v-if="activeSession"
                         >
                         </component>

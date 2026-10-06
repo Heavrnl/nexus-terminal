@@ -298,7 +298,7 @@ defineExpose({
 
 <template>
   <div
-    class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150"
+    class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0"
     :class="{ 'ring-1 ring-primary/40 border-primary/50': isEditing }"
   >
     <!-- 最左侧：将终端目录切换到当前路径按钮 -->
