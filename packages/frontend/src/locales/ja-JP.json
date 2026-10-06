@@ -1697,7 +1697,13 @@
     "bufferText": {
       "title": "ターミナルコピー",
       "lines": "行",
-      "empty": "ターミナル出力がありません"
+      "empty": "ターミナル出力がありません",
+      "searchPlaceholder": "ターミナル出力を検索...",
+      "regexError": "正規表現エラー",
+      "prevMatch": "前の一致",
+      "nextMatch": "次の一致",
+      "matchCase": "大文字/小文字を区別",
+      "useRegex": "正規表現を使用"
     }
   }
 }

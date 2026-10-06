@@ -1741,7 +1741,13 @@
     "bufferText": {
       "title": "终端复制",
       "lines": "行",
-      "empty": "当前终端暂无输出内容"
+      "empty": "当前终端暂无输出内容",
+      "searchPlaceholder": "在终端输出中搜索...",
+      "regexError": "正则错误",
+      "prevMatch": "上一个",
+      "nextMatch": "下一个",
+      "matchCase": "区分大小写",
+      "useRegex": "使用正则表达式"
     }
   }
 }

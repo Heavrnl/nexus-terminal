@@ -1736,7 +1736,13 @@
     "bufferText": {
       "title": "Terminal Copy",
       "lines": "lines",
-      "empty": "No terminal output available"
+      "empty": "No terminal output available",
+      "searchPlaceholder": "Search in terminal output...",
+      "regexError": "Invalid regex",
+      "prevMatch": "Previous",
+      "nextMatch": "Next",
+      "matchCase": "Match case",
+      "useRegex": "Use regex"
     }
   }
 }
