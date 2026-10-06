@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n';
 import { ConnectionInfo } from '../stores/connections.store';
 import { useAddConnectionForm } from '../composables/useAddConnectionForm';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
-import { useVisualViewport } from '../composables/useVisualViewport';
 import AddConnectionFormBasicInfo from './AddConnectionFormBasicInfo.vue';
 import AddConnectionFormAuth from './AddConnectionFormAuth.vue';
 import AddConnectionFormAdvanced from './AddConnectionFormAdvanced.vue';
@@ -46,31 +45,6 @@ const isMobileMode = computed(() => {
     return props.isMobile;
   }
   return detectedMobile.value || windowWidth.value < 768;
-});
-
-// 移动端软键盘与输入框聚焦管理（防止底部固定按钮顶上去遮挡输入法视野）
-const { isKeyboardVisible } = useVisualViewport();
-const isFormInputFocused = ref(false);
-
-const handleFocusIn = (e: FocusEvent) => {
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-    isFormInputFocused.value = true;
-  }
-};
-
-const handleFocusOut = () => {
-  setTimeout(() => {
-    const active = document.activeElement as HTMLElement | null;
-    if (!active || (active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA' && active.tagName !== 'SELECT')) {
-      isFormInputFocused.value = false;
-    }
-  }, 120);
-};
-
-// 软键盘激活或输入框聚焦时隐藏吸底按钮栏
-const shouldHideBottomBar = computed(() => {
-  return isKeyboardVisible.value || isFormInputFocused.value;
 });
 
 const {
@@ -119,8 +93,6 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
       >
         <div
           class="mobile-form-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text"
-          @focusin="handleFocusIn"
-          @focusout="handleFocusOut"
         >
           
           <!-- 1. 顶部手柄条与导航栏 -->
@@ -237,83 +209,70 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
               </div>
             </div>
 
-            <!-- 滚动内容底部的流式提交按钮（软键盘激活时滑到底部可直接提交） -->
-            <div class="pt-3 pb-1">
-              <button
-                type="button"
-                @click="handleSubmit"
-                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                class="w-full py-2.5 px-4 rounded-xl bg-primary text-button-text hover:bg-primary-hover active:scale-98 disabled:opacity-50 text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all"
-              >
-                <svg v-if="isLoading" class="animate-spin h-4 w-4 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>{{ submitButtonText }}</span>
-              </button>
-            </div>
+            <!-- 底部流式操作区 (自然跟随滚动，不占常驻屏幕视野，软键盘激活时绝不遮挡) -->
+            <div class="pt-4 pb-6 space-y-3 border-t border-border/40">
+              <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
+              <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex items-center justify-between p-2.5 rounded-xl bg-header/20 border border-border/40">
+                <button
+                  type="button"
+                  @click="handleTestConnection"
+                  :disabled="isLoading || testStatus === 'testing'"
+                  class="px-2.5 py-1 text-xs font-medium rounded-lg border border-border/70 text-text-secondary bg-background/80 hover:bg-border/40 active:bg-border disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <svg v-if="testStatus === 'testing'" class="animate-spin h-3.5 w-3.5 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <i v-else class="fas fa-bolt text-xs"></i>
+                  <span>{{ testButtonText }}</span>
+                </button>
 
-            <!-- 底部空间留白 -->
-            <div class="h-2"></div>
-          </div>
-
-          <!-- 3. 移动端固定吸底操作栏 (软键盘弹起或输入聚焦时自动隐藏，防止遮挡视野) -->
-          <div
-            v-show="!shouldHideBottomBar"
-            class="mobile-sticky-bottom-bar flex-shrink-0 border-t border-border/40 bg-header/40 px-4 py-2.5 transition-all duration-150"
-          >
-            <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
-            <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex items-center justify-between mb-2">
-              <button
-                type="button"
-                @click="handleTestConnection"
-                :disabled="isLoading || testStatus === 'testing'"
-                class="px-2.5 py-1 text-xs font-medium rounded-lg border border-border/70 text-text-secondary bg-background/80 hover:bg-border/40 active:bg-border disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
-              >
-                <svg v-if="testStatus === 'testing'" class="animate-spin h-3.5 w-3.5 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <i v-else class="fas fa-bolt text-xs"></i>
-                <span>{{ testButtonText }}</span>
-              </button>
-
-              <div class="text-xs font-mono">
-                <span v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">{{ t('connections.test.testingInProgress', '测试中...') }}</span>
-                <span v-else-if="testStatus === 'success'" class="font-semibold" :style="{ color: latencyColor }">✓ {{ testResult }}</span>
-                <span v-else-if="testStatus === 'error'" class="text-error font-medium truncate max-w-[200px]" :title="String(testResult)">✗ {{ testResult }}</span>
+                <div class="text-xs font-mono">
+                  <span v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">{{ t('connections.test.testingInProgress', '测试中...') }}</span>
+                  <span v-else-if="testStatus === 'success'" class="font-semibold" :style="{ color: latencyColor }">✓ {{ testResult }}</span>
+                  <span v-else-if="testStatus === 'error'" class="text-error font-medium truncate max-w-[200px]" :title="String(testResult)">✗ {{ testResult }}</span>
+                </div>
               </div>
-            </div>
 
-            <!-- 主按钮操作区：删除 / 保存 -->
-            <div class="flex items-center gap-2.5">
+              <!-- 主按钮操作区：删除 / 保存 -->
+              <div class="flex items-center gap-2.5">
+                <button
+                  v-if="isEditMode && !isScriptModeActive"
+                  type="button"
+                  @click="handleDeleteConnection"
+                  :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                  class="px-3.5 py-2.5 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 active:scale-98 disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <i class="fas fa-trash-alt text-xs"></i>
+                  <span>{{ t('connections.actions.delete') }}</span>
+                </button>
+
+                <button
+                  type="button"
+                  @click="handleSubmit"
+                  :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                  class="flex-grow py-2.5 px-4 rounded-xl bg-primary text-button-text hover:bg-primary-hover active:scale-98 disabled:opacity-50 text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all"
+                >
+                  <svg v-if="isLoading" class="animate-spin h-4 w-4 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>{{ submitButtonText }}</span>
+                </button>
+              </div>
+
+              <!-- 取消按钮 -->
               <button
-                v-if="isEditMode && !isScriptModeActive"
                 type="button"
-                @click="handleDeleteConnection"
-                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                class="px-3.5 py-2.5 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 active:scale-98 disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1.5 transition-all"
+                @click="emit('close')"
+                class="w-full py-2 px-4 rounded-xl text-xs font-medium bg-background border border-border/60 text-text-secondary hover:bg-border/30 active:scale-98 transition-all"
               >
-                <i class="fas fa-trash-alt text-xs"></i>
-                <span>{{ t('connections.actions.delete') }}</span>
+                {{ t('common.cancel', '取消') }}
               </button>
 
-              <button
-                type="button"
-                @click="handleSubmit"
-                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-                class="flex-grow py-2.5 px-4 rounded-xl bg-primary text-button-text hover:bg-primary-hover active:scale-98 disabled:opacity-50 text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all"
-              >
-                <svg v-if="isLoading" class="animate-spin h-4 w-4 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>{{ submitButtonText }}</span>
-              </button>
+              <!-- 底部安全区垫片 -->
+              <div class="sheet-safe-bottom"></div>
             </div>
-
-            <!-- 底部安全区垫片 -->
-            <div class="sheet-safe-bottom shrink-0"></div>
           </div>
 
         </div>
@@ -464,11 +423,5 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
 
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
-}
-
-/* 软键盘激活或输入聚焦时，彻底隐藏吸底固定操作条，释放最大视野 */
-.mobile-form-sheet:focus-within .mobile-sticky-bottom-bar,
-.keyboard-open .mobile-sticky-bottom-bar {
-  display: none !important;
 }
 </style>

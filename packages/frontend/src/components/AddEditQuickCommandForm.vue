@@ -8,9 +8,6 @@
       >
         <div
           class="mobile-form-sheet w-full h-[85vh] max-h-[92vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-          :class="{ 'keyboard-open': shouldHideBottomBar }"
-          @focusin="handleFocusIn"
-          @focusout="handleFocusOut"
         >
           <!-- 顶部拖拽手柄与点击快速收起指示条 -->
           <div
@@ -163,8 +160,8 @@
               </div>
             </div>
 
-            <!-- 键盘弹起时在可滚动区域底部提供自然的内联操作按钮，保证视线不被遮挡的同时随时可操作 -->
-            <div class="pt-4 pb-2 border-t border-border/40 space-y-2">
+            <!-- 底部流式操作区 (自然跟随内容滚动，不占常驻屏幕视野，软键盘激活时绝不遮挡) -->
+            <div class="pt-4 pb-6 space-y-2.5 border-t border-border/40">
               <button
                 type="button"
                 @click="handleSubmit"
@@ -182,45 +179,16 @@
                 <i class="fas fa-play text-xs"></i>
                 <span>{{ t('quickCommands.form.execute', '执行快捷指令') }}</span>
               </button>
+              <button
+                type="button"
+                @click="closeForm"
+                class="w-full py-2 px-4 rounded-xl text-xs font-medium bg-background border border-border/60 text-text-secondary hover:bg-border/30 active:scale-98 transition-all cursor-pointer"
+              >
+                {{ t('common.cancel', '取消') }}
+              </button>
+              <div class="sheet-safe-bottom"></div>
             </div>
           </div>
-
-          <!-- 底部吸底操作栏 (在键盘弹起或输入聚焦时自动隐藏，避免被输入法顶起挡住视线) -->
-          <div
-            v-show="!shouldHideBottomBar"
-            class="sheet-footer mobile-sticky-footer flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border/50 bg-background shrink-0"
-          >
-            <!-- 取消按钮 -->
-            <button
-              type="button"
-              @click="closeForm"
-              class="py-2 px-4 rounded-xl text-xs font-medium bg-background border border-border/60 text-text-secondary hover:bg-border/30 active:scale-95 transition-all cursor-pointer"
-            >
-              {{ t('common.cancel', '取消') }}
-            </button>
-            <!-- 执行按钮 -->
-            <button
-              type="button"
-              @click="handleExecute"
-              class="py-2 px-4 rounded-xl text-xs font-semibold bg-[var(--color-success)] text-white hover:opacity-90 active:scale-95 transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
-            >
-              <i class="fas fa-play text-[10px]"></i>
-              <span>{{ t('quickCommands.form.execute', '执行') }}</span>
-            </button>
-            <!-- 保存/提交按钮 -->
-            <button
-              type="button"
-              @click="handleSubmit"
-              :disabled="isSubmitting || !!commandError"
-              class="py-2 px-5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-xs cursor-pointer inline-flex items-center gap-1"
-            >
-              <i class="fas fa-check text-[10px]"></i>
-              <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
-            </button>
-          </div>
-
-          <!-- 底部安全区垫片 (仅在底部吸底条可见时保留) -->
-          <div v-show="!shouldHideBottomBar" class="sheet-safe-bottom shrink-0"></div>
         </div>
       </div>
     </Transition>
@@ -334,7 +302,6 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useResizable } from '../composables/useResizable';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
-import { useVisualViewport } from '../composables/useVisualViewport';
 import { useI18n } from 'vue-i18n';
 import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
@@ -352,7 +319,6 @@ const props = defineProps<{
 const emit = defineEmits(['close']);
 
 const { isMobile } = useDeviceDetection();
-const { isKeyboardVisible } = useVisualViewport();
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
 const { showAlertDialog } = useAlertDialog(); 
@@ -362,28 +328,6 @@ const sessionStore = useSessionStore();
 const uiNotificationsStore = useUiNotificationsStore(); 
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); 
 const isSubmitting = ref(false);
-const isFormInputFocused = ref(false);
-
-const handleFocusIn = (e: FocusEvent) => {
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-    isFormInputFocused.value = true;
-  }
-};
-
-const handleFocusOut = () => {
-  setTimeout(() => {
-    const activeEl = document.activeElement;
-    if (!activeEl || (activeEl.tagName !== 'INPUT' && activeEl.tagName !== 'TEXTAREA' && activeEl.tagName !== 'SELECT')) {
-      isFormInputFocused.value = false;
-    }
-  }, 100);
-};
-
-// 当软键盘弹起或者表单输入框获取焦点时，隐藏吸底的按钮栏，防止被输入法顶到半空中挤占视野
-const shouldHideBottomBar = computed(() => {
-  return isKeyboardVisible.value || isFormInputFocused.value;
-});
 
 const modalContentRef = ref<HTMLElement | null>(null);
 const R_MIN_WIDTH = 800; // 可调整大小的最小宽度 (像素)
@@ -592,11 +536,5 @@ const handleExecute = () => {
 
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-}
-
-/* 当聚焦表单输入框或键盘开启时，通过 CSS 强力隐藏吸底操作栏，防止被输入法顶到半空 */
-.mobile-form-sheet:focus-within .mobile-sticky-footer,
-.mobile-form-sheet.keyboard-open .mobile-sticky-footer {
-  display: none !important;
 }
 </style>
