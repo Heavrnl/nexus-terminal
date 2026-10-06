@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useLayoutStore, type LayoutNode } from '../stores/layout.store'; // +++ Import LayoutNode +++
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
+import { useTagsStore } from '../stores/tags.store';
 import AddConnectionFormComponent from '../components/AddConnectionForm.vue';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
@@ -35,6 +36,7 @@ const fileEditorStore = useFileEditorStore();
 const layoutStore = useLayoutStore();
 const commandHistoryStore = useCommandHistoryStore();
 const connectionsStore = useConnectionsStore(); 
+const tagsStore = useTagsStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
 const { isMobile } = useDeviceDetection();
 
@@ -136,6 +138,10 @@ onMounted(() => {
   // 添加键盘事件监听器
   window.addEventListener('keydown', handleGlobalKeyDown);
   // 确保布局已初始化 (layoutStore 内部会处理)
+
+  // 保证多端与隐藏侧边栏场景下，连接与标签数据全量就绪
+  connectionsStore.fetchConnections().catch((err) => console.error('[工作区] 加载连接列表失败:', err));
+  tagsStore.fetchTags().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
 
   // +++ 订阅工作区事件 +++
   subscribeToWorkspaceEvents('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId));

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
@@ -25,8 +25,20 @@ const tagsStore = useTagsStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const { showConfirmDialog } = useConfirmDialog();
 
-const { connections } = storeToRefs(connectionsStore);
-const { tags } = storeToRefs(tagsStore);
+const { connections, isLoading: connectionsLoading } = storeToRefs(connectionsStore);
+const { tags, isLoading: tagsLoading } = storeToRefs(tagsStore);
+
+// 数据加载方法
+const loadConnectionsData = async () => {
+  try {
+    await Promise.allSettled([
+      connectionsStore.fetchConnections(),
+      tagsStore.fetchTags()
+    ]);
+  } catch (error) {
+    console.error('[MobileDrawer] 加载连接或标签失败:', error);
+  }
+};
 
 // 搜索词与标签过滤
 const searchTerm = ref('');
@@ -36,12 +48,20 @@ const searchInputRef = ref<HTMLInputElement | null>(null);
 // 操作菜单状态 (ActionSheet)
 const actionSheetTarget = ref<ConnectionInfo | null>(null);
 
-// 打开抽屉时聚焦搜索框
+// 挂载时主动拉取数据
+onMounted(() => {
+  if (connections.value.length === 0) {
+    loadConnectionsData();
+  }
+});
+
+// 打开抽屉时聚焦搜索框并自动刷新数据
 watch(() => props.visible, (isOpen) => {
   if (isOpen) {
     actionSheetTarget.value = null;
     searchTerm.value = '';
     selectedTagId.value = null;
+    loadConnectionsData();
   }
 });
 
@@ -278,9 +298,21 @@ const handleActionDelete = async () => {
 
           <!-- 4. 服务器卡片列表区 -->
           <div class="flex-grow overflow-y-auto p-3 space-y-2">
+            <!-- 加载中状态 -->
+            <div
+              v-if="connectionsLoading && connections.length === 0"
+              class="py-16 text-center text-text-secondary flex flex-col items-center justify-center space-y-3"
+            >
+              <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p class="text-sm font-medium">{{ t('common.loading', '正在加载服务器列表...') }}</p>
+            </div>
+
             <!-- 空状态：无搜索结果 -->
             <div
-              v-if="filteredConnections.length === 0 && (searchTerm || selectedTagId !== null)"
+              v-else-if="filteredConnections.length === 0 && (searchTerm || selectedTagId !== null)"
               class="py-12 text-center text-text-secondary flex flex-col items-center justify-center"
             >
               <i class="fas fa-search text-3xl mb-2.5 opacity-40"></i>
@@ -295,7 +327,7 @@ const handleActionDelete = async () => {
 
             <!-- 空状态：无任何连接 -->
             <div
-              v-else-if="connections.length === 0"
+              v-else-if="!connectionsLoading && connections.length === 0"
               class="py-16 text-center text-text-secondary flex flex-col items-center justify-center"
             >
               <i class="fas fa-server text-4xl mb-3 opacity-30"></i>
