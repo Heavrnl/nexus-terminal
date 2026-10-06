@@ -491,7 +491,7 @@ const handleQuickCommandExecute = (command: string) => {
       v-if="props.isMobile && isMobileMultiLineOpen"
       class="w-full h-48 p-1.5 bg-background border-t border-border/50 shrink-0"
     >
-      <MultiLineCommandInput class="h-full w-full" />
+      <MultiLineCommandInput :is-mobile="props.isMobile" class="h-full w-full" />
     </div>
   </div>
   <!-- +++ Quick Commands Modal Instance +++ -->

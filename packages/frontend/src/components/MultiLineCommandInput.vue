@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+
+const props = defineProps<{
+  isMobile?: boolean;
+}>();
+
+const { isMobile: detectedMobile } = useDeviceDetection();
+const isMobile = computed(() => props.isMobile ?? detectedMobile.value);
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
@@ -234,8 +242,9 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <!-- 右侧：发送主按钮 -->
+      <!-- 右侧：发送主按钮 (仅桌面端显示，手机端移至底部) -->
       <button
+        v-if="!isMobile"
         @click="handleSend"
         :disabled="!activeSessionId || !currentContent.trim()"
         class="send-btn inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none shadow-sm transition-all shrink-0 cursor-pointer whitespace-nowrap ml-auto"
@@ -256,7 +265,7 @@ onBeforeUnmount(() => {
         @keyup="updateSelection"
         @mouseup="updateSelection"
         @select="updateSelection"
-        placeholder="输入多行命令/脚本... (Ctrl+Enter 发送)"
+        :placeholder="isMobile ? '在此输入多行命令或脚本...' : '输入多行命令/脚本... (Ctrl+Enter 发送)'"
         class="editor-textarea flex-grow h-full w-full p-2 bg-transparent text-foreground font-mono text-xs leading-5 resize-none outline-none focus:ring-0 overflow-auto whitespace-pre-wrap break-all placeholder:text-text-secondary/40"
         spellcheck="false"
         data-focus-id="multiLineCommandInput"
@@ -288,8 +297,20 @@ onBeforeUnmount(() => {
         </label>
       </div>
 
-      <!-- 快捷键提示 -->
-      <span class="shortcut-hint text-text-secondary/50 shrink-0 whitespace-nowrap ml-auto">
+      <!-- 移动端：发送按钮移至底栏右侧 -->
+      <button
+        v-if="isMobile"
+        @click="handleSend"
+        :disabled="!activeSessionId || !currentContent.trim()"
+        class="send-btn inline-flex items-center justify-center px-3 py-1 text-xs font-medium rounded bg-button text-button-text hover:bg-button-hover active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm transition-all shrink-0 cursor-pointer whitespace-nowrap ml-auto"
+        :title="activeSessionId ? '发送至当前终端' : '请先连接终端会话'"
+      >
+        <i class="fas fa-paper-plane text-xs"></i>
+        <span class="send-text ml-1.5">{{ selectedText ? '发送选中' : '发送' }}</span>
+      </button>
+
+      <!-- 桌面端：快捷键提示 -->
+      <span v-else class="shortcut-hint text-text-secondary/50 shrink-0 whitespace-nowrap ml-auto">
         Ctrl+Enter ↵
       </span>
     </div>
