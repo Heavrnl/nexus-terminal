@@ -1,0 +1,42 @@
+# GitHub Dependabot 自动化依赖更新与安全补丁配置文件
+# 官方规范参考: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+updates:
+  # 统一管理 npm workspaces (包含根目录及 packages/* 子包)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+
+    # 自动标记 PR 标签
+    labels:
+      - "dependencies"
+      - "security"
+
+    # 启用依赖分组 (Grouped Updates)
+    # 将所有零碎的小补丁合并为一个 PR，杜绝数十个 PR 轰炸
+    groups:
+      # 生产与安全补丁统一打包组
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # 开发构建依赖打包组
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # 提交信息格式 (遵循 Conventional Commits)
+    commit-message:
+      prefix: "build(deps)"
+      include: "scope"
