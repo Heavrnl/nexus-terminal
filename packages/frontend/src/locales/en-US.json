@@ -950,7 +950,11 @@
       "terminalEnableRightClickPasteLabel": "Enable terminal right-click paste",
       "terminalEnableRightClickPasteDescription": "Allows pasting clipboard content using the right mouse button within the terminal area.",
       "terminalRightClickPasteSuccess": "Terminal right-click paste setting saved.",
-      "terminalRightClickPasteError": "Failed to save terminal right-click paste setting."
+      "terminalRightClickPasteError": "Failed to save terminal right-click paste setting.",
+      "fileManagerDoubleClickToOpenTitle": "Double-Click to Open Files/Folders",
+      "fileManagerDoubleClickToOpenDescription": "When enabled, double-click to open files or folders and single-click to select; when disabled, single-click opens directly (Default: Disabled)",
+      "fileManagerDoubleClickToOpenSuccess": "Double-click setting saved successfully.",
+      "fileManagerDoubleClickToOpenError": "Failed to save double-click setting."
     },
     "statusMonitorShowIp": {
       "title": "Status Monitor: Show IP Address",

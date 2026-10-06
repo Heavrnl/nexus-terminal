@@ -17,6 +17,7 @@ export function useWorkspaceSettings() {
     showQuickCommandTagsBoolean,
     terminalScrollbackLimitNumber,
     fileManagerShowDeleteConfirmationBoolean,
+    fileManagerDoubleClickToOpenBoolean,
     terminalEnableRightClickPasteBoolean,
     showPopupFileManagerBoolean, 
     statusMonitorShowIpBoolean,
@@ -239,6 +240,30 @@ export function useWorkspaceSettings() {
     }
   };
 
+  // --- File Manager Double Click to Open ---
+  const fileManagerDoubleClickToOpenLocal = ref(false);
+  const fileManagerDoubleClickToOpenLoading = ref(false);
+  const fileManagerDoubleClickToOpenMessage = ref('');
+  const fileManagerDoubleClickToOpenSuccess = ref(false);
+
+  const handleUpdateFileManagerDoubleClickToOpen = async () => {
+    fileManagerDoubleClickToOpenLoading.value = true;
+    fileManagerDoubleClickToOpenMessage.value = '';
+    fileManagerDoubleClickToOpenSuccess.value = false;
+    try {
+      const valueToSave = fileManagerDoubleClickToOpenLocal.value ? 'true' : 'false';
+      await settingsStore.updateSetting('fileManagerDoubleClickToOpen', valueToSave);
+      fileManagerDoubleClickToOpenMessage.value = t('settings.workspace.fileManagerDoubleClickToOpenSuccess', '双击打开文件/文件夹设置已保存。');
+      fileManagerDoubleClickToOpenSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新双击打开设置失败:', error);
+      fileManagerDoubleClickToOpenMessage.value = error.message || t('settings.workspace.fileManagerDoubleClickToOpenError', '保存双击打开文件/文件夹设置失败。');
+      fileManagerDoubleClickToOpenSuccess.value = false;
+    } finally {
+      fileManagerDoubleClickToOpenLoading.value = false;
+    }
+  };
+
   // --- Terminal Right Click Paste ---
   const terminalEnableRightClickPasteLocal = ref(true);
   const terminalEnableRightClickPasteLoading = ref(false);
@@ -321,6 +346,7 @@ export function useWorkspaceSettings() {
   watch(showQuickCommandTagsBoolean, (newValue) => { showQuickCommandTagsLocal.value = newValue; }, { immediate: true });
   watch(terminalScrollbackLimitNumber, (newValue) => { terminalScrollbackLimitLocal.value = newValue; }, { immediate: true });
   watch(fileManagerShowDeleteConfirmationBoolean, (newValue) => { fileManagerShowDeleteConfirmationLocal.value = newValue; }, { immediate: true });
+  watch(fileManagerDoubleClickToOpenBoolean, (newValue) => { fileManagerDoubleClickToOpenLocal.value = newValue; }, { immediate: true });
   watch(terminalEnableRightClickPasteBoolean, (newValue) => { terminalEnableRightClickPasteLocal.value = newValue; }, { immediate: true });
   watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
   watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
@@ -380,6 +406,12 @@ export function useWorkspaceSettings() {
     fileManagerShowDeleteConfirmationMessage,
     fileManagerShowDeleteConfirmationSuccess,
     handleUpdateFileManagerDeleteConfirmation,
+
+    fileManagerDoubleClickToOpenLocal,
+    fileManagerDoubleClickToOpenLoading,
+    fileManagerDoubleClickToOpenMessage,
+    fileManagerDoubleClickToOpenSuccess,
+    handleUpdateFileManagerDoubleClickToOpen,
 
     terminalEnableRightClickPasteLocal, 
     terminalEnableRightClickPasteLoading, 

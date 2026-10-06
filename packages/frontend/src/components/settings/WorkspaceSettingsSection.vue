@@ -238,6 +238,30 @@
             />
           </div>
         </div>
+
+        <!-- 双击打开文件/文件夹 (纯开关) -->
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
+              {{ $t('settings.workspace.fileManagerDoubleClickToOpenTitle', '双击打开文件/文件夹') }}
+            </div>
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
+              {{ $t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开（默认关闭）') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!fileManagerDoubleClickToOpenSuccess && fileManagerDoubleClickToOpenMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
+              {{ fileManagerDoubleClickToOpenMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="fileManagerDoubleClickToOpenLocal"
+              :loading="fileManagerDoubleClickToOpenLoading"
+              @change="handleUpdateFileManagerDoubleClickToOpen"
+              aria-label="双击打开文件或文件夹"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -505,6 +529,11 @@ const {
   fileManagerShowDeleteConfirmationMessage,
   fileManagerShowDeleteConfirmationSuccess,
   handleUpdateFileManagerDeleteConfirmation,
+  fileManagerDoubleClickToOpenLocal,
+  fileManagerDoubleClickToOpenLoading,
+  fileManagerDoubleClickToOpenMessage,
+  fileManagerDoubleClickToOpenSuccess,
+  handleUpdateFileManagerDoubleClickToOpen,
   terminalEnableRightClickPasteLocal,
   terminalEnableRightClickPasteLoading,
   terminalEnableRightClickPasteMessage,

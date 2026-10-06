@@ -1165,7 +1165,11 @@
       "terminalEnableRightClickPasteLabel": "ターミナルの右クリック貼り付けを有効にする",
       "terminalEnableRightClickPasteDescription": "ターミナル領域内でマウスの右ボタンを使用してクリップボードの内容を貼り付けることを許可します。",
       "terminalRightClickPasteSuccess": "ターミナルの右クリック貼り付け設定が保存されました。",
-      "terminalRightClickPasteError": "ターミナルの右クリック貼り付け設定の保存に失敗しました。"
+      "terminalRightClickPasteError": "ターミナルの右クリック貼り付け設定の保存に失敗しました。",
+      "fileManagerDoubleClickToOpenTitle": "ダブルクリックでファイル/フォルダーを開く",
+      "fileManagerDoubleClickToOpenDescription": "有効にするとダブルクリックで開き、シングルクリックで選択します。無効時はシングルクリックで直接開きます (デフォルト: 無効)",
+      "fileManagerDoubleClickToOpenSuccess": "ダブルクリック設定が保存されました。",
+      "fileManagerDoubleClickToOpenError": "ダブルクリック設定の保存に失敗しました。"
     },
     "statusMonitorShowIp": {
       "title": "ステータスモニターでIPアドレスを表示",

@@ -60,7 +60,8 @@ interface SettingsState {
   showQuickCommandTags?: string; // 'true' or 'false'
   layoutLocked?: string; // 'true' or 'false' - NEW: 布局锁定状态
   terminalScrollbackLimit?: string; //  终端回滚行数上限 (e.g., '5000', '0' for unlimited)
-  fileManagerShowDeleteConfirmation?: string; //  'true' or 'false' - 文件管理器删除确认提示
+  fileManagerShowDeleteConfirmation?: string;
+  fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
   showStatusMonitorIpAddress?: string; // 'true' or 'false' - 状态监视器显示IP地址
   quickCommandRowSizeMultiplier?: string; // +++ 快捷命令列表行大小乘数 (e.g., '1.0') +++
@@ -299,6 +300,10 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.fileManagerShowDeleteConfirmation = 'true'; // 默认显示删除确认
         console.log(`[SettingsStore] fileManagerShowDeleteConfirmation not found, set to default: ${settings.value.fileManagerShowDeleteConfirmation}`);
       }
+      if (settings.value.fileManagerDoubleClickToOpen === undefined) {
+        settings.value.fileManagerDoubleClickToOpen = 'false'; // 默认关闭双击打开 (单击即打开)
+        console.log(`[SettingsStore] fileManagerDoubleClickToOpen not found, set to default: ${settings.value.fileManagerDoubleClickToOpen}`);
+      }
       //  Terminal Right Click Paste default
       // --- 添加日志：打印从后端获取的原始值 ---
       console.log(`[SettingsStore DEBUG] Raw terminalEnableRightClickPaste from backend: '${settings.value.terminalEnableRightClickPaste}' (type: ${typeof settings.value.terminalEnableRightClickPaste})`);
@@ -432,6 +437,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'layoutLocked',
         'terminalScrollbackLimit',
         'fileManagerShowDeleteConfirmation',
+        'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
@@ -541,6 +547,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'layoutLocked',
         'terminalScrollbackLimit',
         'fileManagerShowDeleteConfirmation',
+        'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
@@ -861,6 +868,10 @@ export const useSettingsStore = defineStore('settings', () => {
   });
 
   //  Getter for File Manager delete confirmation, returning boolean
+  const fileManagerDoubleClickToOpenBoolean = computed(() => {
+      return settings.value.fileManagerDoubleClickToOpen === 'true'; // Default to false
+  });
+
   const fileManagerShowDeleteConfirmationBoolean = computed(() => {
       return settings.value.fileManagerShowDeleteConfirmation !== 'false'; // Default to true
   });
@@ -935,6 +946,7 @@ export const useSettingsStore = defineStore('settings', () => {
     layoutLockedBoolean,
     terminalScrollbackLimitNumber, //  Expose terminal scrollback limit getter
     fileManagerShowDeleteConfirmationBoolean, //  Expose file manager delete confirmation getter
+    fileManagerDoubleClickToOpenBoolean, //  Expose file manager double click to open getter
     terminalEnableRightClickPasteBoolean, //  Expose terminal right click paste getter
     statusMonitorShowIpBoolean, // 暴露状态监视器显示IP getter
   };

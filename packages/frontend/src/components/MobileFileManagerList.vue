@@ -20,9 +20,11 @@ const props = withDefaults(
     clipboardCount?: number;
     clipboardSourceBaseDir?: string;
     isCompact?: boolean;
+    doubleClickToOpen?: boolean;
   }>(),
   {
     isCompact: true,
+    doubleClickToOpen: false,
     hasClipboardContent: false,
     clipboardOperation: null,
     clipboardCount: 0,
@@ -219,11 +221,24 @@ const handleTouchEnd = () => {
   }
 };
 
+let lastParentTapTime = 0;
 const handleOpenParent = () => {
   if (props.isLoading) return;
+  if (props.doubleClickToOpen) {
+    const now = Date.now();
+    const isDoubleTap = now - lastParentTapTime < 350;
+    lastParentTapTime = now;
+    if (!isDoubleTap) {
+      return;
+    }
+    lastParentTapTime = 0;
+  }
   isNavigatingParent.value = true;
   emit('open-parent');
 };
+
+let lastItemTapTime = 0;
+let lastItemTapFilename = '';
 
 // 点击条目
 const handleRowClick = (item: FileListItem) => {
@@ -244,7 +259,30 @@ const handleRowClick = (item: FileListItem) => {
     return;
   }
 
-  // 常规模式下：如果是文件夹，设置加载态
+  // 开启双击打开模式时的判定逻辑
+  if (props.doubleClickToOpen) {
+    const now = Date.now();
+    const isDoubleTap = now - lastItemTapTime < 350 && lastItemTapFilename === item.filename;
+    lastItemTapTime = now;
+    lastItemTapFilename = item.filename;
+
+    if (!isDoubleTap) {
+      // 单击：切换选中/高亮该项
+      emit('toggle-select', item);
+      return;
+    }
+
+    // 双击：执行进入或打开动作并重置双击判定
+    lastItemTapTime = 0;
+    lastItemTapFilename = '';
+    if (item.attrs.isDirectory) {
+      navigatingFolderName.value = item.filename;
+    }
+    emit('item-click', item);
+    return;
+  }
+
+  // 常规模式下（默认单击即打开）：如果是文件夹，设置加载态
   if (item.attrs.isDirectory) {
     navigatingFolderName.value = item.filename;
   }

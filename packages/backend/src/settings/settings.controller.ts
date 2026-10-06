@@ -94,7 +94,8 @@ export const settingsController = {
           'terminalScrollbackLimit', // 终端回滚行数键
           'fileManagerShowDeleteConfirmation', // 文件管理器删除确认键
           'terminalEnableRightClickPaste', // 终端右键粘贴键
-          'showStatusMonitorIpAddress' // 添加状态监视器IP显示键 (与服务层和前端统一)
+          'showStatusMonitorIpAddress',
+          'fileManagerDoubleClickToOpen' // 添加状态监视器IP显示键 (与服务层和前端统一)
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {

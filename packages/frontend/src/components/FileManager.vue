@@ -117,6 +117,7 @@ const {
   fileManagerColWidthsObject,
   showPopupFileEditorBoolean,
   fileManagerShowDeleteConfirmationBoolean,
+  fileManagerDoubleClickToOpenBoolean,
 } = storeToRefs(settingsStore);
 
 // --- UI 状态 Refs ---
@@ -379,11 +380,13 @@ const {
   selectedItems, // 使用 Composable 返回的 selectedItems
   lastClickedIndex, // 获取 lastClickedIndex 以传递给 ContextMenu
   handleItemClick: originalHandleItemClick, // 使用 Composable 返回的 handleItemClick
+  handleItemDoubleClick: originalHandleItemDoubleClick, // 使用 Composable 返回的 handleItemDoubleClick
   clearSelection, // 获取清空选择的方法
 } = useFileManagerSelection({
   // 传递当前显示的列表 (已排序和过滤)
   displayedFileList: filteredFileList, // 现在 filteredFileList 已定义
   onItemAction: handleItemAction, // 传递动作回调
+  doubleClickToOpen: fileManagerDoubleClickToOpenBoolean, // 传递双击打开配置
 });
 
 // 自定义 handleItemClick 函数以支持移动端多选模式
@@ -397,6 +400,14 @@ const handleItemClick = (event: MouseEvent, item: FileListItem, forceMultiSelect
     return;
   }
   originalHandleItemClick(event, item);
+};
+
+// 双击条目处理函数
+const handleItemDoubleClick = (event: MouseEvent, item: FileListItem) => {
+  if (props.isMobile && isMultiSelectMode.value) {
+    return;
+  }
+  originalHandleItemDoubleClick(event, item);
 };
 
 // +++ 计算属性：获取选中的完整文件对象列表 +++
@@ -1111,6 +1122,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         :clipboard-operation="clipboardState.operation"
         :clipboard-count="clipboardSourcePaths.length"
         :clipboard-source-base-dir="clipboardSourceBaseDir"
+        :double-click-to-open="fileManagerDoubleClickToOpenBoolean"
         @open-parent="handleGoParent"
         @item-click="(item) => handleItemAction(item)"
         @toggle-select="handleMobileToggleSelect"
@@ -1247,6 +1259,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                     'hover:bg-header/50': dragOverTarget !== '..'
                 }"
                 @click="handleItemClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
+                @dblclick="handleItemDoubleClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @contextmenu.prevent.stop="showContextMenu($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @dragover.prevent="handleDragOverRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
                 @dragleave="handleDragLeaveRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
@@ -1280,6 +1293,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                   :key="item.filename"
                   :draggable="item.filename !== '..'" @dragstart="handleDragStart(item, $event)" @dragend="handleDragEnd"
                   @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
+                  @dblclick="handleItemDoubleClick($event, item)"
                   class="transition-colors duration-150 select-none"
                   :class="[
                       { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
