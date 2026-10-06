@@ -540,6 +540,12 @@
     "changeEncodingTooltip": "Change file encoding",
     "loadingEncoding": "Loading...",
     "noSearchResults": "No search results found",
+    "markdown": {
+      "split": "Split Preview",
+      "editOnly": "Source Only",
+      "previewOnly": "Preview Only",
+      "empty": "No Markdown content"
+    },
     "modals": {
       "titles": {
         "delete": "Delete \"{name}\"",

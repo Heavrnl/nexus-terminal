@@ -541,6 +541,12 @@
     "changeEncodingTooltip": "更改文件编码",
     "loadingEncoding": "加载中...",
     "noSearchResults": "未找到匹配的搜索结果",
+    "markdown": {
+      "split": "分屏预览",
+      "editOnly": "仅源码",
+      "previewOnly": "仅预览",
+      "empty": "暂无 Markdown 内容"
+    },
     "modals": {
       "titles": {
         "delete": "删除 \"{name}\"",

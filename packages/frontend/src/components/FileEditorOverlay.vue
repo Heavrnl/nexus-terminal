@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import MonacoEditor from './MonacoEditor.vue';
 import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue'; // +++ Import new mobile editor
+import MarkdownPreview from './MarkdownPreview.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
@@ -239,6 +240,48 @@ const currentTabSessionName = computed(() => {
   // sessionStore 已在 setup 中实例化
   return sessionStore.sessions.get(sessionId)?.connectionName ?? null; // 修正：使用 connectionName
 });
+
+// --- Markdown 预览逻辑 ---
+const isMarkdownFile = computed(() => {
+  if (!activeTab.value) return false;
+  const path = activeTab.value.filePath || '';
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ext === 'md' || ext === 'markdown' || ext === 'mdown' || currentTabLanguage.value === 'markdown';
+});
+
+// Markdown 视图模式: 'split' (双栏分屏) | 'edit' (仅源码) | 'preview' (仅渲染)
+const markdownViewMode = ref<'split' | 'edit' | 'preview'>('split');
+const splitRatio = ref(50); // 左侧编辑器所占宽度百分比 (20% ~ 80%)
+const isResizingSplit = ref(false);
+
+const startSplitResize = (e: MouseEvent) => {
+  isResizingSplit.value = true;
+  const target = e.currentTarget as HTMLElement;
+  const container = target.parentElement;
+  if (!container) return;
+  const containerRect = container.getBoundingClientRect();
+  const containerWidth = containerRect.width;
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    const offsetX = moveEvent.clientX - containerRect.left;
+    let newRatio = (offsetX / containerWidth) * 100;
+    newRatio = Math.max(20, Math.min(80, newRatio));
+    splitRatio.value = parseFloat(newRatio.toFixed(1));
+  };
+
+  const onMouseUp = () => {
+    isResizingSplit.value = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
+
+const resetSplitRatio = () => {
+  splitRatio.value = 50;
+};
 
 // --- 事件处理 (根据模式调用不同 action) ---
 
@@ -622,6 +665,37 @@ onBeforeUnmount(() => {
           <span v-if="currentTabIsModified" class="modified-indicator">*</span>
         </span>
         <div class="editor-actions">
+          <!-- Markdown 视图切换按钮组 -->
+          <div v-if="isMarkdownFile && !currentTabIsLoading" class="markdown-view-toggle">
+            <button
+              type="button"
+              class="markdown-toggle-btn"
+              :class="{ active: markdownViewMode === 'edit' }"
+              @click="markdownViewMode = 'edit'"
+              :title="t('fileManager.markdown.editOnly')"
+            >
+              <i class="fas fa-code"></i>
+            </button>
+            <button
+              type="button"
+              class="markdown-toggle-btn"
+              :class="{ active: markdownViewMode === 'split' }"
+              @click="markdownViewMode = 'split'"
+              :title="t('fileManager.markdown.split')"
+            >
+              <i class="fas fa-columns"></i>
+            </button>
+            <button
+              type="button"
+              class="markdown-toggle-btn"
+              :class="{ active: markdownViewMode === 'preview' }"
+              @click="markdownViewMode = 'preview'"
+              :title="t('fileManager.markdown.previewOnly')"
+            >
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+
           <!-- +++ 编码选择下拉菜单 +++ -->
           <div class="encoding-select-wrapper" v-if="activeTab && !currentTabIsLoading">
             <select
@@ -688,8 +762,91 @@ onBeforeUnmount(() => {
       <div class="editor-content-area">
         <div v-if="currentTabIsLoading" class="editor-loading">{{ t('fileManager.loadingFile') }}</div>
         <div v-else-if="currentTabLoadingError" class="editor-error">{{ currentTabLoadingError }}</div>
+
+        <!-- Markdown 专用视图 -->
+        <template v-else-if="activeTab && isMarkdownFile">
+          <!-- 1. 仅源码模式 -->
+          <template v-if="markdownViewMode === 'edit'">
+            <MonacoEditor
+              v-if="!props.isMobile"
+              :key="`monaco-edit-${activeTab.id}`"
+              v-model="activeEditorContent"
+              :language="currentTabLanguage"
+              :font-family="currentEditorFontFamily"
+              theme="vs-dark"
+              class="editor-instance"
+              :font-size="currentEditorFontSize"
+              @request-save="handleSaveRequest"
+              @update:fontSize="handleEditorFontSizeUpdate"
+              :initialScrollTop="activeTab?.scrollTop ?? 0"
+              :initialScrollLeft="activeTab?.scrollLeft ?? 0"
+              @update:scrollPosition="handleEditorScroll"
+            />
+            <CodeMirrorMobileEditor
+              v-else
+              :key="`cm-edit-${activeTab.id}`"
+              v-model="activeEditorContent"
+              :language="currentTabLanguage"
+              class="editor-instance"
+              @request-save="handleSaveRequest"
+              ref="codeMirrorMobileEditorRef"
+            />
+          </template>
+
+          <!-- 2. 仅预览模式 -->
+          <div v-else-if="markdownViewMode === 'preview'" class="markdown-full-preview">
+            <MarkdownPreview :content="activeEditorContent" :font-size="currentEditorFontSize" />
+          </div>
+
+          <!-- 3. 双栏分屏模式 (Split View) -->
+          <div v-else class="markdown-split-container">
+            <div v-if="isResizingSplit" class="resizing-overlay"></div>
+
+            <div class="split-pane split-editor-pane" :style="{ width: `${splitRatio}%` }">
+              <MonacoEditor
+                v-if="!props.isMobile"
+                :key="`monaco-split-${activeTab.id}`"
+                v-model="activeEditorContent"
+                :language="currentTabLanguage"
+                :font-family="currentEditorFontFamily"
+                theme="vs-dark"
+                class="editor-instance"
+                :font-size="currentEditorFontSize"
+                @request-save="handleSaveRequest"
+                @update:fontSize="handleEditorFontSizeUpdate"
+                :initialScrollTop="activeTab?.scrollTop ?? 0"
+                :initialScrollLeft="activeTab?.scrollLeft ?? 0"
+                @update:scrollPosition="handleEditorScroll"
+              />
+              <CodeMirrorMobileEditor
+                v-else
+                :key="`cm-split-${activeTab.id}`"
+                v-model="activeEditorContent"
+                :language="currentTabLanguage"
+                class="editor-instance"
+                @request-save="handleSaveRequest"
+                ref="codeMirrorMobileEditorRef"
+              />
+            </div>
+
+            <!-- 可拖拽分割条 -->
+            <div
+              class="markdown-split-resizer"
+              :class="{ active: isResizingSplit }"
+              @mousedown.prevent="startSplitResize"
+              @dblclick="resetSplitRatio"
+              title="拖拽调节宽度，双击复位 50%"
+            >
+              <div class="resizer-handle"></div>
+            </div>
+
+            <div class="split-pane split-preview-pane" :style="{ width: `${100 - splitRatio}%` }">
+              <MarkdownPreview :content="activeEditorContent" :font-size="currentEditorFontSize" />
+            </div>
+          </div>
+        </template>
         
-        <!-- Desktop Editor -->
+        <!-- 普通文件：Desktop Editor -->
         <MonacoEditor
           v-else-if="activeTab && !props.isMobile"
           :key="`monaco-${activeTab.id}`"
@@ -705,7 +862,7 @@ onBeforeUnmount(() => {
           :initialScrollLeft="activeTab?.scrollLeft ?? 0"
           @update:scrollPosition="handleEditorScroll"
         />
-        <!-- Mobile Editor -->
+        <!-- 普通文件：Mobile Editor -->
         <CodeMirrorMobileEditor
           v-else-if="activeTab && props.isMobile"
           :key="`cm-${activeTab.id}`"
@@ -1089,5 +1246,108 @@ onBeforeUnmount(() => {
 .conflict-btn.ignore-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
+}
+
+/* Markdown 视图切换胶囊按钮 */
+.markdown-view-toggle {
+  display: flex;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.markdown-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #9ca3af;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.markdown-toggle-btn:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.markdown-toggle-btn.active {
+  color: #ffffff;
+  background-color: var(--color-primary, #3b82f6);
+}
+
+/* Markdown 双栏分屏布局 */
+.markdown-split-container {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.markdown-full-preview {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.split-pane {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.split-editor-pane {
+  flex-shrink: 0;
+}
+
+.split-preview-pane {
+  flex-grow: 1;
+  background-color: #1e1e1e;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 可拖拽分割条 */
+.markdown-split-resizer {
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: #2b2b2b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+  z-index: 10;
+  user-select: none;
+}
+
+.markdown-split-resizer:hover,
+.markdown-split-resizer.active {
+  background-color: var(--color-primary, #3b82f6);
+}
+
+.resizer-handle {
+  width: 2px;
+  height: 24px;
+  background-color: rgba(255, 255, 255, 0.25);
+  border-radius: 1px;
+}
+
+.resizing-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  cursor: col-resize;
 }
 </style>
