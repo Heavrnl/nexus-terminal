@@ -63,6 +63,7 @@ interface SettingsState {
   fileManagerShowDeleteConfirmation?: string;
   fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
+  terminalNoWrap?: string; // 'true' or 'false' - 终端不换行 (默认 false)
   showStatusMonitorIpAddress?: string; // 'true' or 'false' - 状态监视器显示IP地址
   quickCommandRowSizeMultiplier?: string; // +++ 快捷命令列表行大小乘数 (e.g., '1.0') +++
   quickCommandsCompactMode?: string; // +++ 快捷指令视图紧凑模式 (e.g., 'false') +++
@@ -312,6 +313,10 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.terminalEnableRightClickPaste = 'true'; // 默认启用右键粘贴
         console.log(`[SettingsStore] terminalEnableRightClickPaste not found, set to default: ${settings.value.terminalEnableRightClickPaste}`);
       }
+      if (settings.value.terminalNoWrap === undefined) {
+        settings.value.terminalNoWrap = 'false'; // 默认关闭不换行 (即自动换行)
+        console.log(`[SettingsStore] terminalNoWrap not found, set to default: ${settings.value.terminalNoWrap}`);
+      }
       if (settings.value.showStatusMonitorIpAddress === undefined) {
         settings.value.showStatusMonitorIpAddress = 'false'; // 默认禁用状态监视器显示IP
         console.log(`[SettingsStore] showStatusMonitorIpAddress not found, set to default: ${settings.value.showStatusMonitorIpAddress}`);
@@ -439,6 +444,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
+        'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
         'quickCommandsCompactMode'
@@ -549,6 +555,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
+        'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
         'quickCommandsCompactMode'
@@ -877,6 +884,10 @@ export const useSettingsStore = defineStore('settings', () => {
   });
 
   //  Getter for Terminal Right Click Paste, returning boolean
+  const terminalNoWrapBoolean = computed(() => {
+      return settings.value.terminalNoWrap === 'true'; // Default to false
+  });
+
   const terminalEnableRightClickPasteBoolean = computed(() => {
       return settings.value.terminalEnableRightClickPaste !== 'false'; // Default to true
   });
@@ -948,6 +959,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fileManagerShowDeleteConfirmationBoolean, //  Expose file manager delete confirmation getter
     fileManagerDoubleClickToOpenBoolean, //  Expose file manager double click to open getter
     terminalEnableRightClickPasteBoolean, //  Expose terminal right click paste getter
+    terminalNoWrapBoolean, // Expose terminal no wrap getter
     statusMonitorShowIpBoolean, // 暴露状态监视器显示IP getter
   };
   });

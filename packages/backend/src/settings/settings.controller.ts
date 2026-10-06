@@ -95,7 +95,8 @@ export const settingsController = {
           'fileManagerShowDeleteConfirmation', // 文件管理器删除确认键
           'terminalEnableRightClickPaste', // 终端右键粘贴键
           'showStatusMonitorIpAddress',
-          'fileManagerDoubleClickToOpen' // 添加状态监视器IP显示键 (与服务层和前端统一)
+          'fileManagerDoubleClickToOpen',
+          'terminalNoWrap' // 终端不换行设置键 // 添加状态监视器IP显示键 (与服务层和前端统一)
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {

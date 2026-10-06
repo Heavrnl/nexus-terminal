@@ -3,6 +3,7 @@ import { ref, watch, computed, nextTick, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
+import { useSettingsStore } from '../stores/settings.store';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -14,7 +15,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
+const settingsStore = useSettingsStore();
 const { activeSessionId } = storeToRefs(sessionStore);
+const { terminalNoWrapBoolean } = storeToRefs(settingsStore);
 
 const terminalText = ref('');
 const lineCount = ref(0);
@@ -333,7 +336,8 @@ onUnmounted(() => {
             <!-- 文本展示区（v-html 支持搜索高亮渲染，长按直接调动系统水滴划选与系统复制） -->
             <pre
               v-if="terminalText"
-              class="font-mono text-[12.5px] leading-relaxed text-zinc-200 select-text whitespace-pre-wrap break-words selection:bg-primary/40 selection:text-white"
+              class="font-mono text-[12.5px] leading-relaxed text-zinc-200 select-text selection:bg-primary/40 selection:text-white"
+              :class="terminalNoWrapBoolean ? 'whitespace-pre min-w-max' : 'whitespace-pre-wrap break-words'"
             ><code v-html="highlightedHtml"></code></pre>
 
             <!-- 空白状态提示 -->

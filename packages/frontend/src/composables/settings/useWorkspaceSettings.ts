@@ -19,6 +19,7 @@ export function useWorkspaceSettings() {
     fileManagerShowDeleteConfirmationBoolean,
     fileManagerDoubleClickToOpenBoolean,
     terminalEnableRightClickPasteBoolean,
+    terminalNoWrapBoolean,
     showPopupFileManagerBoolean, 
     statusMonitorShowIpBoolean,
   } = storeToRefs(settingsStore);
@@ -264,6 +265,30 @@ export function useWorkspaceSettings() {
     }
   };
 
+  // --- Terminal No Wrap ---
+  const terminalNoWrapLocal = ref(false);
+  const terminalNoWrapLoading = ref(false);
+  const terminalNoWrapMessage = ref('');
+  const terminalNoWrapSuccess = ref(false);
+
+  const handleUpdateTerminalNoWrapSetting = async () => {
+    terminalNoWrapLoading.value = true;
+    terminalNoWrapMessage.value = '';
+    terminalNoWrapSuccess.value = false;
+    try {
+      const valueToSave = terminalNoWrapLocal.value ? 'true' : 'false';
+      await settingsStore.updateSetting('terminalNoWrap', valueToSave);
+      terminalNoWrapMessage.value = t('settings.workspace.terminalNoWrapSuccess', '终端不换行设置已保存。');
+      terminalNoWrapSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新终端不换行设置失败:', error);
+      terminalNoWrapMessage.value = error.message || t('settings.workspace.terminalNoWrapError', '保存终端不换行设置失败。');
+      terminalNoWrapSuccess.value = false;
+    } finally {
+      terminalNoWrapLoading.value = false;
+    }
+  };
+
   // --- Terminal Right Click Paste ---
   const terminalEnableRightClickPasteLocal = ref(true);
   const terminalEnableRightClickPasteLoading = ref(false);
@@ -348,6 +373,7 @@ export function useWorkspaceSettings() {
   watch(fileManagerShowDeleteConfirmationBoolean, (newValue) => { fileManagerShowDeleteConfirmationLocal.value = newValue; }, { immediate: true });
   watch(fileManagerDoubleClickToOpenBoolean, (newValue) => { fileManagerDoubleClickToOpenLocal.value = newValue; }, { immediate: true });
   watch(terminalEnableRightClickPasteBoolean, (newValue) => { terminalEnableRightClickPasteLocal.value = newValue; }, { immediate: true });
+  watch(terminalNoWrapBoolean, (newValue) => { terminalNoWrapLocal.value = newValue; }, { immediate: true });
   watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
   watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
 
@@ -417,7 +443,12 @@ export function useWorkspaceSettings() {
     terminalEnableRightClickPasteLoading, 
     terminalEnableRightClickPasteMessage, 
     terminalEnableRightClickPasteSuccess, 
-    handleUpdateTerminalRightClickPasteSetting, 
+    handleUpdateTerminalRightClickPasteSetting,
+    terminalNoWrapLocal,
+    terminalNoWrapLoading,
+    terminalNoWrapMessage,
+    terminalNoWrapSuccess,
+    handleUpdateTerminalNoWrapSetting, 
 
     // Popup File Manager
     showPopupFileManagerLocal,

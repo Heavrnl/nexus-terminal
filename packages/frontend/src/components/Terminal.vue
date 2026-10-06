@@ -73,7 +73,8 @@ const sessionStore = useSessionStore(); // +++ 实例化会话 store +++
 const {
   autoCopyOnSelectBoolean,
   terminalScrollbackLimitNumber, 
-  terminalEnableRightClickPasteBoolean, 
+  terminalEnableRightClickPasteBoolean,
+  terminalNoWrapBoolean, 
 } = storeToRefs(settingsStore); 
 
 // 防抖函数
@@ -105,17 +106,24 @@ const debouncedEmitResize = debounce((term: Terminal) => {
     }
 }, 150); // 150ms 防抖延迟
 
+// 计算终端尺寸 (支持“不换行”模式下超宽列数)
+const calculateTerminalDimensions = (term: Terminal) => {
+  const proposed = fitAddon?.proposeDimensions();
+  const rows = proposed?.rows || term.rows;
+  const visualCols = proposed?.cols || term.cols;
+  // 开启不换行模式时提供充足列宽 (至少 500 列)，内容超出通过横向滚动条查看
+  const cols = terminalNoWrapBoolean.value ? Math.max(500, visualCols) : visualCols;
+  return { cols, rows };
+};
+
 // 立即执行 Fit 并发送 Resize 的函数
 const fitAndEmitResizeNow = (term: Terminal) => {
-    // terminalRef 现在指向内部容器，检查它即可
     if (!term || !terminalRef.value) return;
     try {
-        // 确保容器可见且有尺寸
         if (terminalRef.value.offsetHeight > 0 && terminalRef.value.offsetWidth > 0) {
-            fitAddon?.fit();
-            const dimensions = { cols: term.cols, rows: term.rows };
-            emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: dimensions });
-            // 发出稳定尺寸事件
+            const dims = calculateTerminalDimensions(term);
+            term.resize(dims.cols, dims.rows);
+            emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims });
             if (terminalRef.value) {
               const stableWidth = terminalRef.value.offsetWidth;
               const stableHeight = terminalRef.value.offsetHeight;
@@ -265,7 +273,8 @@ onMounted(() => {
     console.log(`[Terminal ${props.sessionId}] Xterm open() called, considering DOM ready for initial style checks.`);
  
     // 适应容器大小
-    fitAddon.fit();
+    const initDims = calculateTerminalDimensions(terminal);
+    terminal.resize(initDims.cols, initDims.rows);
     emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows } }); // 触发初始 resize 事件
 
     // 监听用户输入
@@ -314,7 +323,8 @@ onMounted(() => {
 
             if (rectHeight > 0 && rectWidth > 0) {
                 try {
-                  fitAddon?.fit();
+                  const dims = calculateTerminalDimensions(terminal);
+                  terminal.resize(dims.cols, dims.rows);
                   debouncedEmitResize(terminal); // This will log the cols/rows after debouncing
                   emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: roundedWidth, height: roundedHeight });
                  } catch (e) {
@@ -434,6 +444,17 @@ onMounted(() => {
     });
 
     // --- 监听外观变化 ---
+    watch(terminalNoWrapBoolean, (noWrap) => {
+      if (terminal && terminalRef.value && props.isActive) {
+        console.log(`[Terminal ${props.sessionId}] terminalNoWrap changed to ${noWrap}, updating terminal dimensions.`);
+        nextTick(() => {
+          if (terminal) {
+            fitAndEmitResizeNow(terminal);
+          }
+        });
+      }
+    });
+
     watch(effectiveTerminalTheme, (newTheme) => { // Changed from currentTerminalTheme
       if (terminal) {
         console.log(`[Terminal ${props.sessionId}] 应用新终端主题 (effective)。`);
@@ -770,7 +791,10 @@ const handleTerminalClick = () => {
   <div
     ref="terminalOuterWrapperRef"
     class="terminal-outer-wrapper transition-all duration-150 relative"
-    :class="{ 'ring-2 ring-primary ring-inset': isDraggingOverTerminal }"
+    :class="{
+      'ring-2 ring-primary ring-inset': isDraggingOverTerminal,
+      'no-wrap': terminalNoWrapBoolean
+    }"
     @click="handleTerminalClick"
     @dragenter="handleTerminalDragEnter"
     @dragover="handleTerminalDragOver"
@@ -799,6 +823,16 @@ const handleTerminalClick = () => {
   height: 100%;
   overflow: hidden;
   position: relative;
+}
+
+.terminal-outer-wrapper.no-wrap {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+.terminal-outer-wrapper.no-wrap .terminal-inner-container {
+  width: max-content !important;
+  min-width: 100% !important;
 }
 
 .terminal-inner-container {

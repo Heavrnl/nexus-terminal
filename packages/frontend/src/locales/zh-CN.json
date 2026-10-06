@@ -951,7 +951,11 @@
       "fileManagerDoubleClickToOpenTitle": "双击打开文件/文件夹",
       "fileManagerDoubleClickToOpenDescription": "开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开（默认关闭）",
       "fileManagerDoubleClickToOpenSuccess": "双击打开文件/文件夹设置已保存。",
-      "fileManagerDoubleClickToOpenError": "保存双击打开文件/文件夹设置失败。"
+      "fileManagerDoubleClickToOpenError": "保存双击打开文件/文件夹设置失败。",
+      "terminalNoWrapTitle": "不换行",
+      "terminalNoWrapDescription": "开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行（默认关闭）",
+      "terminalNoWrapSuccess": "终端不换行设置已保存。",
+      "terminalNoWrapError": "保存终端不换行设置失败。"
     },
     "statusMonitorShowIp": {
       "title": "状态监视器显示IP地址",

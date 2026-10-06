@@ -98,6 +98,30 @@
           </div>
         </div>
 
+        <!-- 不换行 (纯开关) -->
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
+              {{ $t('settings.workspace.terminalNoWrapTitle', '不换行') }}
+            </div>
+            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
+              {{ $t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行（默认关闭）') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!terminalNoWrapSuccess && terminalNoWrapMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
+              {{ terminalNoWrapMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="terminalNoWrapLocal"
+              :loading="terminalNoWrapLoading"
+              @change="handleUpdateTerminalNoWrapSetting"
+              aria-label="终端不换行"
+            />
+          </div>
+        </div>
+
         <!-- 命令输入同步目标 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
@@ -539,6 +563,11 @@ const {
   terminalEnableRightClickPasteMessage,
   terminalEnableRightClickPasteSuccess,
   handleUpdateTerminalRightClickPasteSetting,
+  terminalNoWrapLocal,
+  terminalNoWrapLoading,
+  terminalNoWrapMessage,
+  terminalNoWrapSuccess,
+  handleUpdateTerminalNoWrapSetting,
   showPopupFileManagerLocal,
   showPopupFileManagerMessage,
   showPopupFileManagerSuccess,
