@@ -96,6 +96,8 @@ export const settingsController = {
           'terminalEnableRightClickPaste', // 终端右键粘贴键
           'showStatusMonitorIpAddress',
           'fileManagerDoubleClickToOpen',
+          'fileEditorModalWidth', // 文本编辑器弹窗宽度键
+          'fileEditorModalHeight', // 文本编辑器弹窗高度键
           'terminalNoWrap' // 终端不换行设置键 // 添加状态监视器IP显示键 (与服务层和前端统一)
       ];
       const filteredSettings: Record<string, string> = {};

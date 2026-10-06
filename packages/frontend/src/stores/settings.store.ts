@@ -67,6 +67,8 @@ interface SettingsState {
   showStatusMonitorIpAddress?: string; // 'true' or 'false' - 状态监视器显示IP地址
   quickCommandRowSizeMultiplier?: string; // +++ 快捷命令列表行大小乘数 (e.g., '1.0') +++
   quickCommandsCompactMode?: string; // +++ 快捷指令视图紧凑模式 (e.g., 'false') +++
+  fileEditorModalWidth?: string; // 文本编辑器弹窗宽度 (px)
+  fileEditorModalHeight?: string; // 文本编辑器弹窗高度 (px)
   [key: string]: string | undefined;
 }
 
@@ -447,7 +449,9 @@ export const useSettingsStore = defineStore('settings', () => {
         'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
-        'quickCommandsCompactMode'
+        'quickCommandsCompactMode',
+        'fileEditorModalWidth',
+        'fileEditorModalHeight'
       ];
       if (!allowedKeys.includes(key)) {
           console.error(`[SettingsStore] 尝试更新不允许的设置键: ${key}`);
@@ -558,7 +562,9 @@ export const useSettingsStore = defineStore('settings', () => {
         'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
-        'quickCommandsCompactMode'
+        'quickCommandsCompactMode',
+        'fileEditorModalWidth',
+        'fileEditorModalHeight'
       ];
       const filteredUpdates: Partial<SettingsState> = {};
       let languageUpdate: string | undefined = undefined;
@@ -911,7 +917,26 @@ export const useSettingsStore = defineStore('settings', () => {
     return settings.value.quickCommandsCompactMode === 'true';
   });
   
+  const setFileEditorModalSize = async (width: number, height: number) => {
+    const w = String(Math.round(width));
+    const h = String(Math.round(height));
+    if (settings.value.fileEditorModalWidth === w && settings.value.fileEditorModalHeight === h) {
+      return;
+    }
+    settings.value.fileEditorModalWidth = w;
+    settings.value.fileEditorModalHeight = h;
+    try {
+      await updateMultipleSettings({
+        fileEditorModalWidth: w,
+        fileEditorModalHeight: h,
+      });
+    } catch (e) {
+      console.warn('[SettingsStore] 保存文本编辑器窗口尺寸失败:', e);
+    }
+  };
+
  return {
+    setFileEditorModalSize,
     settings, // 只包含通用设置
     isLoading,
     error,

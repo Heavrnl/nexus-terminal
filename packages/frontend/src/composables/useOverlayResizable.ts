@@ -1,25 +1,74 @@
-import { ref, computed, onBeforeUnmount } from 'vue';
+import { ref, computed, onBeforeUnmount, getCurrentInstance } from 'vue';
 
 export interface UseOverlayResizableOptions {
   initialWidthRatio?: number; // 默认 0.75
   initialHeightRatio?: number; // 默认 0.85
+  initialWidthPx?: number; // 外部指定的初始像素宽度 (如从后端读取)
+  initialHeightPx?: number; // 外部指定的初始像素高度 (如从后端读取)
   minWidth?: number; // 默认 400
   minHeight?: number; // 默认 300
   isMobile?: boolean;
   onClose?: () => void;
+  onResizeEnd?: (width: number, height: number) => void;
 }
+
+const getViewportWidth = (): number => {
+  if (typeof window !== 'undefined' && typeof window.innerWidth === 'number') {
+    return window.innerWidth;
+  }
+  if (typeof globalThis !== 'undefined' && typeof (globalThis as any).innerWidth === 'number') {
+    return (globalThis as any).innerWidth;
+  }
+  return 1920;
+};
+
+const getViewportHeight = (): number => {
+  if (typeof window !== 'undefined' && typeof window.innerHeight === 'number') {
+    return window.innerHeight;
+  }
+  if (typeof globalThis !== 'undefined' && typeof (globalThis as any).innerHeight === 'number') {
+    return (globalThis as any).innerHeight;
+  }
+  return 1080;
+};
 
 export function useOverlayResizable(options: UseOverlayResizableOptions = {}) {
   const {
     initialWidthRatio = 0.75,
     initialHeightRatio = 0.85,
+    initialWidthPx,
+    initialHeightPx,
     minWidth = 400,
     minHeight = 300,
     onClose,
+    onResizeEnd,
   } = options;
 
-  const popupWidthPx = ref(window.innerWidth * initialWidthRatio);
-  const popupHeightPx = ref(window.innerHeight * initialHeightRatio);
+  const clampWidth = (val: number) => {
+    const maxW = getViewportWidth() * 0.95;
+    return Math.min(Math.max(minWidth, val), maxW);
+  };
+
+  const clampHeight = (val: number) => {
+    const maxH = getViewportHeight() * 0.95;
+    return Math.min(Math.max(minHeight, val), maxH);
+  };
+
+  const defaultWidth = initialWidthPx && !isNaN(initialWidthPx)
+    ? clampWidth(initialWidthPx)
+    : clampWidth(getViewportWidth() * initialWidthRatio);
+
+  const defaultHeight = initialHeightPx && !isNaN(initialHeightPx)
+    ? clampHeight(initialHeightPx)
+    : clampHeight(getViewportHeight() * initialHeightRatio);
+
+  const popupWidthPx = ref(defaultWidth);
+  const popupHeightPx = ref(defaultHeight);
+
+  const setPopupSize = (width: number, height: number) => {
+    popupWidthPx.value = clampWidth(width);
+    popupHeightPx.value = clampHeight(height);
+  };
   const isResizing = ref(false);
   const justFinishedResizing = ref(false);
   let resizeCooldownTimer: number | null = null;
@@ -54,8 +103,8 @@ export function useOverlayResizable(options: UseOverlayResizableOptions = {}) {
     if (!isResizing.value) return;
     const diffX = event.clientX - startX.value;
     const diffY = event.clientY - startY.value;
-    popupWidthPx.value = Math.max(minWidth, startWidthPx.value + diffX);
-    popupHeightPx.value = Math.max(minHeight, startHeightPx.value + diffY);
+    popupWidthPx.value = clampWidth(startWidthPx.value + diffX);
+    popupHeightPx.value = clampHeight(startHeightPx.value + diffY);
   };
 
   const stopResize = () => {
@@ -68,6 +117,9 @@ export function useOverlayResizable(options: UseOverlayResizableOptions = {}) {
       document.body.style.userSelect = '';
 
       justFinishedResizing.value = true;
+      if (onResizeEnd) {
+        onResizeEnd(Math.round(popupWidthPx.value), Math.round(popupHeightPx.value));
+      }
       if (resizeCooldownTimer) clearTimeout(resizeCooldownTimer);
       resizeCooldownTimer = window.setTimeout(() => {
         justFinishedResizing.value = false;
@@ -121,13 +173,15 @@ export function useOverlayResizable(options: UseOverlayResizableOptions = {}) {
     }
   };
 
-  onBeforeUnmount(() => {
-    stopResize();
-    if (resizeCooldownTimer) {
-      clearTimeout(resizeCooldownTimer);
-      resizeCooldownTimer = null;
-    }
-  });
+  if (getCurrentInstance()) {
+    onBeforeUnmount(() => {
+      stopResize();
+      if (resizeCooldownTimer) {
+        clearTimeout(resizeCooldownTimer);
+        resizeCooldownTimer = null;
+      }
+    });
+  }
 
   return {
     popupWidthPx,
@@ -138,5 +192,6 @@ export function useOverlayResizable(options: UseOverlayResizableOptions = {}) {
     stopResize,
     handleBackdropMouseDown,
     handleBackdropClick,
+    setPopupSize,
   };
 }

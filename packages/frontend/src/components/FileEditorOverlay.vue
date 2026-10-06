@@ -65,15 +65,46 @@ const handleCloseContainer = () => {
   isVisible.value = false;
 };
 
-// 弹窗拖拽缩放
+// 弹窗拖拽缩放与后端尺寸持久化 (跨设备恢复)
+const savedWidthPx = computed(() => {
+  const w = settingsStore.settings.fileEditorModalWidth;
+  return w ? parseInt(w, 10) : undefined;
+});
+
+const savedHeightPx = computed(() => {
+  const h = settingsStore.settings.fileEditorModalHeight;
+  return h ? parseInt(h, 10) : undefined;
+});
+
 const {
   getPopupStyle,
   startResize,
   handleBackdropMouseDown,
   handleBackdropClick,
+  setPopupSize,
 } = useOverlayResizable({
+  initialWidthPx: savedWidthPx.value,
+  initialHeightPx: savedHeightPx.value,
   onClose: handleCloseContainer,
+  onResizeEnd: (width, height) => {
+    // 调整窗口大小完成后自动持久化保存到后端数据库
+    settingsStore.setFileEditorModalSize(width, height);
+  },
 });
+
+// 监听设置从后端拉取完成或跨设备更新，自动同步编辑器尺寸
+watch(
+  [() => settingsStore.settings.fileEditorModalWidth, () => settingsStore.settings.fileEditorModalHeight],
+  ([w, h]) => {
+    if (w && h) {
+      const parsedW = parseInt(w, 10);
+      const parsedH = parseInt(h, 10);
+      if (!isNaN(parsedW) && !isNaN(parsedH)) {
+        setPopupSize(parsedW, parsedH);
+      }
+    }
+  }
+);
 
 const popupStyle = computed(() => getPopupStyle(props.isMobile));
 
