@@ -910,7 +910,6 @@ const closeFileManagerModal = () => {
 
 .mobile-command-bar {
   flex-shrink: 0;
-  border-top: 1px solid var(--border-color, #ccc);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 

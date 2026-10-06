@@ -393,15 +393,33 @@ const handleQuickCommandExecute = (command: string) => {
   emitWorkspaceEvent('terminal:sendCommand', { command }); // Emit the command to the parent
   closeQuickCommandsModal(); // Close the modal after selection
 };
+
+// +++ 移动端/桌面端按钮基础样式生成 +++
+const getBarButtonClass = (isActive: boolean = false) => {
+  if (props.isMobile) {
+    return [
+      'flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-150 active:scale-95',
+      isActive
+        ? 'bg-primary/15 text-primary border border-primary/30 shadow-xs'
+        : 'text-text-secondary hover:text-foreground hover:bg-border/30 active:bg-border/40'
+    ];
+  }
+  return [
+    'flex-shrink-0 flex items-center justify-center w-8 h-8 border rounded-lg transition-colors duration-200',
+    isActive
+      ? 'border-primary bg-primary/10 text-primary'
+      : 'border-border/50 text-text-secondary hover:bg-border hover:text-foreground'
+  ];
+};
 </script>
 
 <template>
-  <div :class="$attrs.class" class="flex flex-col bg-background border-t border-border/30">
+  <div :class="[$attrs.class, 'flex flex-col', props.isMobile ? 'bg-header border-t border-border/20' : 'bg-background border-t border-border/30']">
     <div class="flex items-center py-1.5 px-2 bg-transparent relative gap-1 w-full overflow-x-auto no-scrollbar">
       <!-- Clear Terminal Button -->
       <button
         @click="emitWorkspaceEvent('terminal:clear')"
-        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :class="getBarButtonClass()"
         :title="t('commandInputBar.clearTerminal', '清空终端')"
       >
         <i class="fas fa-eraser text-base"></i>
@@ -410,8 +428,7 @@ const handleQuickCommandExecute = (command: string) => {
        <button
         v-if="props.isMobile"
         @click="toggleQuickCommandsModal"
-        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
-        :class="showQuickCommands ? 'border-primary bg-primary/10 text-primary' : ''"
+        :class="getBarButtonClass(showQuickCommands)"
         :title="t('quickCommands.title', '快捷指令')"
       >
         <i class="fas fa-bolt text-base"></i>
@@ -420,8 +437,7 @@ const handleQuickCommandExecute = (command: string) => {
        <button
         v-if="props.isMobile"
         @click="toggleCommandHistoryModal"
-        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
-        :class="showCommandHistoryModal ? 'border-primary bg-primary/10 text-primary' : ''"
+        :class="getBarButtonClass(showCommandHistoryModal)"
         :title="t('commandHistory.title', '命令历史')"
       >
         <i class="fas fa-history text-base"></i>
@@ -430,10 +446,10 @@ const handleQuickCommandExecute = (command: string) => {
       <button
         v-if="!props.isMobile"
         @click="focusSwitcherStore.toggleConfigurator(true)"
-        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+        :class="getBarButtonClass()"
         :title="t('commandInputBar.configureFocusSwitch', '配置焦点切换')"
       >
-        <i class="fas fa-keyboard text-base"></i> <!-- Removed text-primary -->
+        <i class="fas fa-keyboard text-base"></i>
       </button>
       <!-- Desktop: Command Input -->
       <input
@@ -456,8 +472,7 @@ const handleQuickCommandExecute = (command: string) => {
       <button
         v-else
         @click="toggleMobileMultiLine"
-        class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
-        :class="isMobileMultiLineOpen ? 'border-primary bg-primary/10 text-primary' : ''"
+        :class="getBarButtonClass(isMobileMultiLineOpen)"
         :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
       >
         <i class="fas fa-terminal text-base"></i>
@@ -485,8 +500,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="props.isMobile"
           @click="toggleSuspendedSshSessionsModal"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
-          :class="showSuspendedSshSessionsModal ? 'border-primary bg-primary/10 text-primary' : ''"
+          :class="getBarButtonClass(showSuspendedSshSessionsModal)"
           :title="t('suspendedSshSessions.title', '挂起会话')"
         >
           <i class="fas fa-pause-circle text-base"></i>
@@ -495,7 +509,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="props.isMobile"
           @click="emit('toggle-virtual-keyboard')"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass(props.isVirtualKeyboardVisible)"
           :title="props.isVirtualKeyboardVisible ? t('commandInputBar.hideKeyboard', '隐藏虚拟键盘') : t('commandInputBar.showKeyboard', '显示虚拟键盘')"
         >
           <i class="fas fa-keyboard text-base" :class="{ 'opacity-50': !props.isVirtualKeyboardVisible }"></i>
@@ -504,7 +518,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="!props.isMobile"
           @click="toggleSearch"
-          class="flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass(isSearching)"
           :title="isSearching ? t('commandInputBar.closeSearch') : t('commandInputBar.openSearch')"
         >
           <i v-if="!isSearching" class="fas fa-search text-base"></i>
@@ -532,7 +546,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="showPopupFileManagerBoolean || props.isMobile"
           @click="openFileManagerModal"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass()"
         >
           <i class="fas fa-folder text-base"></i>
         </button>
@@ -540,7 +554,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="showPopupFileEditorBoolean || props.isMobile"
           @click="openFileEditorModal"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass()"
           :title="t('fileEditor.title', '文件编辑')"
         >
           <i class="fas fa-edit text-base"></i>
@@ -549,7 +563,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="props.isMobile"
           @click="toggleHeader"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass(!isHeaderVisible)"
           :title="isHeaderVisible ? t('terminalTabBar.hideHeaderTooltip', '隐藏导航栏') : t('terminalTabBar.showHeaderTooltip', '显示导航栏')"
         >
           <i :class="[isHeaderVisible ? 'fa-eye-slash' : 'fa-eye', 'fas text-base']"></i>
@@ -558,7 +572,7 @@ const handleQuickCommandExecute = (command: string) => {
         <button
           v-if="props.isMobile"
           @click="openTransferProgressModal"
-          class="flex-shrink-0 flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
+          :class="getBarButtonClass()"
           :title="t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
         >
           <i class="fas fa-tasks text-base"></i>

@@ -423,39 +423,39 @@ watch(() => props.activeSessionId, async (newId) => {
 </script>
 
 <template>
-  <!-- 外层容器：桌面端带边框圆角，移动端为实体底色的会话行 -->
+  <!-- 外层容器：桌面端带边框圆角，移动端为一体化底控舱的上半部会话行 -->
   <div :class="[
     props.isMobile
-      ? 'flex items-center w-full h-10 px-2 bg-header border-t border-border select-none relative shrink-0'
+      ? 'flex items-center w-full h-9 px-2 bg-header border-t border-border/40 select-none relative shrink-0'
       : 'flex items-center bg-header border border-border overflow-hidden rounded-t-md mx-2 mt-2 h-10 select-none relative'
   ]">
     <!-- ==================== 移动端特化视图 ==================== -->
     <template v-if="props.isMobile">
-      <!-- + 号按键：最左侧固定按键 -->
+      <!-- + 号按键：最左侧轻羽图标按键 -->
       <button
         @click="togglePopup"
-        class="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg bg-background text-primary border border-border hover:bg-border/60 active:scale-95 transition-all shadow-sm"
+        class="flex-shrink-0 flex items-center justify-center w-6.5 h-6.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all mr-1"
         :title="$t('tabs.newTabTooltip')"
       >
         <i class="fas fa-plus text-xs"></i>
       </button>
 
       <!-- 纵向分割微线 -->
-      <div class="h-4 w-[1px] bg-border mx-2 flex-shrink-0"></div>
+      <div class="h-3.5 w-[1px] bg-border/40 mr-1.5 flex-shrink-0"></div>
 
       <!-- 会话胶囊标签横向滚动列表 -->
       <div
         ref="mobileTabsContainerRef"
-        class="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-grow h-full py-1 min-w-0"
+        class="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
       >
         <div
           v-for="session in draggableSessions"
           :key="session.sessionId"
           :data-tab-id="session.sessionId"
-          class="flex items-center px-2.5 h-7 rounded-lg cursor-pointer flex-shrink-0 transition-all duration-150 select-none max-w-[150px] border shadow-sm"
+          class="flex items-center px-2 h-6.5 rounded-md cursor-pointer flex-shrink-0 transition-all duration-150 select-none max-w-[150px]"
           :class="session.sessionId === activeSessionId
-            ? 'bg-background text-primary border-primary/50 font-semibold shadow-sm ring-1 ring-primary/20'
-            : 'bg-background/50 text-text-secondary border-border hover:bg-background/80 hover:text-foreground active:scale-95'"
+            ? 'bg-background text-primary border border-primary/30 font-medium shadow-xs'
+            : 'text-text-secondary hover:text-foreground hover:bg-background/40 active:bg-background/60 border border-transparent'"
           @click="activateSession(session.sessionId)"
           @contextmenu.prevent="showContextMenu($event, session.sessionId)"
           @touchstart="handleTouchStart($event, session.sessionId)"
