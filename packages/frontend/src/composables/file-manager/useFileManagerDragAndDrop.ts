@@ -76,6 +76,39 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     }
   };
 
+  // --- 辅助函数：检测并触发边缘平滑自动滚动 ---
+  const checkAndTriggerAutoScroll = (event: DragEvent) => {
+    const container = fileListContainerRef.value;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const mouseY = event.clientY - rect.top;
+
+    if (mouseY < SCROLL_ZONE_HEIGHT) {
+      if (scrollIntervalId.value === null) {
+        scrollIntervalId.value = window.setInterval(() => {
+          if (container.scrollTop > 0) {
+            container.scrollTop -= SCROLL_SPEED;
+          } else {
+            stopAutoScroll();
+          }
+        }, 30);
+      }
+    } else if (mouseY > container.clientHeight - SCROLL_ZONE_HEIGHT) {
+      if (scrollIntervalId.value === null) {
+        scrollIntervalId.value = window.setInterval(() => {
+          if (container.scrollTop < container.scrollHeight - container.clientHeight) {
+            container.scrollTop += SCROLL_SPEED;
+          } else {
+            stopAutoScroll();
+          }
+        }, 30);
+      }
+    } else {
+      stopAutoScroll();
+    }
+  };
+
   // --- 辅助函数：从 DragEvent 解析拖拽载荷 ---
   const extractDragPayload = (event: DragEvent): NexusSftpDragPayload | null => {
     if (activeSftpDragPayload.value) {
@@ -145,41 +178,14 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
           if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
         }
       } else if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
-      }
-
-      // 处理自动滚动
-      const container = fileListContainerRef.value;
-      if (container && (dragOverTarget.value || isContainerDropTarget.value)) {
-        const rect = container.getBoundingClientRect();
-        const mouseY = event.clientY - rect.top;
-
-        if (mouseY < SCROLL_ZONE_HEIGHT) {
-          if (scrollIntervalId.value === null) {
-            scrollIntervalId.value = window.setInterval(() => {
-              if (container.scrollTop > 0) {
-                container.scrollTop -= SCROLL_SPEED;
-              } else {
-                stopAutoScroll();
-              }
-            }, 30);
-          }
-        } else if (mouseY > container.clientHeight - SCROLL_ZONE_HEIGHT) {
-          if (scrollIntervalId.value === null) {
-            scrollIntervalId.value = window.setInterval(() => {
-              if (container.scrollTop < container.scrollHeight - container.clientHeight) {
-                container.scrollTop += SCROLL_SPEED;
-              } else {
-                stopAutoScroll();
-              }
-            }, 30);
-          }
-        } else {
-          stopAutoScroll();
+        // 鼠标在某行上：如果跨窗格拖拽，始终允许放置到当前目录
+        if (payload.sourceDirectory !== currentPath.value) {
+          isContainerDropTarget.value = true;
+          event.dataTransfer.dropEffect = 'move';
         }
-      } else {
-        stopAutoScroll();
       }
+
+      checkAndTriggerAutoScroll(event);
       return;
     }
 
@@ -342,7 +348,6 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
   // --- 行悬停处理 ---
   const handleDragOverRow = (targetItem: FileListItem, event: DragEvent) => {
     event.preventDefault();
-    event.stopPropagation(); // 阻止冒泡到容器
 
     const payload = extractDragPayload(event);
     if (!payload || !isConnected.value) {
@@ -351,22 +356,44 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       return;
     }
 
-    // 目标必须是文件夹或者 '..'
+    // 触发边缘平滑自动滚动（即使列表产生滚动条且鼠标悬停在行上，也能上下滚动）
+    checkAndTriggerAutoScroll(event);
+
     const isTargetDir = targetItem.filename === '..' || targetItem.attrs.isDirectory;
+
+    // 跨窗格拖拽场景
+    if (payload.sourceDirectory !== currentPath.value) {
+      if (isTargetDir) {
+        // 跨窗格拖拽到目标文件夹或 ..
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        dragOverTarget.value = targetItem.filename;
+        isContainerDropTarget.value = false;
+      } else {
+        // 跨窗格拖拽到普通文件行 -> 目标为当前窗格的当前目录！
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        dragOverTarget.value = null;
+        isContainerDropTarget.value = true;
+      }
+      return;
+    }
+
+    // 同窗格内拖拽场景：必须是文件夹或 '..'
     if (!isTargetDir) {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
       dragOverTarget.value = null;
+      isContainerDropTarget.value = false;
       return;
     }
 
-    // 不能拖到自身 (如果在同一个目录下且目标就是被拖拽的项目之一)
-    if (payload.sourceDirectory === currentPath.value && payload.items.some(it => it.filename === targetItem.filename)) {
+    // 同窗格内不能拖到自身
+    if (payload.items.some(it => it.filename === targetItem.filename)) {
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
       dragOverTarget.value = null;
+      isContainerDropTarget.value = false;
       return;
     }
 
-    // 有效放置目标
+    // 有效放置目标（子文件夹或 '..'）
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     dragOverTarget.value = targetItem.filename;
     isContainerDropTarget.value = false;
@@ -379,7 +406,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     }
   };
 
-  // --- 放置在具体某行上 (子文件夹或 ..) ---
+  // --- 放置在具体某行上 (子文件夹、.. 或跨窗格落在普通文件行) ---
   const handleDropOnRow = (targetItem: FileListItem, event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -395,6 +422,8 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       return;
     }
 
+    const isTargetDir = targetItem.filename === '..' || targetItem.attrs.isDirectory;
+
     // 计算放置的目标目录
     let targetDirectory = '';
     if (targetItem.filename === '..') {
@@ -402,9 +431,16 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     } else if (targetItem.attrs.isDirectory) {
       targetDirectory = joinPath(currentPath.value, targetItem.filename);
     } else {
-      draggedItem.value = null;
-      activeSftpDragPayload.value = null;
-      return;
+      // 目标是普通文件行
+      if (payload.sourceDirectory !== currentPath.value) {
+        // 跨窗格拖拽落在普通文件行上，意图为移动到当前窗格的当前目录！
+        targetDirectory = currentPath.value;
+      } else {
+        // 同窗格内拖到普通文件行，无操作
+        draggedItem.value = null;
+        activeSftpDragPayload.value = null;
+        return;
+      }
     }
 
     // 不能移动到源目录相同的子目录（自身）

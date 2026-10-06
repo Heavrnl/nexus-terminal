@@ -978,25 +978,38 @@ defineExpose({ focusSearchInput, startPathEdit });
     />
 
 
-    <!-- File List Container -->
-    <div
-      ref="fileListContainerRef"
-      class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable] transition-colors duration-150"
-      :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
-      @dragenter.prevent="handleDragEnter"
-      @dragover.prevent="handleDragOver"
-      @dragleave.prevent="handleDragLeave"
-      @drop.prevent="handleDrop"
-      @click="fileListContainerRef?.focus()"
-      @keydown="handleKeydown"
-      @wheel="handleWheel"
-      @contextmenu.prevent="showContextMenu($event)"
-      :style="{
-        '--row-size-multiplier': rowSizeMultiplier,
-        '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
-      }"
-      tabindex="0"
-    >
+    <!-- File List Viewport Wrapper (视口定位层，确保提示始终居中于可视区域) -->
+    <div class="flex-grow min-h-0 relative overflow-hidden flex flex-col">
+      <!-- 跨窗格拖拽到当前目录的放置提示 (不受内部滚动条影响，吸附在视口正中) -->
+      <div
+        v-if="isContainerDropTarget"
+        class="absolute inset-0 z-40 flex items-center justify-center bg-primary/10 pointer-events-none border-2 border-dashed border-primary/60 rounded-md backdrop-blur-[0.5px]"
+      >
+        <div class="px-3.5 py-1.5 rounded-lg bg-header/95 border border-primary/40 text-foreground text-xs font-medium shadow-xl flex items-center gap-2">
+          <i class="fas fa-file-import text-primary animate-bounce"></i>
+          <span>松开移动到当前目录</span>
+        </div>
+      </div>
+
+      <!-- File List Container -->
+      <div
+        ref="fileListContainerRef"
+        class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable] transition-colors duration-150"
+        :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
+        @dragenter.prevent="handleDragEnter"
+        @dragover.prevent="handleDragOver"
+        @dragleave.prevent="handleDragLeave"
+        @drop.prevent="handleDrop"
+        @click="fileListContainerRef?.focus()"
+        @keydown="handleKeydown"
+        @wheel="handleWheel"
+        @contextmenu.prevent="showContextMenu($event)"
+        :style="{
+          '--row-size-multiplier': rowSizeMultiplier,
+          '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
+        }"
+        tabindex="0"
+      >
         <!-- 外部文件拖拽蒙版 -->
         <div
           v-if="showExternalDropOverlay"
@@ -1007,17 +1020,6 @@ defineExpose({ focusSearchInput, startPathEdit });
           @drop.prevent="handleOverlayDrop"
         >
           {{ t('fileManager.dropFilesHere', 'Drop files here to upload') }}
-        </div>
-
-        <!-- 跨窗格拖拽到当前目录的放置提示 -->
-        <div
-          v-if="isContainerDropTarget"
-          class="absolute inset-0 z-40 flex items-center justify-center bg-primary/10 pointer-events-none border-2 border-dashed border-primary/60 rounded-md backdrop-blur-[0.5px]"
-        >
-          <div class="px-3.5 py-1.5 rounded-lg bg-header/95 border border-primary/40 text-foreground text-xs font-medium shadow-xl flex items-center gap-2">
-            <i class="fas fa-file-import text-primary animate-bounce"></i>
-            <span>松开移动到当前目录</span>
-          </div>
         </div>
 
         <!-- File Table -->
@@ -1177,6 +1179,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         </table>
         <!-- Removed separate loading/empty divs -->
      </div>
+    </div>
 
      <!-- 使用 FileUploadPopup 组件 -->
      <FileUploadPopup :uploads="uploads" @cancel-upload="cancelUpload" />

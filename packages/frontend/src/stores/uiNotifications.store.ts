@@ -11,6 +11,7 @@ export interface UINotification {
 
 export const useUiNotificationsStore = defineStore('uiNotifications', () => {
   const notifications = ref<UINotification[]>([]);
+  const lastNotificationTimestamps = new Map<string, number>();
   let nextId = 0;
 
   /**
@@ -18,6 +19,15 @@ export const useUiNotificationsStore = defineStore('uiNotifications', () => {
    * @param notification - 通知对象 (至少包含 type 和 message)
    */
   const addNotification = (notification: Omit<UINotification, 'id'> & { timeout?: number }) => { // Ensure timeout is part of the input type for clarity
+    // 500ms 内相同类型与内容的通知自动去重，杜绝多实例/事件并发导致的双重甚至多重提示
+    const dedupeKey = `${notification.type}:${notification.message}`;
+    const now = Date.now();
+    const lastTime = lastNotificationTimestamps.get(dedupeKey) || 0;
+    if (now - lastTime < 500) {
+      return;
+    }
+    lastNotificationTimestamps.set(dedupeKey, now);
+
     const id = nextId++;
     // Force a 3-second timeout for all notifications
     const newNotification: UINotification = { ...notification, id, timeout: 3000 };

@@ -105,6 +105,10 @@ export function createSftpActionsManager(
     // 用于存储注销函数的数组
     const unregisterCallbacks: (() => void)[] = [];
 
+    // 记录本实例发起的移动/复制请求，避免同会话多窗格并发监听导致重复提示与重复广播
+    const pendingMoveRequestIds = new Set<string>();
+    const pendingCopyRequestIds = new Set<string>();
+
     // *** 响应式文件树 ***
     const fileTree = reactive<FileTreeNode>({
         filename: '/', // 根节点代表根目录
@@ -501,6 +505,7 @@ export function createSftpActionsManager(
         }
         if (sourcePaths.length === 0) return;
         const requestId = generateRequestId();
+        pendingCopyRequestIds.add(requestId);
         sendMessage({
             type: 'sftp:copy',
             requestId: requestId,
@@ -525,6 +530,7 @@ export function createSftpActionsManager(
         //     return;
         // }
         const requestId = generateRequestId();
+        pendingMoveRequestIds.add(requestId);
         sendMessage({
             type: 'sftp:move', // 使用 'sftp:move' 类型
             requestId: requestId,
@@ -995,8 +1001,15 @@ export function createSftpActionsManager(
         const destinationDir = copyPayload.destination;
         const newItems = copyPayload.items;
 
+        const isCopyInitiator = message.requestId ? pendingCopyRequestIds.has(message.requestId) : false;
+        if (message.requestId) {
+            pendingCopyRequestIds.delete(message.requestId);
+        }
+
         console.log(`[SFTP ${instanceSessionId}] 复制成功到: ${destinationDir}`);
-        uiNotificationsStore.showSuccess(t('fileManager.notifications.copySuccess')); // 添加成功通知
+        if (isCopyInitiator) {
+            uiNotificationsStore.showSuccess(t('fileManager.notifications.copySuccess')); // 仅发起方弹出提示
+        }
 
         // 更新文件树
         const destNode = findNodeByPath(fileTree, destinationDir);
@@ -1034,8 +1047,15 @@ export function createSftpActionsManager(
         const destinationDir = movePayload.destination;
         const newItems = movePayload.items;
 
+        const isMoveInitiator = message.requestId ? pendingMoveRequestIds.has(message.requestId) : false;
+        if (message.requestId) {
+            pendingMoveRequestIds.delete(message.requestId);
+        }
+
         console.log(`[SFTP ${instanceSessionId}] 移动成功到: ${destinationDir}`);
-        uiNotificationsStore.showSuccess(t('fileManager.notifications.moveSuccess')); // 添加成功通知
+        if (isMoveInitiator) {
+            uiNotificationsStore.showSuccess(t('fileManager.notifications.moveSuccess')); // 仅发起方弹出提示
+        }
 
         // 1. 从旧位置移除
         sourcePaths.forEach(oldPath => {
@@ -1066,13 +1086,15 @@ export function createSftpActionsManager(
              console.warn(`[SFTP ${instanceSessionId}] Move success, but destination node ${destinationDir} not found in tree.`);
         }
 
-        // 3. 广播跨窗格移动完成通知，驱动源目录和目标目录实例自动同步刷新
-        const effectiveSourceDir = sourcePaths[0]?.substring(0, sourcePaths[0].lastIndexOf('/')) || '/';
-        workspaceEmitter.emit('fileManager:itemsMoved', {
-            sessionId: instanceSessionId,
-            sourceDir: effectiveSourceDir,
-            targetDir: destinationDir,
-        });
+        // 3. 广播跨窗格移动完成通知（仅发起方广播一次，驱动源目录和目标目录实例自动同步刷新）
+        if (isMoveInitiator) {
+            const effectiveSourceDir = sourcePaths[0]?.substring(0, sourcePaths[0].lastIndexOf('/')) || '/';
+            workspaceEmitter.emit('fileManager:itemsMoved', {
+                sessionId: instanceSessionId,
+                sourceDir: effectiveSourceDir,
+                targetDir: destinationDir,
+            });
+        }
     };
 
 
@@ -1125,6 +1147,17 @@ export function createSftpActionsManager(
     };
 
     const onActionError = (payload: MessagePayload, message: WebSocketMessage) => {
+        // 如果是移动或复制错误，仅对发起方弹出错误，防止多实例重复报错
+        if (message.type === 'sftp:move:error') {
+            const isInitiator = message.requestId ? pendingMoveRequestIds.has(message.requestId) : false;
+            if (message.requestId) pendingMoveRequestIds.delete(message.requestId);
+            if (!isInitiator) return;
+        } else if (message.type === 'sftp:copy:error') {
+            const isInitiator = message.requestId ? pendingCopyRequestIds.has(message.requestId) : false;
+            if (message.requestId) pendingCopyRequestIds.delete(message.requestId);
+            if (!isInitiator) return;
+        }
+
         // 类型断言，因为我们知道这些错误的 payload 是 string
         const errorPayload = payload as string;
         console.error(`[SFTP ${instanceSessionId}] Action ${message.type} failed:`, errorPayload);
@@ -1139,7 +1172,6 @@ export function createSftpActionsManager(
             'sftp:move:error': t('fileManager.errors.moveFailed'), // +++
         };
         const prefix = actionTypeMap[message.type] || t('fileManager.errors.generic');
-        // error.value = `${prefix}: ${errorPayload}`; // 使用通知
         uiNotificationsStore.showError(`${prefix}: ${errorPayload}`);
     };
 
