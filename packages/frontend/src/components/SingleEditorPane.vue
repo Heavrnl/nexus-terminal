@@ -130,7 +130,8 @@ const updateSelectWidth = () => {
     const textWidth = span.offsetWidth;
     document.body.removeChild(span);
 
-    select.style.width = `${textWidth + 24}px`;
+    // 加大宽度并确保有舒适的呼吸空间与箭头空位
+    select.style.width = `${Math.max(86, textWidth + 36)}px`;
   });
 };
 
@@ -278,14 +279,20 @@ defineExpose({
               :title="t('editor.splitRight', '向右拆分编辑器 (Split Editor Right)')"
               @click="emit('split-editor', 'horizontal', activeTab?.id)"
             >
-              <i class="fas fa-columns"></i>
+              <svg class="split-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2">
+                <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
+                <line x1="8" y1="2" x2="8" y2="14" />
+              </svg>
             </button>
             <button
               class="action-icon-btn split-btn"
               :title="t('editor.splitDown', '向下拆分编辑器 (Split Editor Down)')"
               @click="emit('split-editor', 'vertical', activeTab?.id)"
             >
-              <i class="fas fa-grip-lines"></i>
+              <svg class="split-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2">
+                <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
+                <line x1="1.5" y1="8" x2="14.5" y2="8" />
+              </svg>
             </button>
           </template>
 
@@ -495,21 +502,33 @@ defineExpose({
   color: #f85149;
 }
 
+.split-icon {
+  display: block;
+  pointer-events: none;
+}
+
 .encoding-select-wrapper {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   vertical-align: middle;
 }
 
 .encoding-select {
+  box-sizing: border-box;
+  height: 22px;
+  min-width: 86px;
   background-color: #3c3c3c;
   color: #cccccc;
   border: 1px solid #555555;
-  padding: 1px 4px;
+  padding: 0 16px 0 8px;
   font-size: 11px;
   border-radius: 3px;
   cursor: pointer;
-  line-height: 1.4;
+  line-height: 20px;
   outline: none;
+  display: inline-flex;
+  align-items: center;
+  transition: border-color 0.15s ease;
 }
 
 .encoding-select:focus {
@@ -540,15 +559,21 @@ defineExpose({
 }
 
 .save-btn {
+  box-sizing: border-box;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background-color: #0e639c;
   color: white;
-  border: none;
-  padding: 2px 8px;
+  border: 1px solid transparent;
+  padding: 0 10px;
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   border-radius: 3px;
-  line-height: 1.4;
-  transition: background-color 0.15s;
+  line-height: 20px;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .save-btn:hover:not(:disabled) {
