@@ -406,3 +406,17 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
   filter: grayscale(0.5);
 }
+
+/* 全局隐藏滚动条工具类 (彻底隐藏横向与纵向滚动条，保留触摸平滑滑动) */
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  background: transparent !important;
+}

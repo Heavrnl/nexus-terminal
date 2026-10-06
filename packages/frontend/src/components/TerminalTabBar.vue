@@ -427,7 +427,7 @@ watch(() => props.activeSessionId, async (newId) => {
   <!-- 外层容器：桌面端带边框圆角，移动端为一体化底控舱的上半部会话行 -->
   <div :class="[
     props.isMobile
-      ? 'flex items-center w-full h-9 px-2 bg-header border-t border-border/40 select-none relative shrink-0'
+      ? 'flex items-center w-full h-9 px-2 bg-header border-t border-border/40 select-none relative shrink-0 overflow-hidden'
       : 'flex items-center bg-header border border-border overflow-hidden rounded-t-md mx-2 mt-2 h-10 select-none relative'
   ]">
     <!-- ==================== 移动端特化视图 ==================== -->
@@ -444,10 +444,10 @@ watch(() => props.activeSessionId, async (newId) => {
       <!-- 纵向分割微线 -->
       <div class="h-3.5 w-[1px] bg-border/40 mr-1.5 flex-shrink-0"></div>
 
-      <!-- 会话胶囊标签横向滚动列表 -->
+      <!-- 会话胶囊标签横向滚动列表 (彻底消除滚动条并支持横向平滑滑动) -->
       <div
         ref="mobileTabsContainerRef"
-        class="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
+        class="mobile-tabs-scroll-container flex items-center gap-1 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
       >
         <div
           v-for="session in draggableSessions"
@@ -612,3 +612,22 @@ watch(() => props.activeSessionId, async (newId) => {
     <TransferProgressModal v-model:visible="showTransferProgressModal" :is-mobile="props.isMobile" />
   </div>
 </template>
+
+<style scoped>
+/* 移动端会话行：支持横向平滑惯性滚动，彻底隐藏横向与纵向滚动条 */
+.mobile-tabs-scroll-container {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE 10+ / Edge */
+  -webkit-overflow-scrolling: touch; /* iOS 原生顺畅惯性滚动 */
+}
+
+.mobile-tabs-scroll-container::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  background: transparent !important;
+}
+</style>
