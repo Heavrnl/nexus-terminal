@@ -6,6 +6,7 @@ import StyleCustomizerUiTab from './style-customizer/StyleCustomizerUiTab.vue';
 import StyleCustomizerTerminalTab from './style-customizer/StyleCustomizerTerminalTab.vue';
 import StyleCustomizerBackgroundTab from './style-customizer/StyleCustomizerBackgroundTab.vue';
 import StyleCustomizerOtherTab from './style-customizer/StyleCustomizerOtherTab.vue'; 
+import StyleCustomizerHighlightTab from './style-customizer/StyleCustomizerHighlightTab.vue';
 
 const { t } = useI18n();
 const uiTabRef = ref<InstanceType<typeof StyleCustomizerUiTab> | null>(null);
@@ -23,7 +24,7 @@ const closeCustomizer = () => {
   emit('close');
 };
 
-const currentTab = ref<'ui' | 'terminal' | 'background' | 'other'>('ui');
+const currentTab = ref<'ui' | 'terminal' | 'highlight' | 'background' | 'other'>('ui');
 
 // --- Processing Functions ---
 
@@ -163,6 +164,16 @@ onMounted(() => {
           >
             {{ t('styleCustomizer.terminalStyles') }}
           </button>
+          <button
+            @click="currentTab = 'highlight'"
+            :class="[
+              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
+              { '!bg-button !text-button-text !font-bold': currentTab === 'highlight' }
+            ]"
+            :disabled="isEditingTheme"
+          >
+            {{ t('styleCustomizer.highlightTab', '高亮规则') }}
+          </button>
            <button
             @click="currentTab = 'background'"
             :class="[
@@ -196,6 +207,7 @@ onMounted(() => {
             @update:editing-theme="val => editingTheme = val"
           />
 
+          <StyleCustomizerHighlightTab v-if="currentTab === 'highlight'" />
           <StyleCustomizerBackgroundTab v-if="currentTab === 'background'" />
           <StyleCustomizerOtherTab v-if="currentTab === 'other'" />
        </main>

@@ -8,6 +8,8 @@ import type { AppearanceSettings, UpdateAppearanceDto } from '../types/appearanc
 import { defaultXtermTheme, defaultUiTheme } from '../features/appearance/config/default-themes';
 import { htmlPresetsApi, type LocalHtmlPresetItem, type RemoteHtmlPresetItem } from '../features/appearance/api/html-presets.api';
 import { terminalThemesApi } from '../features/appearance/api/terminal-themes.api';
+import { DEFAULT_TERMINAL_HIGHLIGHT_RULES, type TerminalKeywordHighlightRule } from '../types/terminal-highlight.types';
+import { compileHighlightRules, type CompiledHighlightPipeline } from '../utils/terminal-highlighter';
 
 // 设备专属终端字体与字号常量
 export const DEFAULT_DESKTOP_TERMINAL_FONT = "'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', 'Microsoft YaHei Mono', monospace";
@@ -208,6 +210,32 @@ export const useAppearanceStore = defineStore('appearance', () => {
     const terminalTextShadowBlur = computed<number>(() => appearanceSettings.value.terminalTextShadowBlur ?? 0);
     const terminalTextShadowColor = computed<string>(() => appearanceSettings.value.terminalTextShadowColor ?? 'rgba(0,0,0,0.5)');
 
+    // --- 终端智能高亮规则 Getter ---
+    const terminalHighlightEnabled = computed<boolean>(() => {
+        return appearanceSettings.value.terminalHighlightEnabled ?? false;
+    });
+
+    const terminalHighlightRules = computed<TerminalKeywordHighlightRule[]>(() => {
+        const raw = appearanceSettings.value.terminalHighlightRules;
+        if (!raw || !raw.trim()) {
+            return DEFAULT_TERMINAL_HIGHLIGHT_RULES;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return parsed;
+            }
+        } catch (e) {
+            console.error('[AppearanceStore] 解析高亮规则失败，使用默认规则:', e);
+        }
+        return DEFAULT_TERMINAL_HIGHLIGHT_RULES;
+    });
+
+    const terminalHighlightPipeline = computed<CompiledHighlightPipeline | null>(() => {
+        if (!terminalHighlightEnabled.value) return null;
+        return compileHighlightRules(terminalHighlightRules.value);
+    });
+
     // --- Actions ---
 
     // 初始化外观数据加载
@@ -389,6 +417,19 @@ export const useAppearanceStore = defineStore('appearance', () => {
     }
     async function setTerminalTextShadowColor(color: string) {
         await updateAppearanceSettings({ terminalTextShadowColor: color });
+    }
+
+    // --- 终端智能高亮规则 Actions ---
+    async function setTerminalHighlightEnabled(enabled: boolean) {
+        await updateAppearanceSettings({ terminalHighlightEnabled: enabled });
+    }
+
+    async function setTerminalHighlightRules(rules: TerminalKeywordHighlightRule[]) {
+        await updateAppearanceSettings({ terminalHighlightRules: JSON.stringify(rules) });
+    }
+
+    async function resetTerminalHighlightRulesToDefault() {
+        await updateAppearanceSettings({ terminalHighlightRules: JSON.stringify(DEFAULT_TERMINAL_HIGHLIGHT_RULES) });
     }
 
     // 终端主题管理 Actions
@@ -724,6 +765,12 @@ export const useAppearanceStore = defineStore('appearance', () => {
         terminalTextShadowOffsetY,
         terminalTextShadowBlur,
         terminalTextShadowColor,
+        terminalHighlightEnabled,
+        terminalHighlightRules,
+        terminalHighlightPipeline,
+        setTerminalHighlightEnabled,
+        setTerminalHighlightRules,
+        resetTerminalHighlightRulesToDefault,
         isStyleCustomizerVisible,
         toggleStyleCustomizer,
         loadInitialAppearanceData,

@@ -32,6 +32,8 @@ export interface AppearanceSettings {
   terminalTextShadowOffsetY?: number;
   terminalTextShadowBlur?: number;
   terminalTextShadowColor?: string;
+  terminalHighlightEnabled?: boolean;
+  terminalHighlightRules?: string; // JSON 格式存储的规则数组
   updatedAt?: number;
 }
  

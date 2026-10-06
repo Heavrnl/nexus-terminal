@@ -31,6 +31,10 @@ export interface AppearanceSettings {
   terminalTextShadowOffsetY?: number;
   terminalTextShadowBlur?: number;
   terminalTextShadowColor?: string;
+
+  // 终端关键字高亮规则
+  terminalHighlightEnabled?: boolean;
+  terminalHighlightRules?: string; // JSON 格式存储的 TerminalKeywordHighlightRule 数组
 }
  
 // 前端用于更新外观设置的数据结构 (对应 API 请求体)

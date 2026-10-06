@@ -28,6 +28,8 @@ let terminalTextStrokeEnabledFound = false;
     let terminalTextShadowOffsetYFound = false;
     let terminalTextShadowBlurFound = false;
     let terminalTextShadowColorFound = false;
+    let terminalHighlightEnabledFound = false;
+    let terminalHighlightRulesFound = false;
  
     for (const row of rows) {
         // 更新 latestUpdatedAt
@@ -116,6 +118,14 @@ case 'terminalTextStrokeEnabled':
                 settings.terminalTextShadowColor = row.value;
                 terminalTextShadowColorFound = true;
                 break;
+            case 'terminalHighlightEnabled':
+                settings.terminalHighlightEnabled = row.value === 'true';
+                terminalHighlightEnabledFound = true;
+                break;
+            case 'terminalHighlightRules':
+                settings.terminalHighlightRules = row.value;
+                terminalHighlightRulesFound = true;
+                break;
         }
     }
  
@@ -166,6 +176,12 @@ case 'terminalTextStrokeEnabled':
         terminalTextShadowColor: terminalTextShadowColorFound
             ? settings.terminalTextShadowColor
             : defaults.terminalTextShadowColor,
+        terminalHighlightEnabled: terminalHighlightEnabledFound
+            ? settings.terminalHighlightEnabled
+            : defaults.terminalHighlightEnabled,
+        terminalHighlightRules: terminalHighlightRulesFound
+            ? settings.terminalHighlightRules
+            : defaults.terminalHighlightRules,
        updatedAt: latestUpdatedAt || defaults.updatedAt, // 使用最新的更新时间，否则使用默认时间戳
   };
 };
@@ -200,6 +216,10 @@ const getDefaultAppearanceSettings = (): Omit<AppearanceSettings, '_id'> => {
         terminalTextShadowOffsetY: 2,
         terminalTextShadowBlur: 0,
         terminalTextShadowColor: '#000000',
+
+        // 终端关键字高亮规则默认值
+        terminalHighlightEnabled: false,
+        terminalHighlightRules: '',
        updatedAt: Date.now(), // 提供默认时间戳
   };
 };
@@ -240,6 +260,8 @@ export const ensureDefaultSettingsExist = async (db: sqlite3.Database): Promise<
         { key: 'terminalTextShadowOffsetY', value: defaults.terminalTextShadowOffsetY },
         { key: 'terminalTextShadowBlur', value: defaults.terminalTextShadowBlur },
         { key: 'terminalTextShadowColor', value: defaults.terminalTextShadowColor },
+        { key: 'terminalHighlightEnabled', value: defaults.terminalHighlightEnabled },
+        { key: 'terminalHighlightRules', value: defaults.terminalHighlightRules },
     ];
  
     try {
