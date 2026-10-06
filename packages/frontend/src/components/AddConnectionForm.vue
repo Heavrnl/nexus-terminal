@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { ConnectionInfo } from '../stores/connections.store';
 import { useAddConnectionForm } from '../composables/useAddConnectionForm';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { useVisualViewport } from '../composables/useVisualViewport';
 import AddConnectionFormBasicInfo from './AddConnectionFormBasicInfo.vue';
 import AddConnectionFormAuth from './AddConnectionFormAuth.vue';
 import AddConnectionFormAdvanced from './AddConnectionFormAdvanced.vue';
@@ -45,6 +46,31 @@ const isMobileMode = computed(() => {
     return props.isMobile;
   }
   return detectedMobile.value || windowWidth.value < 768;
+});
+
+// 移动端软键盘与输入框聚焦管理（防止底部固定按钮顶上去遮挡输入法视野）
+const { isKeyboardVisible } = useVisualViewport();
+const isFormInputFocused = ref(false);
+
+const handleFocusIn = (e: FocusEvent) => {
+  const target = e.target as HTMLElement | null;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+    isFormInputFocused.value = true;
+  }
+};
+
+const handleFocusOut = () => {
+  setTimeout(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || (active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA' && active.tagName !== 'SELECT')) {
+      isFormInputFocused.value = false;
+    }
+  }, 120);
+};
+
+// 软键盘激活或输入框聚焦时隐藏吸底按钮栏
+const shouldHideBottomBar = computed(() => {
+  return isKeyboardVisible.value || isFormInputFocused.value;
 });
 
 const {
@@ -91,7 +117,11 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
         class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
         @click.self="emit('close')"
       >
-        <div class="mobile-form-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text">
+        <div
+          class="mobile-form-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text"
+          @focusin="handleFocusIn"
+          @focusout="handleFocusOut"
+        >
           
           <!-- 1. 顶部手柄条与导航栏 -->
           <div class="flex-shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
@@ -207,12 +237,31 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
               </div>
             </div>
 
+            <!-- 滚动内容底部的流式提交按钮（软键盘激活时滑到底部可直接提交） -->
+            <div class="pt-3 pb-1">
+              <button
+                type="button"
+                @click="handleSubmit"
+                :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+                class="w-full py-2.5 px-4 rounded-xl bg-primary text-button-text hover:bg-primary-hover active:scale-98 disabled:opacity-50 text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all"
+              >
+                <svg v-if="isLoading" class="animate-spin h-4 w-4 text-button-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>{{ submitButtonText }}</span>
+              </button>
+            </div>
+
             <!-- 底部空间留白 -->
             <div class="h-2"></div>
           </div>
 
-          <!-- 3. 移动端固定吸底操作栏 (Sticky Bottom Bar) -->
-          <div class="flex-shrink-0 border-t border-border/40 bg-header/40 px-4 py-2.5">
+          <!-- 3. 移动端固定吸底操作栏 (软键盘弹起或输入聚焦时自动隐藏，防止遮挡视野) -->
+          <div
+            v-show="!shouldHideBottomBar"
+            class="mobile-sticky-bottom-bar flex-shrink-0 border-t border-border/40 bg-header/40 px-4 py-2.5 transition-all duration-150"
+          >
             <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
             <div v-if="formData.type === 'SSH' && !isScriptModeActive" class="flex items-center justify-between mb-2">
               <button
@@ -415,5 +464,11 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
 
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+
+/* 软键盘激活或输入聚焦时，彻底隐藏吸底固定操作条，释放最大视野 */
+.mobile-form-sheet:focus-within .mobile-sticky-bottom-bar,
+.keyboard-open .mobile-sticky-bottom-bar {
+  display: none !important;
 }
 </style>
