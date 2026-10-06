@@ -19,7 +19,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'navigate-to-path', path: string): void;
   (e: 'open-file', fileItem: FileListItem, fullPath?: string): void;
-  (e: 'cd-to-terminal'): void;
   (e: 'refresh'): void;
 }>();
 
@@ -301,17 +300,6 @@ defineExpose({
     class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0"
     :class="{ 'ring-1 ring-primary/40 border-primary/50': isEditing }"
   >
-    <!-- 最左侧：将终端目录切换到当前路径按钮 -->
-    <button
-      type="button"
-      class="flex items-center justify-center w-6 h-6 mr-1 rounded text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-      @click.stop="emit('cd-to-terminal')"
-      :disabled="!isConnected"
-      :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
-    >
-      <i class="fas fa-terminal text-[11px] text-text-secondary/80"></i>
-    </button>
-
     <!-- 面包屑显示态 -->
     <div
       v-if="!isEditing"

@@ -16,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
+  (e: 'cd-to-terminal'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
   (e: 'new-folder'): void;
@@ -73,8 +74,22 @@ defineExpose({
 
 <template>
   <div class="h-9 px-2 bg-header flex items-center justify-between border-b border-border/50 select-none flex-shrink-0">
-    <!-- 左侧快捷搜索工具 -->
+    <!-- 左侧快捷导航与搜索工具 -->
     <div class="flex items-center gap-1 min-w-0">
+      <!-- CD 到终端按钮 -->
+      <button
+        type="button"
+        class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground flex-shrink-0"
+        @click.stop="emit('cd-to-terminal')"
+        :disabled="!isConnected"
+        :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
+      >
+        <i class="fas fa-terminal text-xs"></i>
+      </button>
+
+      <!-- 分隔微线 -->
+      <div class="h-4 w-px bg-border/60 mx-1 flex-shrink-0"></div>
+
       <!-- 搜索区域 -->
       <div class="flex items-center flex-shrink-0">
         <button
