@@ -928,7 +928,6 @@ defineExpose({ focusSearchInput, startPathEdit });
       :show-popup-file-editor="showPopupFileEditorBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
-      @cd-to-terminal="sendCdCommandToTerminal"
       @open-popup-editor="openPopupEditor"
       @upload-files="triggerFileUpload"
       @new-folder="handleNewFolderContextMenuClick"
@@ -947,6 +946,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       :sftp-manager="currentSftpManager"
       @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
       @open-file="handleBreadcrumbOpenFile"
+      @cd-to-terminal="sendCdCommandToTerminal"
       @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
     />
 
