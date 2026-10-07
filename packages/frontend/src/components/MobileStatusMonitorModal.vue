@@ -154,6 +154,26 @@ const getProgressGradient = (percent: number) => {
   return 'bg-gradient-to-r from-emerald-500 to-green-500';
 };
 
+const isChartReady = ref(false);
+
+const onSheetEntered = () => {
+  isChartReady.value = true;
+};
+
+const onSheetLeaving = () => {
+  isChartReady.value = false;
+};
+
+watch(() => props.isVisible, (visible) => {
+  if (visible) {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  } else {
+    isChartReady.value = false;
+  }
+});
+
 const handleClose = () => {
   emit('close');
 };
@@ -161,14 +181,25 @@ const handleClose = () => {
 
 <template>
   <Teleport to="body">
-    <Transition name="bottom-sheet">
+    <!-- 1. 独立全屏遮罩 (纯透明度淡入淡出，绝对独立，绝无包含块与位移冲突) -->
+    <Transition name="sheet-mask-fade">
       <div
         v-if="isVisible"
-        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="handleClose"
+        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs select-none"
+        @click="handleClose"
+      />
+    </Transition>
+
+    <!-- 2. 独立底部滑出抽屉 (自身负责滑动，直接定位，Vue原生侦测动画生命周期) -->
+    <Transition
+      name="sheet-panel-slide"
+      @after-enter="onSheetEntered"
+      @before-leave="onSheetLeaving"
+    >
+      <div
+        v-if="isVisible"
+        class="fixed bottom-0 left-0 right-0 z-50 mobile-status-sheet w-full h-[85dvh] max-h-[90vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
       >
-        <!-- 移动端底部滑出面板 (Bottom Sheet) -->
-        <div class="mobile-status-sheet w-full h-[85vh] max-h-[90vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden">
           <!-- 顶部拖拽手柄指示条 -->
           <div
             class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
@@ -416,32 +447,56 @@ const handleClose = () => {
                 </div>
               </div>
 
-              <!-- 历史走势趋势折线图 -->
-              <StatusCharts
-                v-if="activeSessionId"
-                :server-status="currentServerStatus"
-                :active-session-id="activeSessionId"
-              />
+              <!-- 历史走势趋势折线图 (等抽屉滑到位后再加载渲染，杜绝Canvas重绘闪烁) -->
+              <div class="status-charts-wrapper min-h-[300px]">
+                <StatusCharts
+                  v-if="activeSessionId && isChartReady"
+                  :server-status="currentServerStatus"
+                  :active-session-id="activeSessionId"
+                />
+                <div
+                  v-else-if="activeSessionId"
+                  class="flex flex-col items-center justify-center py-12 rounded-xl bg-header/20 border border-border/40 text-text-secondary/50 space-y-2"
+                >
+                  <i class="fas fa-chart-line text-lg animate-pulse text-primary/40"></i>
+                  <span class="text-xs">加载实时走势图...</span>
+                </div>
+              </div>
             </template>
 
             <!-- 底部安全区垫高 -->
             <div class="sheet-safe-bottom"></div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
   </Teleport>
 </template>
 
 <style scoped>
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+/* 1. 遮罩层纯透明度淡入淡出动效 (绝无位移与重排，避免背景闪烁) */
+.sheet-mask-fade-enter-active,
+.sheet-mask-fade-leave-active {
+  transition: opacity 0.24s ease;
 }
 
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
+.sheet-mask-fade-enter-from,
+.sheet-mask-fade-leave-to {
   opacity: 0;
+}
+
+/* 2. 抽屉面板平滑滑动动效 (直接由抽屉自身承载transform，Vue原生侦测事件结束) */
+.sheet-panel-slide-enter-active {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.sheet-panel-slide-leave-active {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform;
+}
+
+.sheet-panel-slide-enter-from,
+.sheet-panel-slide-leave-to {
   transform: translateY(100%);
 }
 

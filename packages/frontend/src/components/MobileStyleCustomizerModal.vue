@@ -144,14 +144,30 @@ const handleResetUiTheme = async () => {
 </template>
 
 <style scoped>
+/* 遮罩淡入淡出动效：无 transform，纯 opacity，避免 fixed 包含块重排导致全屏闪烁 */
 .bottom-sheet-enter-active,
 .bottom-sheet-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.24s ease;
 }
 
 .bottom-sheet-enter-from,
 .bottom-sheet-leave-to {
   opacity: 0;
+}
+
+/* 抽屉底部弹性滑入滑出动效：仅作用于内层 sheet，隔离重排并启用硬件加速 */
+.bottom-sheet-enter-active .mobile-customizer-sheet {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.bottom-sheet-leave-active .mobile-customizer-sheet {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform;
+}
+
+.bottom-sheet-enter-from .mobile-customizer-sheet,
+.bottom-sheet-leave-to .mobile-customizer-sheet {
   transform: translateY(100%);
 }
 

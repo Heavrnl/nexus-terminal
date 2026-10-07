@@ -538,5 +538,6 @@ onMounted(() => {
 <style scoped>
 .chart-container {
   backdrop-filter: blur(4px);
+  contain: content;
 }
 </style>
