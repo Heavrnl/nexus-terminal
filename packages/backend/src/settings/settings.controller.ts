@@ -98,7 +98,9 @@ export const settingsController = {
           'fileManagerDoubleClickToOpen',
           'fileEditorModalWidth', // 文本编辑器弹窗宽度键
           'fileEditorModalHeight', // 文本编辑器弹窗高度键
-          'terminalNoWrap' // 终端不换行设置键 // 添加状态监视器IP显示键 (与服务层和前端统一)
+          'terminalNoWrap', // 终端不换行设置键
+          'markdownDefaultViewMode',
+          'markdownDefaultViewModeMobile'
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {

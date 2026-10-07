@@ -22,7 +22,55 @@ export function useWorkspaceSettings() {
     terminalNoWrapBoolean,
     showPopupFileManagerBoolean, 
     statusMonitorShowIpBoolean,
+    markdownDefaultViewModeString,
+    markdownDefaultViewModeMobileString,
   } = storeToRefs(settingsStore);
+
+  // --- Markdown Default View Mode (Desktop) ---
+  const markdownDefaultViewModeLocal = ref<'preview' | 'split' | 'edit'>('preview');
+  const markdownDefaultViewModeLoading = ref(false);
+  const markdownDefaultViewModeMessage = ref('');
+  const markdownDefaultViewModeSuccess = ref(false);
+
+  const handleUpdateMarkdownDefaultViewMode = async () => {
+    markdownDefaultViewModeLoading.value = true;
+    markdownDefaultViewModeMessage.value = '';
+    markdownDefaultViewModeSuccess.value = false;
+    try {
+      await settingsStore.updateMarkdownDefaultViewMode(markdownDefaultViewModeLocal.value);
+      markdownDefaultViewModeMessage.value = t('common.saved');
+      markdownDefaultViewModeSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新 Markdown 默认视图模式 (桌面端) 失败:', error);
+      markdownDefaultViewModeMessage.value = error.message || t('common.saveFailed');
+      markdownDefaultViewModeSuccess.value = false;
+    } finally {
+      markdownDefaultViewModeLoading.value = false;
+    }
+  };
+
+  // --- Markdown Default View Mode (Mobile) ---
+  const markdownDefaultViewModeMobileLocal = ref<'preview' | 'split' | 'edit'>('preview');
+  const markdownDefaultViewModeMobileLoading = ref(false);
+  const markdownDefaultViewModeMobileMessage = ref('');
+  const markdownDefaultViewModeMobileSuccess = ref(false);
+
+  const handleUpdateMarkdownDefaultViewModeMobile = async () => {
+    markdownDefaultViewModeMobileLoading.value = true;
+    markdownDefaultViewModeMobileMessage.value = '';
+    markdownDefaultViewModeMobileSuccess.value = false;
+    try {
+      await settingsStore.updateMarkdownDefaultViewModeMobile(markdownDefaultViewModeMobileLocal.value);
+      markdownDefaultViewModeMobileMessage.value = t('common.saved');
+      markdownDefaultViewModeSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新 Markdown 默认视图模式 (移动端) 失败:', error);
+      markdownDefaultViewModeMobileMessage.value = error.message || t('common.saveFailed');
+      markdownDefaultViewModeMobileSuccess.value = false;
+    } finally {
+      markdownDefaultViewModeMobileLoading.value = false;
+    }
+  };
 
   // --- Popup Editor ---
   const popupEditorEnabled = ref(true);
@@ -376,6 +424,8 @@ export function useWorkspaceSettings() {
   watch(terminalNoWrapBoolean, (newValue) => { terminalNoWrapLocal.value = newValue; }, { immediate: true });
   watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
   watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
+  watch(markdownDefaultViewModeString, (newValue) => { markdownDefaultViewModeLocal.value = newValue; }, { immediate: true });
+  watch(markdownDefaultViewModeMobileString, (newValue) => { markdownDefaultViewModeMobileLocal.value = newValue; }, { immediate: true });
 
 
   return {
@@ -460,7 +510,19 @@ export function useWorkspaceSettings() {
     statusMonitorShowIpEnabled,
     statusMonitorShowIpLoading,
     statusMonitorShowIpMessage,
-    statusMonitorShowIpSuccess,
+        statusMonitorShowIpSuccess,
     handleUpdateStatusMonitorShowIpSetting,
+
+    markdownDefaultViewModeLocal,
+    markdownDefaultViewModeLoading,
+    markdownDefaultViewModeMessage,
+    markdownDefaultViewModeSuccess,
+    handleUpdateMarkdownDefaultViewMode,
+
+    markdownDefaultViewModeMobileLocal,
+    markdownDefaultViewModeMobileLoading,
+    markdownDefaultViewModeMobileMessage,
+    markdownDefaultViewModeMobileSuccess,
+    handleUpdateMarkdownDefaultViewModeMobile,
   };
 }

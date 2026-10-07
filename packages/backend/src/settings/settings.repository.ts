@@ -264,6 +264,8 @@ export const ensureDefaultSettingsExist = async (db: sqlite3.Database): Promise<
         timezone: 'UTC', // 时区默认值
         terminalScrollbackLimit: '5000', // 终端回滚行数默认值
         terminalEnableRightClickPaste: 'true', // 终端右键粘贴默认值
+        markdownDefaultViewMode: 'preview',
+        markdownDefaultViewModeMobile: 'preview',
     };
     const nowSeconds = Math.floor(Date.now() / 1000);
     const sqlInsertOrIgnore = `INSERT OR IGNORE INTO settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`;

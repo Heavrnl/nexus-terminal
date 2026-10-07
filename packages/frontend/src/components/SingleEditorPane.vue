@@ -8,6 +8,7 @@ import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue';
 import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import type { FileTab } from '../stores/fileEditor.store';
+import { useSettingsStore } from '../stores/settings.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
 import { isImageFilePath } from '../constants/fileTypes';
 import type { SplitDirection, PaneId } from '../composables/useSplitEditor';
@@ -96,12 +97,44 @@ const isMarkdownFile = computed(() => {
 });
 
 // Markdown 视图设置
-const markdownViewMode = ref<'split' | 'edit' | 'preview'>('split');
+const settingsStore = useSettingsStore();
+const tabMarkdownViewModeMap = ref<Record<string, 'split' | 'edit' | 'preview'>>({});
+
+const getDefaultMarkdownViewMode = (): 'split' | 'edit' | 'preview' => {
+  return props.isMobile
+    ? settingsStore.markdownDefaultViewModeMobileString
+    : settingsStore.markdownDefaultViewModeString;
+};
+
+const markdownViewMode = ref<'split' | 'edit' | 'preview'>(getDefaultMarkdownViewMode());
 const SYNC_SCROLL_STORAGE_KEY = 'nexus_markdown_sync_scroll_enabled';
 const isSyncScrollEnabled = ref<boolean>(localStorage.getItem(SYNC_SCROLL_STORAGE_KEY) !== 'false');
 
 watch(isSyncScrollEnabled, (newVal) => {
   localStorage.setItem(SYNC_SCROLL_STORAGE_KEY, String(newVal));
+});
+
+// 当切换或打开 tab 时，如果是 Markdown 文件，应用该 tab 的视图模式（若未记录则赋予默认模式）
+watch(
+  [() => activeTab.value?.id, isMarkdownFile],
+  ([newTabId, isMd]) => {
+    if (!newTabId || !isMd) return;
+    if (tabMarkdownViewModeMap.value[newTabId]) {
+      markdownViewMode.value = tabMarkdownViewModeMap.value[newTabId];
+    } else {
+      const defaultMode = getDefaultMarkdownViewMode();
+      markdownViewMode.value = defaultMode;
+      tabMarkdownViewModeMap.value[newTabId] = defaultMode;
+    }
+  },
+  { immediate: true }
+);
+
+// 用户手动切换视图模式时，记住当前 tab 的偏好
+watch(markdownViewMode, (newMode) => {
+  if (activeTab.value?.id && isMarkdownFile.value) {
+    tabMarkdownViewModeMap.value[activeTab.value.id] = newMode;
+  }
 });
 
 // 编码选项

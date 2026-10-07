@@ -69,6 +69,8 @@ interface SettingsState {
   quickCommandsCompactMode?: string; // +++ 快捷指令视图紧凑模式 (e.g., 'false') +++
   fileEditorModalWidth?: string; // 文本编辑器弹窗宽度 (px)
   fileEditorModalHeight?: string; // 文本编辑器弹窗高度 (px)
+  markdownDefaultViewMode?: string; // 'preview' | 'split' | 'edit'
+  markdownDefaultViewModeMobile?: string; // 'preview' | 'split' | 'edit'
   [key: string]: string | undefined;
 }
 
@@ -119,6 +121,12 @@ export const useSettingsStore = defineStore('settings', () => {
       console.log('[SettingsStore] Fetched settings from backend:', JSON.stringify(settings.value));
 
       // --- 设置默认值 (如果后端未返回) ---
+      if (!settings.value.markdownDefaultViewMode) {
+          settings.value.markdownDefaultViewMode = 'preview';
+      }
+      if (!settings.value.markdownDefaultViewModeMobile) {
+          settings.value.markdownDefaultViewModeMobile = 'preview';
+      }
       if (settings.value.showPopupFileEditor === undefined) {
           settings.value.showPopupFileEditor = 'true';
       }
@@ -451,7 +459,9 @@ export const useSettingsStore = defineStore('settings', () => {
         'quickCommandRowSizeMultiplier',
         'quickCommandsCompactMode',
         'fileEditorModalWidth',
-        'fileEditorModalHeight'
+        'fileEditorModalHeight',
+        'markdownDefaultViewMode',
+        'markdownDefaultViewModeMobile'
       ];
       if (!allowedKeys.includes(key)) {
           console.error(`[SettingsStore] 尝试更新不允许的设置键: ${key}`);
@@ -564,7 +574,9 @@ export const useSettingsStore = defineStore('settings', () => {
         'quickCommandRowSizeMultiplier',
         'quickCommandsCompactMode',
         'fileEditorModalWidth',
-        'fileEditorModalHeight'
+        'fileEditorModalHeight',
+        'markdownDefaultViewMode',
+        'markdownDefaultViewModeMobile'
       ];
       const filteredUpdates: Partial<SettingsState> = {};
       let languageUpdate: string | undefined = undefined;
@@ -934,9 +946,30 @@ export const useSettingsStore = defineStore('settings', () => {
       console.warn('[SettingsStore] 保存文本编辑器窗口尺寸失败:', e);
     }
   };
+  const markdownDefaultViewModeString = computed<'preview' | 'split' | 'edit'>(() => {
+    const val = settings.value.markdownDefaultViewMode;
+    return (val === 'split' || val === 'edit') ? val : 'preview';
+  });
+
+  const markdownDefaultViewModeMobileString = computed<'preview' | 'split' | 'edit'>(() => {
+    const val = settings.value.markdownDefaultViewModeMobile;
+    return (val === 'split' || val === 'edit') ? val : 'preview';
+  });
+
+  const updateMarkdownDefaultViewMode = async (mode: 'preview' | 'split' | 'edit') => {
+    await updateSetting('markdownDefaultViewMode', mode);
+  };
+
+  const updateMarkdownDefaultViewModeMobile = async (mode: 'preview' | 'split' | 'edit') => {
+    await updateSetting('markdownDefaultViewModeMobile', mode);
+  };
 
  return {
     setFileEditorModalSize,
+    markdownDefaultViewModeString,
+    markdownDefaultViewModeMobileString,
+    updateMarkdownDefaultViewMode,
+    updateMarkdownDefaultViewModeMobile,
     settings, // 只包含通用设置
     isLoading,
     error,
