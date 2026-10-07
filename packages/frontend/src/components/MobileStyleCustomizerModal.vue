@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { TerminalTheme } from '../types/terminal-theme.types';
-import StyleCustomizerUiTab from './style-customizer/StyleCustomizerUiTab.vue';
-import StyleCustomizerTerminalTab from './style-customizer/StyleCustomizerTerminalTab.vue';
-import StyleCustomizerHighlightTab from './style-customizer/StyleCustomizerHighlightTab.vue';
-import StyleCustomizerBackgroundTab from './style-customizer/StyleCustomizerBackgroundTab.vue';
-import StyleCustomizerOtherTab from './style-customizer/StyleCustomizerOtherTab.vue';
+import MobileStyleCustomizerUiTab from './style-customizer/mobile/MobileStyleCustomizerUiTab.vue';
+import MobileStyleCustomizerTerminalTab from './style-customizer/mobile/MobileStyleCustomizerTerminalTab.vue';
+import MobileStyleCustomizerHighlightTab from './style-customizer/mobile/MobileStyleCustomizerHighlightTab.vue';
+import MobileStyleCustomizerBackgroundTab from './style-customizer/mobile/MobileStyleCustomizerBackgroundTab.vue';
+import MobileStyleCustomizerOtherTab from './style-customizer/mobile/MobileStyleCustomizerOtherTab.vue';
 
 const { t } = useI18n();
 
@@ -15,11 +14,7 @@ const emit = defineEmits<{
 }>();
 
 const currentTab = ref<'ui' | 'terminal' | 'highlight' | 'background' | 'other'>('ui');
-const isEditingTheme = ref(false);
-const editingTheme = ref<TerminalTheme | null>(null);
-
-const uiTabRef = ref<InstanceType<typeof StyleCustomizerUiTab> | null>(null);
-const modalRootRef = ref<HTMLDivElement | null>(null);
+const uiTabRef = ref<InstanceType<typeof MobileStyleCustomizerUiTab> | null>(null);
 
 // 标签项配置
 const tabs = [
@@ -31,8 +26,6 @@ const tabs = [
 ];
 
 const handleClose = () => {
-  isEditingTheme.value = false;
-  editingTheme.value = null;
   emit('close');
 };
 
@@ -53,7 +46,6 @@ const handleResetUiTheme = async () => {
   <Teleport to="body">
     <Transition name="bottom-sheet">
       <div
-        ref="modalRootRef"
         class="fixed inset-0 z-[1000] flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
         @click.self="handleClose"
       >
@@ -99,8 +91,7 @@ const handleResetUiTheme = async () => {
                 :key="tab.key"
                 type="button"
                 @click="currentTab = tab.key"
-                :disabled="isEditingTheme && tab.key !== 'terminal'"
-                class="h-7.5 px-3 rounded-lg text-xs font-medium border flex items-center gap-1.5 shrink-0 transition-colors duration-150 cursor-pointer outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+                class="h-7.5 px-3 rounded-lg text-xs font-medium border flex items-center gap-1.5 shrink-0 transition-colors duration-150 cursor-pointer outline-none"
                 :class="currentTab === tab.key
                   ? 'bg-primary border-primary text-primary-foreground shadow-2xs font-semibold'
                   : 'bg-background/80 border-border/60 text-text-secondary hover:text-foreground hover:bg-header/60'"
@@ -111,22 +102,13 @@ const handleResetUiTheme = async () => {
             </div>
           </div>
 
-          <!-- 3. 主内容区域 (纵向可滚动) -->
+          <!-- 3. 主内容区域 (纵向可滚动，全屏宽卡片流适配) -->
           <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
-            <StyleCustomizerUiTab v-if="currentTab === 'ui'" ref="uiTabRef" />
-            
-            <StyleCustomizerTerminalTab
-              v-if="currentTab === 'terminal'"
-              :modal-root-ref="modalRootRef"
-              :is-editing-theme="isEditingTheme"
-              :editing-theme="editingTheme"
-              @update:is-editing-theme="val => isEditingTheme = val"
-              @update:editing-theme="val => editingTheme = val"
-            />
-            
-            <StyleCustomizerHighlightTab v-if="currentTab === 'highlight'" />
-            <StyleCustomizerBackgroundTab v-if="currentTab === 'background'" />
-            <StyleCustomizerOtherTab v-if="currentTab === 'other'" />
+            <MobileStyleCustomizerUiTab v-if="currentTab === 'ui'" ref="uiTabRef" />
+            <MobileStyleCustomizerTerminalTab v-if="currentTab === 'terminal'" />
+            <MobileStyleCustomizerHighlightTab v-if="currentTab === 'highlight'" />
+            <MobileStyleCustomizerBackgroundTab v-if="currentTab === 'background'" />
+            <MobileStyleCustomizerOtherTab v-if="currentTab === 'other'" />
 
             <!-- 垫高占位，避免被底栏遮挡 -->
             <div class="h-6"></div>
@@ -174,7 +156,7 @@ const handleResetUiTheme = async () => {
 }
 
 .sheet-safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
 /* 隐藏横向滚动条 */
