@@ -13,7 +13,20 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import ManageTagConnectionsModal from './ManageTagConnectionsModal.vue'; 
 import { useConfirmDialog } from '../composables/useConfirmDialog';
+import { hexToRgba } from '../utils/colorUtils';
 
+// 计算带背景颜色的连接项样式
+const getConnectionItemStyle = (conn: ConnectionInfo, isHighlighted: boolean) => {
+  if (!conn.background_color) return {};
+  const bg = hexToRgba(conn.background_color, isHighlighted ? 0.28 : 0.12);
+  const hoverBg = hexToRgba(conn.background_color, 0.22);
+  const border = hexToRgba(conn.background_color, 0.25);
+  return {
+    '--conn-item-bg': bg,
+    '--conn-item-hover-bg': hoverBg,
+    '--conn-item-border': border,
+  };
+};
 
 // 定义事件
 
@@ -871,20 +884,27 @@ const cancelEditingTag = () => {
                 <i class="fas fa-edit fa-xs"></i>
               </button>
            </div>
-           <!-- Connection Items List -->
+            <!-- Connection Items List -->
             <ul v-show="expandedGroups[groupData.groupName]" class="list-none p-0 m-0 pl-3">
               <!-- ... li v-for="conn in groupData.connections" ... -->
                <li
                  v-for="conn in groupData.connections"
                  :key="conn.id"
-                 class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground hover:bg-primary/10 transition-colors duration-150"
-                 :class="{ 'bg-primary/20 font-medium': conn.id === highlightedConnectionId }"
+                 class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground transition-all duration-150"
+                 :class="[
+                   conn.background_color ? 'connection-item-colored' : 'hover:bg-primary/10',
+                   { 'bg-primary/20 font-medium': !conn.background_color && conn.id === highlightedConnectionId }
+                 ]"
+                 :style="getConnectionItemStyle(conn, conn.id === highlightedConnectionId)"
                  :data-conn-id="conn.id"
                  @click.left="handleConnect(conn.id)"
                  @click.right.prevent
                  @contextmenu.prevent="showContextMenu($event, conn)"
                >
-                 <i :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-plug' : 'fa-server'), 'mr-2.5 w-4 text-center text-text-secondary group-hover:text-primary', { 'text-white': conn.id === highlightedConnectionId }]"></i>
+                 <i
+                   :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-plug' : 'fa-server'), 'mr-2.5 w-4 text-center', conn.background_color ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !conn.background_color && conn.id === highlightedConnectionId }]"
+                   :style="conn.background_color ? { color: conn.background_color } : {}"
+                 ></i>
                  <span class="overflow-hidden text-ellipsis whitespace-nowrap flex-grow text-sm" :title="conn.name || conn.host">
                    {{ conn.name || conn.host }}
                  </span>
@@ -897,14 +917,21 @@ const cancelEditingTag = () => {
               <li
                 v-for="conn in flatFilteredConnections"
                 :key="conn.id"
-                class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground hover:bg-primary/10 transition-colors duration-150"
-                :class="{ 'bg-primary/20 font-medium': conn.id === highlightedConnectionId }"
+                class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground transition-all duration-150"
+                :class="[
+                  conn.background_color ? 'connection-item-colored' : 'hover:bg-primary/10',
+                  { 'bg-primary/20 font-medium': !conn.background_color && conn.id === highlightedConnectionId }
+                ]"
+                :style="getConnectionItemStyle(conn, conn.id === highlightedConnectionId)"
                 :data-conn-id="conn.id"
                 @click.left="handleConnect(conn.id)"
                 @click.right.prevent
                 @contextmenu.prevent="showContextMenu($event, conn)"
               >
-                <i :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-chalkboard' : 'fa-server'), 'mr-2.5 w-4 text-center text-text-secondary group-hover:text-primary', { 'text-white': conn.id === highlightedConnectionId }]"></i>
+                <i
+                  :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-chalkboard' : 'fa-server'), 'mr-2.5 w-4 text-center', conn.background_color ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !conn.background_color && conn.id === highlightedConnectionId }]"
+                  :style="conn.background_color ? { color: conn.background_color } : {}"
+                ></i>
                 <span class="overflow-hidden text-ellipsis whitespace-nowrap flex-grow text-sm" :title="conn.name || conn.host">
                   {{ conn.name || conn.host }}
                 </span>
@@ -998,4 +1025,14 @@ const cancelEditingTag = () => {
    </teleport>
  </div>
 </template>
+
+<style scoped>
+.connection-item-colored {
+  background-color: var(--conn-item-bg);
+  border: 1px solid var(--conn-item-border);
+}
+.connection-item-colored:hover {
+  background-color: var(--conn-item-hover-bg) !important;
+}
+</style>
 

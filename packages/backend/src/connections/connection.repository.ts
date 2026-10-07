@@ -18,7 +18,8 @@ interface ConnectionBase {
     updated_at: number;
     last_connected_at: number | null;
     ssh_key_id?: number | null;
-notes?: string | null;
+    notes?: string | null;
+    background_color?: string | null;
 //    jump_chain: number[] | null; // <-- REMOVE from ConnectionBase
 }
 
@@ -40,10 +41,11 @@ export interface FullConnectionData extends ConnectionBase {
     encrypted_password?: string | null;
     encrypted_private_key?: string | null;
     encrypted_passphrase?: string | null;
-notes?: string | null;
+    notes?: string | null;
     tag_ids?: number[];
     jump_chain: number[] | null; // Explicitly add for service layer input type
     proxy_type?: 'proxy' | 'jump' | null; // 新增连接本身的 proxy_type
+    background_color?: string | null;
 }
 
 
@@ -70,7 +72,7 @@ interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 't
 export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]> => {
     const sql = `
         SELECT
-            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, -- +++ Select ssh_key_id, notes, jump_chain AND proxy_type +++
+            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -100,7 +102,7 @@ export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]
 export const findConnectionByIdWithTags = async (id: number): Promise<ConnectionWithTags | null> => {
     const sql = `
         SELECT
-            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, -- +++ Select ssh_key_id, notes, jump_chain AND proxy_type +++
+            c.id, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -155,26 +157,17 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
   * 根据名称查找连接 (用于检查名称是否重复)
   */
  export const findConnectionByName = async (name: string): Promise<ConnectionBase | null> => {
-     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`; // Added jump_chain and proxy_type
+     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
      try {
          const db = await getDbInstance();
-         // Cast to ConnectionWithTagsRow to read jump_chain as string, then parse. It will now also have proxy_type
          const row = await getDbRow<ConnectionWithTagsRow>(db, sql, [name]);
          if (row) {
-             const { jump_chain: jumpChainStr, tag_ids_str, ...restOfRow } = row; // Exclude tag_ids_str as well for ConnectionBase
+             const { jump_chain: jumpChainStr, tag_ids_str, ...restOfRow } = row;
              return {
                  ...restOfRow,
-                 // ConnectionBase does not have jump_chain, so we don't add it here.
-                 // If we need jump_chain for findConnectionByName and the result type is ConnectionBase,
-                 // then ConnectionBase itself needs jump_chain: number[] | null.
-                 // For now, assuming ConnectionBase should NOT have jump_chain for this function's return.
-                 // If it SHOULD, ConnectionBase needs jump_chain: number[] | null, and the parsing is correct.
-                 // Let's assume ConnectionBase should NOT have it to keep it truly base.
-                 // The caller using findConnectionByName might not expect jump_chain.
-                 // If service needs it, it should use a find method that returns a richer type.
-             } as ConnectionBase; // jump_chain is not part of ConnectionBase anymore
+             } as ConnectionBase;
          }
-         return null; // Ensure null is returned if row is null
+         return null;
      } catch (err: any) {
          console.error(`Repository: 查询连接名称 "${name}" 时出错:`, err.message);
          throw new Error('查找连接名称失败');
@@ -185,27 +178,27 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
  /**
   * 创建新连接 (不处理标签)
   */
-// Update input type to reflect FullConnectionData now has 'type' and 'jump_chain'
 export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'tag_ids'>): Promise<number> => {
     console.log('[Repository:createConnection] Received data:', JSON.stringify(data, null, 2));
     const now = Math.floor(Date.now() / 1000);
     const sql = `
-        INSERT INTO connections (name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, created_at, updated_at) -- +++ Add ssh_key_id, notes, jump_chain AND proxy_type columns +++
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`; // +++ Add placeholders for ssh_key_id, notes, jump_chain AND proxy_type +++
+        INSERT INTO connections (name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
     const jumpChainStringified = (data.jump_chain && data.jump_chain.length > 0) ? JSON.stringify(data.jump_chain) : null;
     console.log(`[Repository:createConnection] jump_chain input: ${JSON.stringify(data.jump_chain)}, stringified to: ${jumpChainStringified}`);
 
     const params = [
         data.name ?? null,
-        data.type, // Add type parameter
+        data.type,
         data.host, data.port, data.username, data.auth_method,
         data.encrypted_password ?? null, data.encrypted_private_key ?? null, data.encrypted_passphrase ?? null,
         data.proxy_id ?? null,
-        data.proxy_type ?? null, // Add proxy_type parameter
-        data.ssh_key_id ?? null, // +++ Add ssh_key_id parameter +++
-        data.notes ?? null, // Add notes parameter
-        jumpChainStringified, // Use the stringified jump_chain
+        data.proxy_type ?? null,
+        data.ssh_key_id ?? null,
+        data.notes ?? null,
+        jumpChainStringified,
+        data.background_color ?? null,
         now, now
     ];
     console.log('[Repository:createConnection] SQL:', sql);

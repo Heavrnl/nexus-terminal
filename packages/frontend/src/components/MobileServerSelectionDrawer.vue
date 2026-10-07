@@ -6,6 +6,7 @@ import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.
 import { useTagsStore } from '../stores/tags.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import { hexToRgba } from '../utils/colorUtils';
 
 interface Props {
   visible: boolean;
@@ -346,17 +347,27 @@ const handleActionDelete = async () => {
             <div
               v-for="conn in filteredConnections"
               :key="conn.id"
-              class="group bg-header/40 hover:bg-header/80 active:bg-header border border-border/40 hover:border-border rounded-xl p-3 flex items-center gap-3 transition-all cursor-pointer shadow-xs"
+              class="group hover:bg-header/80 active:bg-header border rounded-xl p-3 flex items-center gap-3 transition-all cursor-pointer shadow-xs"
+              :class="conn.background_color ? '' : 'bg-header/40 border-border/40 hover:border-border'"
+              :style="conn.background_color ? {
+                backgroundColor: hexToRgba(conn.background_color, 0.14),
+                borderColor: hexToRgba(conn.background_color, 0.3)
+              } : {}"
               @click="handleSelect(conn.id)"
             >
               <!-- 协议图标徽章 -->
               <div
                 class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-base transition-colors"
-                :class="conn.type === 'RDP'
+                :class="!conn.background_color ? (conn.type === 'RDP'
                   ? 'bg-blue-500/15 text-blue-400 border border-blue-500/25'
                   : conn.type === 'VNC'
                     ? 'bg-purple-500/15 text-purple-400 border border-purple-500/25'
-                    : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'"
+                    : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25') : 'border'"
+                :style="conn.background_color ? {
+                  backgroundColor: hexToRgba(conn.background_color, 0.22),
+                  borderColor: hexToRgba(conn.background_color, 0.35),
+                  color: conn.background_color
+                } : {}"
               >
                 <i :class="conn.type === 'RDP' ? 'fas fa-desktop' : (conn.type === 'VNC' ? 'fas fa-chalkboard' : 'fas fa-server')"></i>
               </div>

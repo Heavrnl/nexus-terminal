@@ -11,8 +11,9 @@ export interface ConnectionBase {
     created_at: number;
     updated_at: number;
     last_connected_at: number | null;
-notes?: string | null;
+    notes?: string | null;
     jump_chain: number[] | null;
+    background_color?: string | null;
 }
 
 export interface ConnectionWithTags extends ConnectionBase {
@@ -34,8 +35,9 @@ export interface CreateConnectionInput {
     proxy_id?: number | null;
     proxy_type?: 'proxy' | 'jump' | null; 
     tag_ids?: number[];
-notes?: string | null;
+    notes?: string | null;
     jump_chain?: number[] | null;
+    background_color?: string | null;
 }
 
 
@@ -52,9 +54,10 @@ export interface UpdateConnectionInput {
     ssh_key_id?: number | null;
     proxy_id?: number | null;
     proxy_type?: 'proxy' | 'jump' | null;
-notes?: string | null;
+    notes?: string | null;
     tag_ids?: number[];
     jump_chain?: number[] | null;
+    background_color?: string | null;
 }
 
 
@@ -73,10 +76,11 @@ export interface FullConnectionData {
     proxy_id: number | null;
     proxy_type?: 'proxy' | 'jump' | null; 
     created_at: number;
-notes: string | null;
+    notes: string | null;
     updated_at: number;
     last_connected_at: number | null;
     jump_chain: number[] | null;
+    background_color?: string | null;
 }
 
 export interface DecryptedConnectionCredentials {

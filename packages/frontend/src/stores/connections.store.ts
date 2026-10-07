@@ -17,9 +17,10 @@ export interface ConnectionInfo {
     created_at: number;
     updated_at: number;
     last_connected_at: number | null;
-notes?: string | null;
+    notes?: string | null;
     vncPassword?: string; // VNC specific password
     jump_chain?: number[] | null;
+    background_color?: string | null;
 }
 
 // 定义 Store State 的接口

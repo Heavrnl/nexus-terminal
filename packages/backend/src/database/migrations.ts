@@ -306,6 +306,17 @@ const definedMigrations: Migration[] = [
         sql: `
             ALTER TABLE quick_commands ADD COLUMN variables TEXT NULL;
         `
+    },
+    {
+        id: 11,
+        name: 'Add background_color column to connections table',
+        check: async (db: Database): Promise<boolean> => {
+            const columnAlreadyExists = await columnExists(db, 'connections', 'background_color');
+            return !columnAlreadyExists;
+        },
+        sql: `
+            ALTER TABLE connections ADD COLUMN background_color TEXT NULL;
+        `
     }
 ];
 
