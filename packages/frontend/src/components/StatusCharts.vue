@@ -16,7 +16,7 @@
         </div>
       </div>
       <div class="chart-wrapper h-36 w-full">
-        <Line :data="cpuChartData" :options="percentageChartOptions" :key="cpuChartKey" />
+        <Line :data="cpuChartData" :options="percentageChartOptions" />
       </div>
     </div>
 
@@ -44,7 +44,7 @@
         </div>
       </div>
       <div class="chart-wrapper h-36 w-full">
-        <Line :data="networkChartData" :options="networkChartOptions" :key="networkChartKey" />
+        <Line :data="networkChartData" :options="networkChartOptions" />
       </div>
     </div>
   </div>
@@ -111,10 +111,6 @@ const MB_TO_GB_THRESHOLD = 1024; // For memory
 const { t } = useI18n();
 const sessionStore = useSessionStore();
 const { sessions } = storeToRefs(sessionStore); // 获取响应式的 sessions
-
-const cpuChartKey = ref(0);
-const memoryChartKey = ref(0);
-const networkChartKey = ref(0);
 
 const networkRateUnitIsMB = ref(false);
 const memoryUnitIsGB = ref(false);
@@ -453,9 +449,17 @@ const updateAxisAndUnits = () => {
           yAxisTopValue = requiresGB ? Math.ceil(yAxisTopValue * 100) / 100 : Math.ceil(yAxisTopValue);
       }
 
-      if (memoryChartOptions.value.scales.y.max !== yAxisTopValue) {
-        memoryChartOptions.value.scales.y.max = yAxisTopValue;
-        memoryChartKey.value++; // 强制重绘以应用新的 max
+      if (memoryChartOptions.value.scales?.y && memoryChartOptions.value.scales.y.max !== yAxisTopValue) {
+        memoryChartOptions.value = {
+          ...memoryChartOptions.value,
+          scales: {
+            ...memoryChartOptions.value.scales,
+            y: {
+              ...memoryChartOptions.value.scales.y,
+              max: yAxisTopValue,
+            },
+          },
+        };
       }
   }
 
@@ -504,17 +508,24 @@ const updateAxisAndUnits = () => {
       }
 
        if (networkChartOptions.value.scales.y.max !== suggestedMax) {
-           networkChartOptions.value.scales.y.max = suggestedMax;
-           networkChartKey.value++; // 强制重绘以应用新的 max
+           networkChartOptions.value = {
+             ...networkChartOptions.value,
+             scales: {
+               ...networkChartOptions.value.scales,
+               y: {
+                 ...networkChartOptions.value.scales.y,
+                 max: suggestedMax,
+               },
+             },
+           };
        }
   }
 };
 
-// --- 监听 props.serverStatus 的变化，仅用于更新 Y 轴范围和单位 ---
-// 数据本身由 computed 属性从 store 获取
-watch(() => props.serverStatus, () => {
+// --- 监听 props.serverStatus 和 activeSessionId 的变化，即时更新 Y 轴范围和单位 ---
+watch([() => props.serverStatus, () => props.activeSessionId], () => {
     updateAxisAndUnits();
-}, { deep: true, immediate: true }); // immediate: true 确保初始加载时设置好轴
+}, { deep: true, immediate: true });
 
 // 移除监听 activeSessionId 的 watcher 和 resetChartData 函数
 

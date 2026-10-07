@@ -100,6 +100,12 @@ const displayOsName = computed(() => {
   return (currentServerStatus.value?.osName ?? cachedOsName.value) || t('statusMonitor.notAvailable', 'Linux');
 });
 
+// 资源使用率数值计算 (空安全保护)
+const displayCpuPercent = computed(() => currentServerStatus.value?.cpuPercent ?? 0);
+const displayMemPercent = computed(() => currentServerStatus.value?.memPercent ?? 0);
+const displaySwapPercent = computed(() => currentServerStatus.value?.swapPercent ?? 0);
+const displayDiskPercent = computed(() => currentServerStatus.value?.diskPercent ?? 0);
+
 // 格式化网络速率
 const formatBytesPerSecond = (bytes?: number) => {
   if (bytes === undefined || bytes === null || isNaN(bytes)) return '0 B/s';
@@ -218,16 +224,7 @@ const handleClose = () => {
               <p class="text-xs text-text-secondary font-mono px-4">{{ currentStatusError }}</p>
             </div>
 
-            <!-- Case 3: 加载中 -->
-            <div
-              v-else-if="!currentServerStatus"
-              class="flex flex-col items-center justify-center py-16 text-center text-text-secondary space-y-3"
-            >
-              <i class="fas fa-circle-notch fa-spin text-3xl text-primary"></i>
-              <p class="text-xs font-medium">{{ t('statusMonitor.loading', '正在采集服务器指标...') }}</p>
-            </div>
-
-            <!-- Case 4: 正常数据展示 -->
+            <!-- Case 3: 正常数据展示 (常驻渲染，不搞全屏置空白屏) -->
             <template v-else>
               <!-- 主机概览卡片 -->
               <div class="rounded-xl bg-header/30 border border-border/50 p-3 space-y-2.5 shadow-2xs">
@@ -285,21 +282,21 @@ const handleClose = () => {
                   </div>
                   <div>
                     <span class="text-xl font-bold font-mono text-foreground">
-                      {{ Math.round(currentServerStatus.cpuPercent ?? 0) }}%
+                      {{ Math.round(displayCpuPercent) }}%
                     </span>
                   </div>
                   <!-- 进度条 -->
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="getProgressGradient(currentServerStatus.cpuPercent ?? 0)"
-                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.cpuPercent ?? 0))}%` }"
+                      :class="getProgressGradient(displayCpuPercent)"
+                      :style="{ width: `${Math.min(100, Math.max(0, displayCpuPercent))}%` }"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行 -->
                   <div class="flex items-center justify-between text-[10px] font-mono text-text-secondary pt-0.5">
                     <span class="text-text-secondary/70">当前占用</span>
-                    <span class="text-text-secondary/90 font-medium">{{ (currentServerStatus.cpuPercent ?? 0).toFixed(1) }}%</span>
+                    <span class="text-text-secondary/90 font-medium">{{ displayCpuPercent.toFixed(1) }}%</span>
                   </div>
                 </div>
 
@@ -311,21 +308,21 @@ const handleClose = () => {
                   </div>
                   <div>
                     <span class="text-xl font-bold font-mono text-foreground">
-                      {{ Math.round(currentServerStatus.memPercent ?? 0) }}%
+                      {{ Math.round(displayMemPercent) }}%
                     </span>
                   </div>
                   <!-- 进度条 -->
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="getProgressGradient(currentServerStatus.memPercent ?? 0)"
-                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.memPercent ?? 0))}%` }"
+                      :class="getProgressGradient(displayMemPercent)"
+                      :style="{ width: `${Math.min(100, Math.max(0, displayMemPercent))}%` }"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行：已用 / 总量两端对齐，彻底杜绝截断 -->
                   <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
-                    <span>已用 {{ formatMemorySize(currentServerStatus.memUsed) }}</span>
-                    <span>共 {{ formatMemorySize(currentServerStatus.memTotal) }}</span>
+                    <span>已用 {{ formatMemorySize(currentServerStatus?.memUsed) }}</span>
+                    <span>共 {{ formatMemorySize(currentServerStatus?.memTotal) }}</span>
                   </div>
                 </div>
 
@@ -337,21 +334,21 @@ const handleClose = () => {
                   </div>
                   <div>
                     <span class="text-xl font-bold font-mono text-foreground">
-                      {{ Math.round(currentServerStatus.swapPercent ?? 0) }}%
+                      {{ Math.round(displaySwapPercent) }}%
                     </span>
                   </div>
                   <!-- 进度条 -->
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.swapPercent ?? 0))}%` }"
-                      :class="getProgressGradient(currentServerStatus.swapPercent ?? 0)"
+                      :style="{ width: `${Math.min(100, Math.max(0, displaySwapPercent))}%` }"
+                      :class="getProgressGradient(displaySwapPercent)"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行 -->
                   <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
-                    <span>已用 {{ (currentServerStatus.swapTotal ?? 0) > 0 ? formatMemorySize(currentServerStatus.swapUsed) : '0 MB' }}</span>
-                    <span>{{ (currentServerStatus.swapTotal ?? 0) > 0 ? `共 ${formatMemorySize(currentServerStatus.swapTotal)}` : '未启用' }}</span>
+                    <span>已用 {{ (currentServerStatus?.swapTotal ?? 0) > 0 ? formatMemorySize(currentServerStatus?.swapUsed) : '0 MB' }}</span>
+                    <span>{{ (currentServerStatus?.swapTotal ?? 0) > 0 ? `共 ${formatMemorySize(currentServerStatus?.swapTotal)}` : '未启用' }}</span>
                   </div>
                 </div>
 
@@ -363,21 +360,21 @@ const handleClose = () => {
                   </div>
                   <div>
                     <span class="text-xl font-bold font-mono text-foreground">
-                      {{ Math.round(currentServerStatus.diskPercent ?? 0) }}%
+                      {{ Math.round(displayDiskPercent) }}%
                     </span>
                   </div>
                   <!-- 进度条 -->
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="getProgressGradient(currentServerStatus.diskPercent ?? 0)"
-                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.diskPercent ?? 0))}%` }"
+                      :class="getProgressGradient(displayDiskPercent)"
+                      :style="{ width: `${Math.min(100, Math.max(0, displayDiskPercent))}%` }"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行：已用 / 总量两端对齐，彻底杜绝截断 -->
                   <div class="flex items-center justify-between text-[10px] font-mono pt-0.5 text-text-secondary">
-                    <span>已用 {{ formatDiskSize(currentServerStatus.diskUsed) }}</span>
-                    <span>共 {{ formatDiskSize(currentServerStatus.diskTotal) }}</span>
+                    <span>已用 {{ formatDiskSize(currentServerStatus?.diskUsed) }}</span>
+                    <span>共 {{ formatDiskSize(currentServerStatus?.diskTotal) }}</span>
                   </div>
                 </div>
               </div>
@@ -387,7 +384,7 @@ const handleClose = () => {
                 <div class="flex items-center justify-between text-xs">
                   <span class="font-medium text-text-secondary flex items-center gap-1.5">
                     <i class="fas fa-network-wired text-primary"></i>
-                    <span>网络吞吐 ({{ currentServerStatus.netInterface || 'eth0' }})</span>
+                    <span>网络吞吐 ({{ currentServerStatus?.netInterface || 'eth0' }})</span>
                   </span>
                 </div>
                 <div class="grid grid-cols-2 gap-3 pt-1">
@@ -399,7 +396,7 @@ const handleClose = () => {
                     <div class="flex flex-col min-w-0">
                       <span class="text-[10px] text-text-secondary/80">下载速率</span>
                       <span class="text-xs font-bold font-mono text-emerald-400 truncate">
-                        {{ formatBytesPerSecond(currentServerStatus.netRxRate) }}
+                        {{ formatBytesPerSecond(currentServerStatus?.netRxRate) }}
                       </span>
                     </div>
                   </div>
@@ -412,7 +409,7 @@ const handleClose = () => {
                     <div class="flex flex-col min-w-0">
                       <span class="text-[10px] text-text-secondary/80">上传速率</span>
                       <span class="text-xs font-bold font-mono text-orange-400 truncate">
-                        {{ formatBytesPerSecond(currentServerStatus.netTxRate) }}
+                        {{ formatBytesPerSecond(currentServerStatus?.netTxRate) }}
                       </span>
                     </div>
                   </div>
@@ -421,7 +418,7 @@ const handleClose = () => {
 
               <!-- 历史走势趋势折线图 -->
               <StatusCharts
-                v-if="activeSessionId && currentServerStatus"
+                v-if="activeSessionId"
                 :server-status="currentServerStatus"
                 :active-session-id="activeSessionId"
               />

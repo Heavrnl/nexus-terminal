@@ -17,8 +17,17 @@
         </div>
       </div>
 
-      <!-- 右侧：当前主机名称或 IP 快捷复制胶囊 -->
-      <div class="flex items-center gap-1.5">
+      <!-- 右侧：当前主机名称或 IP 快捷复制胶囊与非侵入式轻量采集状态 -->
+      <div class="flex items-center gap-2">
+        <span
+          v-if="!currentServerStatus"
+          class="inline-flex items-center gap-1.5 text-xs text-text-secondary/70 animate-pulse"
+          :title="t('statusMonitor.loading', '正在采集服务器指标...')"
+        >
+          <i class="fas fa-circle-notch fa-spin text-[10px] text-primary"></i>
+          <span>采集数据中</span>
+        </span>
+
         <button
           v-if="statusMonitorShowIpBoolean && sessionIpAddress"
           type="button"
@@ -61,28 +70,14 @@
       <span class="text-xs font-mono text-text-secondary break-all max-w-md">{{ currentStatusError }}</span>
     </div>
 
-    <!-- Case 3: 加载中状态 -->
-    <div
-      v-else-if="!currentServerStatus"
-      class="loading-status flex flex-col items-center justify-center text-center text-text-secondary py-16 h-[80%] space-y-3"
-    >
-      <i class="fas fa-circle-notch fa-spin text-3xl text-primary"></i>
-      <span class="text-xs font-medium">{{ t('statusMonitor.loading', '正在采集服务器指标...') }}</span>
-    </div>
-
-    <!-- Case 4: 正常数据监控面板 -->
+    <!-- Case 3: 正常数据监控面板 (结构始终常驻，切换会话原地直接更新数据，绝不置空白屏) -->
     <div v-else class="space-y-3">
       <!-- 1. 主机与系统硬件规格概览卡片 -->
       <div class="rounded-xl bg-header/35 border border-border/60 p-3 space-y-2 shadow-2xs hover:border-border/80 transition-all">
-        <div class="flex items-center justify-between text-xs pb-1.5 border-b border-border/40">
-          <div class="flex items-center gap-2 min-w-0">
-            <i class="fas fa-server text-primary text-xs shrink-0"></i>
-            <span class="text-sm font-bold text-foreground truncate" :title="sessionConnectionName || '当前主机'">
-              {{ sessionConnectionName || '当前主机' }}
-            </span>
-          </div>
-          <span class="text-xs font-mono text-text-secondary/80 shrink-0">
-            {{ currentServerStatus?.netInterface || 'Linux' }}
+        <div class="flex items-center gap-2 text-xs pb-1.5 border-b border-border/40 min-w-0">
+          <i class="fas fa-server text-primary text-xs shrink-0"></i>
+          <span class="text-sm font-bold text-foreground truncate" :title="sessionConnectionName || '当前主机'">
+            {{ sessionConnectionName || '当前主机' }}
           </span>
         </div>
 
@@ -260,9 +255,9 @@
         </div>
       </div>
 
-      <!-- 4. 原生图表组件 (保持原有图表不变) -->
+      <!-- 4. 原生图表组件 (图表常驻，切换会话直接更新数据，不搞消失动画) -->
       <StatusCharts
-        v-if="activeSessionId && currentServerStatus"
+        v-if="activeSessionId"
         :server-status="currentServerStatus"
         :active-session-id="activeSessionId"
       />
