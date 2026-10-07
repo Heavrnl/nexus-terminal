@@ -39,8 +39,8 @@ const editableTerminalTextShadowEnabled = ref(false);
 const editableTerminalTextShadowBlur = ref(0);
 const editableTerminalTextShadowColor = ref('rgba(0,0,0,0.5)');
 
-// 常见移动端终端优质等宽字体
-const COMMON_FONTS = [
+// 默认内置等宽字体预设
+const DEFAULT_PRESET_FONTS = [
   'monospace',
   'Consolas',
   '"Fira Code"',
@@ -48,7 +48,56 @@ const COMMON_FONTS = [
   '"Courier New"',
 ];
 
+const STORAGE_KEY_CUSTOM_TERMINAL_FONTS = 'nexus_mobile_custom_terminal_fonts';
+
+// 自定义字体列表与添加卡片状态
+const customFonts = ref<string[]>([]);
+const showAddFontInput = ref(false);
+const newFontName = ref('');
+
+const loadCustomFonts = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_TERMINAL_FONTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        customFonts.value = parsed.filter(f => typeof f === 'string' && f.trim());
+      }
+    }
+  } catch (e) {
+    console.error('读取自定义终端字体失败:', e);
+  }
+};
+
+const saveCustomFonts = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY_CUSTOM_TERMINAL_FONTS, JSON.stringify(customFonts.value));
+  } catch (e) {
+    console.error('存储自定义终端字体失败:', e);
+  }
+};
+
+const isCustomFont = (font: string) => {
+  return customFonts.value.includes(font) && !DEFAULT_PRESET_FONTS.includes(font);
+};
+
+// 合并内置预设、自定义字体和当前字体
+const allAvailableFonts = computed(() => {
+  const result: string[] = [...DEFAULT_PRESET_FONTS];
+  customFonts.value.forEach(f => {
+    if (!result.includes(f)) {
+      result.push(f);
+    }
+  });
+  const cur = editableTerminalFontFamily.value?.trim();
+  if (cur && !result.includes(cur)) {
+    result.push(cur);
+  }
+  return result;
+});
+
 const initializeState = () => {
+  loadCustomFonts();
   editableTerminalFontFamily.value = currentTerminalFontFamily.value;
   editableTerminalFontSize.value = currentTerminalFontSize.value;
   editableTerminalTextStrokeEnabled.value = terminalTextStrokeEnabled.value;
@@ -75,7 +124,7 @@ const changeFontSize = async (delta: number) => {
   }
 };
 
-// 选择预设字体
+// 选择预设或已有字体
 const selectFont = async (font: string) => {
   editableTerminalFontFamily.value = font;
   try {
@@ -84,6 +133,48 @@ const selectFont = async (font: string) => {
   } catch (err: any) {
     notificationsStore.addNotification({ type: 'error', message: err.message || '更新字体失败' });
   }
+};
+
+// 应用当前输入框中的自定义字体
+const handleApplyCustomFont = async () => {
+  const font = editableTerminalFontFamily.value.trim();
+  if (!font) {
+    notificationsStore.addNotification({ type: 'warning', message: '请输入有效的字体名称' });
+    return;
+  }
+  if (!DEFAULT_PRESET_FONTS.includes(font) && !customFonts.value.includes(font)) {
+    customFonts.value.push(font);
+    saveCustomFonts();
+  }
+  try {
+    await appearanceStore.setTerminalFontFamily(font);
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalFontSaved', '终端字体已更新') });
+  } catch (err: any) {
+    notificationsStore.addNotification({ type: 'error', message: err.message || '更新字体失败' });
+  }
+};
+
+// 专门新增字体并保存应用
+const handleAddCustomFont = async () => {
+  const font = newFontName.value.trim();
+  if (!font) {
+    notificationsStore.addNotification({ type: 'warning', message: '请输入字体名称' });
+    return;
+  }
+  if (!customFonts.value.includes(font) && !DEFAULT_PRESET_FONTS.includes(font)) {
+    customFonts.value.push(font);
+    saveCustomFonts();
+  }
+  newFontName.value = '';
+  showAddFontInput.value = false;
+  await selectFont(font);
+};
+
+// 移除用户自定义字体
+const removeCustomFont = (font: string) => {
+  customFonts.value = customFonts.value.filter(f => f !== font);
+  saveCustomFonts();
+  notificationsStore.addNotification({ type: 'info', message: '已移除该自定义字体' });
 };
 
 // 过滤后的主题清单
@@ -167,22 +258,100 @@ const updateShadow = async () => {
           </div>
         </div>
 
-        <!-- 字体预设选择行 -->
-        <div class="space-y-1.5 pt-1 border-t border-border/30">
-          <div class="text-[11px] text-text-secondary/70">快速切换等宽字体：</div>
-          <div class="flex items-center gap-1.5 flex-wrap">
+        <!-- 字体族输入与自定义添加行 -->
+        <div class="space-y-2 pt-2 border-t border-border/30">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-text-secondary/80 font-medium">终端字体族 (Font Family)</span>
             <button
-              v-for="font in COMMON_FONTS"
-              :key="font"
+              v-if="!showAddFontInput"
               type="button"
-              @click="selectFont(font)"
-              class="px-2.5 py-1 text-[11px] rounded-lg border font-mono transition-colors cursor-pointer"
+              @click="showAddFontInput = true"
+              class="text-[11px] text-primary hover:underline flex items-center gap-1 cursor-pointer font-medium"
+            >
+              <i class="fas fa-plus text-[10px]"></i>
+              <span>添加字体</span>
+            </button>
+          </div>
+
+          <!-- 自定义输入并保存应用 -->
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              v-model="editableTerminalFontFamily"
+              @keydown.enter.prevent="handleApplyCustomFont"
+              placeholder="如 'JetBrains Mono', Consolas, monospace"
+              class="flex-grow min-w-0 px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary transition-colors"
+            />
+            <button
+              type="button"
+              @click="handleApplyCustomFont"
+              class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shrink-0 cursor-pointer shadow-2xs"
+            >
+              应用
+            </button>
+          </div>
+
+          <!-- 新增自定义字体快捷输入卡片 -->
+          <div v-if="showAddFontInput" class="p-2.5 rounded-xl bg-background border border-primary/40 space-y-2 shadow-2xs">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] text-primary font-semibold">添加常用字体至列表</span>
+              <button
+                type="button"
+                @click="showAddFontInput = false"
+                class="w-5 h-5 flex items-center justify-center text-text-secondary hover:text-foreground text-xs rounded-md cursor-pointer"
+              >
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                v-model="newFontName"
+                @keydown.enter.prevent="handleAddCustomFont"
+                placeholder="字体名称，例如：'Cascadia Code'"
+                class="flex-grow min-w-0 px-2.5 py-1.5 text-xs rounded-lg bg-header/60 border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                @click="handleAddCustomFont"
+                class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 shrink-0 cursor-pointer shadow-2xs"
+              >
+                添加并应用
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 字体预设与自定义标签选择行 -->
+        <div class="space-y-1.5 pt-1">
+          <div class="text-[11px] text-text-secondary/70">快速切换字体：</div>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <div
+              v-for="font in allAvailableFonts"
+              :key="font"
+              class="inline-flex items-center rounded-lg border font-mono text-[11px] transition-colors overflow-hidden"
               :class="editableTerminalFontFamily === font
                 ? 'bg-primary border-primary text-primary-foreground font-semibold shadow-2xs'
                 : 'bg-background border-border/60 text-text-secondary hover:text-foreground'"
             >
-              {{ font.replace(/"/g, '') }}
-            </button>
+              <button
+                type="button"
+                @click="selectFont(font)"
+                class="px-2.5 py-1 cursor-pointer truncate max-w-[150px]"
+                :style="{ fontFamily: font }"
+              >
+                {{ font.replace(/"/g, '') }}
+              </button>
+              <button
+                v-if="isCustomFont(font)"
+                type="button"
+                @click.stop="removeCustomFont(font)"
+                class="pr-2 pl-0.5 py-1 text-[10px] hover:text-red-400 opacity-70 hover:opacity-100 transition-opacity cursor-pointer"
+                title="删除该自定义字体"
+              >
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>
