@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { storeToRefs } from 'pinia';
+import MobileNotificationDisplay from './MobileNotificationDisplay.vue';
 
+const { isMobile } = useDeviceDetection();
 const notificationsStore = useUiNotificationsStore();
 const { notifications } = storeToRefs(notificationsStore);
 
@@ -21,7 +24,11 @@ const getContainerClass = (type: string) => {
 </script>
 
 <template>
-  <div class="fixed top-4 right-4 z-[1100] flex flex-col items-end">
+  <!-- 移动端专属悬浮胶囊通知 -->
+  <MobileNotificationDisplay v-if="isMobile" />
+
+  <!-- 桌面端原有右上角通知 (完全保持不变) -->
+  <div v-else class="fixed top-4 right-4 z-[1100] flex flex-col items-end">
     <transition-group
       tag="div"
       enter-active-class="transition duration-500 ease-out"
