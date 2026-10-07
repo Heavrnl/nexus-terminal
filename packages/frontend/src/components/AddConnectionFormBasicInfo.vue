@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, Teleport } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PRESET_COLORS, getRandomPresetColor, hexToRgba } from '../utils/colorUtils';
+import { PRESET_COLORS, generateRandomColor, hexToRgba } from '../utils/colorUtils';
 
 // Define Props. formData is expected to be a reactive object from the parent composable.
 const props = defineProps<{
@@ -27,13 +27,13 @@ const hostTooltipContentRef = ref<HTMLElement | null>(null);
 const toggleCustomColor = () => {
   props.formData.custom_background_color = !props.formData.custom_background_color;
   if (props.formData.custom_background_color && !props.formData.background_color) {
-    props.formData.background_color = getRandomPresetColor();
+    props.formData.background_color = generateRandomColor();
   }
 };
 
-// 随机挑选颜色
+// 随机生成全新颜色 (全光谱 HSL 算法随机)
 const handleRandomColor = () => {
-  props.formData.background_color = getRandomPresetColor(props.formData.background_color);
+  props.formData.background_color = generateRandomColor();
 };
 
 // 选择预设颜色

@@ -51,6 +51,36 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
 }
 
 /**
+ * 将 HSL 转换为 6 位十六进制颜色 (#RRGGBB)
+ */
+export function hslToHex(h: number, s: number, l: number): string {
+  l /= 100;
+  const a = (s * Math.min(l, 1 - l)) / 100;
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`.toLowerCase();
+}
+
+/**
+ * 随机生成一个色调丰富、饱和度适中、视觉舒适的全新 Hex 颜色
+ * 全光谱覆盖 (0~360度)，避免过暗或过亮
+ */
+export function generateRandomColor(): string {
+  // 色相全光谱 0 ~ 360 度
+  const h = Math.floor(Math.random() * 360);
+  // 饱和度 65% ~ 85%
+  const s = Math.floor(65 + Math.random() * 20);
+  // 亮度 48% ~ 62%，在深浅色半透明背景下视觉质感最佳
+  const l = Math.floor(48 + Math.random() * 14);
+  return hslToHex(h, s, l);
+}
+
+/**
  * 随机获取一个预设颜色
  */
 export function getRandomPresetColor(excludeColor?: string): string {
