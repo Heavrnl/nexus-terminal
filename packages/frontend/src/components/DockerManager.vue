@@ -145,18 +145,18 @@ const viewContainerLogs = (containerId: string) => {
     </div>
     <!-- Case 8: Active session, SSH connected, Docker available, show toolbar and list -->
     <div v-else class="flex flex-col h-full overflow-hidden">
-      <!-- 顶部操作栏 / 搜索栏与状态过滤组 -->
-      <div class="docker-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-border/40 bg-header/20 shrink-0">
-        <!-- 左侧：搜索输入框与状态快速筛选药丸组 -->
-        <div class="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
+      <!-- 顶部操作栏 (双行层次化布局，与手机端视觉统一，舒展整齐) -->
+      <div class="docker-toolbar px-4 py-2.5 border-b border-border/40 bg-header/20 shrink-0 space-y-2 select-none">
+        <!-- 第 1 行：搜索输入框 (左) 与 数量统计/刷新按钮 (右) 严格水平对齐 -->
+        <div class="flex items-center justify-between gap-3">
           <!-- 搜索输入框 -->
-          <div class="relative w-full max-w-xs sm:max-w-sm">
-            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary/60 pointer-events-none"></i>
+          <div class="relative flex-1 max-w-sm sm:max-w-md">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary/60 pointer-events-none"></i>
             <input
               type="text"
               v-model="searchQuery"
               :placeholder="t('dockerManager.searchPlaceholder', '搜索容器名称、镜像或 ID...')"
-              class="w-full h-8.5 pl-9 pr-8 text-xs sm:text-sm bg-background border border-border/70 rounded-lg text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all shadow-2xs"
+              class="w-full h-8 pl-8.5 pr-8 text-xs bg-background border border-border/70 rounded-lg text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors shadow-2xs font-mono"
               @keydown.esc="clearSearch"
             />
             <!-- 一键清空按钮 -->
@@ -164,61 +164,61 @@ const viewContainerLogs = (containerId: string) => {
               v-if="searchQuery"
               type="button"
               @click="clearSearch"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-sm p-0.5 rounded cursor-pointer transition-colors"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-xs p-0.5 rounded cursor-pointer transition-colors"
               :title="t('dockerManager.clearSearch', '清空搜索')"
             >
               <i class="fas fa-times-circle"></i>
             </button>
           </div>
 
-          <!-- 状态快速筛选药丸组 -->
-          <div class="flex items-center gap-1.5 text-xs select-none shrink-0">
+          <!-- 数量统计与刷新按钮 (垂直居中严格水平对齐) -->
+          <div class="flex items-center gap-3 shrink-0 text-xs text-text-secondary">
+            <span v-if="containers.length > 0" class="font-medium select-none">
+              <template v-if="searchQuery.trim() || statusFilter !== 'all'">
+                {{ t('dockerManager.filteredCount', { filtered: filteredContainers.length, total: containers.length }) }}
+              </template>
+              <template v-else>
+                {{ t('dockerManager.containerCount', { count: containers.length }) }}
+              </template>
+            </span>
             <button
-              type="button"
-              @click="statusFilter = 'all'"
-              class="h-8.5 px-3 rounded-lg font-medium transition-all cursor-pointer flex items-center"
-              :class="statusFilter === 'all' ? 'bg-primary text-primary-foreground shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+              @click="refreshContainers"
+              :disabled="isLoading"
+              class="h-8 w-8 flex items-center justify-center text-xs text-text-secondary hover:text-foreground hover:bg-header/60 rounded-lg border border-border/50 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+              :title="t('common.refresh', '刷新')"
             >
-              全部 ({{ containers.length }})
-            </button>
-            <button
-              type="button"
-              @click="statusFilter = 'running'"
-              class="h-8.5 px-3 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
-              :class="statusFilter === 'running' ? 'bg-emerald-500 text-white shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
-            >
-              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-              <span>运行中 ({{ runningCount }})</span>
-            </button>
-            <button
-              type="button"
-              @click="statusFilter = 'exited'"
-              class="h-8.5 px-3 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
-              :class="statusFilter === 'exited' ? 'bg-rose-500 text-white shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
-            >
-              <span class="w-2 h-2 rounded-full bg-rose-400"></span>
-              <span>已停止 ({{ stoppedCount }})</span>
+              <i :class="['fas fa-sync-alt', isLoading ? 'fa-spin text-primary' : '']"></i>
             </button>
           </div>
         </div>
 
-        <!-- 数量统计与刷新按钮 -->
-        <div class="flex items-center gap-3 shrink-0 text-sm text-text-secondary">
-          <span v-if="containers.length > 0" class="text-xs font-medium select-none hidden lg:inline-block">
-            <template v-if="searchQuery.trim() || statusFilter !== 'all'">
-              {{ t('dockerManager.filteredCount', { filtered: filteredContainers.length, total: containers.length }) }}
-            </template>
-            <template v-else>
-              {{ t('dockerManager.containerCount', { count: containers.length }) }}
-            </template>
-          </span>
+        <!-- 第 2 行：状态快速筛选药丸组 (独立整行展示，纯颜色过渡防尺寸抖动) -->
+        <div class="flex items-center gap-1.5 text-xs">
           <button
-            @click="refreshContainers"
-            :disabled="isLoading"
-            class="h-8.5 w-8.5 flex items-center justify-center text-sm text-text-secondary hover:text-foreground hover:bg-header/60 rounded-lg border border-border/50 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
-            :title="t('common.refresh', '刷新')"
+            type="button"
+            @click="statusFilter = 'all'"
+            class="h-7 px-2.5 rounded-lg font-medium text-xs border transition-colors duration-150 cursor-pointer flex items-center gap-1 outline-none"
+            :class="statusFilter === 'all' ? 'bg-primary border-primary text-primary-foreground shadow-2xs' : 'bg-background border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
           >
-            <i :class="['fas fa-sync-alt', isLoading ? 'fa-spin text-primary' : '']"></i>
+            全部 ({{ containers.length }})
+          </button>
+          <button
+            type="button"
+            @click="statusFilter = 'running'"
+            class="h-7 px-2.5 rounded-lg font-medium text-xs border transition-colors duration-150 flex items-center gap-1.5 cursor-pointer outline-none"
+            :class="statusFilter === 'running' ? 'bg-emerald-500 border-emerald-500 text-white shadow-2xs' : 'bg-background border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full" :class="statusFilter === 'running' ? 'bg-white' : 'bg-emerald-500'"></span>
+            <span>运行中 ({{ runningCount }})</span>
+          </button>
+          <button
+            type="button"
+            @click="statusFilter = 'exited'"
+            class="h-7 px-2.5 rounded-lg font-medium text-xs border transition-colors duration-150 flex items-center gap-1.5 cursor-pointer outline-none"
+            :class="statusFilter === 'exited' ? 'bg-rose-500 border-rose-500 text-white shadow-2xs' : 'bg-background border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full" :class="statusFilter === 'exited' ? 'bg-white' : 'bg-rose-500'"></span>
+            <span>已停止 ({{ stoppedCount }})</span>
           </button>
         </div>
       </div>
