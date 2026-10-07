@@ -1,176 +1,330 @@
 <template>
-  <!-- 根元素，包含内边距、背景、边框和文本样式 -->
-  <div class="status-monitor p-4 bg-background text-foreground h-full overflow-y-auto text-sm" :class="{ 'bg-header': !activeSessionId }">
-  <h4 v-if="activeSessionId" class="mt-0 mb-4 border-b border-border pb-2 text-base font-medium">
-    {{ t('statusMonitor.title') }}
-  </h4>
+  <!-- 根元素：桌面端服务器状态监控仪表盘 -->
+  <div
+    class="status-monitor p-4 bg-background text-foreground h-full overflow-y-auto text-sm transition-colors duration-200"
+    :class="{ 'bg-header/20': !activeSessionId }"
+  >
+    <!-- 顶栏：标题、实时监控指示灯与会话快捷信息 -->
+    <div v-if="activeSessionId" class="flex items-center justify-between border-b border-border/60 pb-3 mb-3.5 flex-wrap gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-2xs">
+          <i class="fas fa-gauge-high text-sm"></i>
+        </div>
+        <div>
+          <h4 class="m-0 text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
+            <span>{{ t('statusMonitor.title', '状态监视器') }}</span>
+            <!-- 实时心跳指示灯 -->
+            <span
+              v-if="currentServerStatus"
+              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>实时</span>
+            </span>
+          </h4>
+        </div>
+      </div>
 
-  <!-- 无活动会话状态 -->
-  <div v-if="!activeSessionId" class="no-session-status flex flex-col items-center justify-center text-center text-text-secondary mt-4 h-full">
-     <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
-     <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
-  </div>
-
-    <!-- 错误状态 -->
-    <div v-else-if="currentStatusError" class="status-error flex flex-col items-center justify-center text-center text-red-500 mt-4 h-full">
-       <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
-       <span>{{ t('statusMonitor.errorPrefix') }} {{ currentStatusError }}</span>
+      <!-- 右侧：当前主机名称或 IP 快捷复制胶囊 -->
+      <div class="flex items-center gap-1.5">
+        <button
+          v-if="statusMonitorShowIpBoolean && sessionIpAddress"
+          type="button"
+          @click="copyIpToClipboard(sessionIpAddress)"
+          class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-header/60 hover:bg-header border border-border/60 text-xs font-mono text-text-secondary hover:text-primary active:scale-95 transition-all cursor-pointer shadow-2xs"
+          :title="t('statusMonitor.copyIpHint', '点击复制 IP')"
+        >
+          <i class="fas fa-network-wired text-[11px] text-text-secondary"></i>
+          <span class="truncate max-w-[140px]">{{ sessionIpAddress }}</span>
+          <i class="fas fa-copy text-[10px] opacity-70"></i>
+        </button>
+      </div>
     </div>
 
-    <!-- 加载状态 -->
-    <div v-else-if="!currentServerStatus" class="loading-status flex flex-col items-center justify-center text-center text-text-secondary mt-4 h-full">
-      <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-      <span>{{ t('statusMonitor.loading') }}</span>
+    <!-- Case 1: 无活动会话状态 -->
+    <div
+      v-if="!activeSessionId"
+      class="no-session-status flex flex-col items-center justify-center text-center text-text-secondary py-16 h-[80%] space-y-3"
+    >
+      <div class="w-16 h-16 rounded-2xl bg-header/50 border border-border/60 flex items-center justify-center text-text-secondary/60 shadow-xs">
+        <i class="fas fa-plug text-2xl"></i>
+      </div>
+      <div class="space-y-1">
+        <h5 class="text-sm font-semibold text-foreground m-0">{{ t('layout.noActiveSession.title', '暂无活动会话') }}</h5>
+        <p class="text-xs text-text-secondary m-0 max-w-xs leading-relaxed">
+          {{ t('statusMonitor.noSessionDesc', '请在左侧或上方建立/切换到一个 SSH 会话以实时监控该主机的性能。') }}
+        </p>
+      </div>
     </div>
 
-    <!-- 状态网格 -->
-    <div v-else class="status-grid grid gap-3">
-      <!-- IP 地址 (如果启用) -->
-      <div v-if="statusMonitorShowIpBoolean && activeSessionId && sessionIpAddress" class="status-item grid grid-cols-[auto_1fr] items-center gap-3">
-        <label class="font-semibold text-text-secondary text-left whitespace-nowrap">IP:</label>
-        <div class="flex items-center">
-          <span
-            class="ip-address-value truncate text-left cursor-pointer hover:text-primary transition-colors"
-            :title="sessionIpAddress"
-            @click="copyIpToClipboard(sessionIpAddress)">
-            {{ sessionIpAddress }}
+    <!-- Case 2: 错误状态 -->
+    <div
+      v-else-if="currentStatusError"
+      class="status-error flex flex-col items-center justify-center text-center text-rose-500 py-12 h-[80%] space-y-2.5 p-4 rounded-xl bg-rose-500/5 border border-rose-500/20"
+    >
+      <div class="w-12 h-12 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+        <i class="fas fa-triangle-exclamation text-xl"></i>
+      </div>
+      <span class="text-sm font-medium">{{ t('statusMonitor.errorPrefix', '监控数据异常:') }}</span>
+      <span class="text-xs font-mono text-text-secondary break-all max-w-md">{{ currentStatusError }}</span>
+    </div>
+
+    <!-- Case 3: 加载中状态 -->
+    <div
+      v-else-if="!currentServerStatus"
+      class="loading-status flex flex-col items-center justify-center text-center text-text-secondary py-16 h-[80%] space-y-3"
+    >
+      <i class="fas fa-circle-notch fa-spin text-3xl text-primary"></i>
+      <span class="text-xs font-medium">{{ t('statusMonitor.loading', '正在采集服务器指标...') }}</span>
+    </div>
+
+    <!-- Case 4: 正常数据监控面板 -->
+    <div v-else class="space-y-3">
+      <!-- 1. 主机与系统硬件规格概览卡片 -->
+      <div class="rounded-xl bg-header/35 border border-border/60 p-3 space-y-2 shadow-2xs hover:border-border/80 transition-all">
+        <div class="flex items-center justify-between text-xs pb-1.5 border-b border-border/40">
+          <div class="flex items-center gap-2 min-w-0">
+            <i class="fas fa-server text-primary text-xs shrink-0"></i>
+            <span class="font-semibold text-foreground truncate" :title="sessionConnectionName || '当前主机'">
+              {{ sessionConnectionName || '当前主机' }}
+            </span>
+          </div>
+          <span class="text-[11px] font-mono text-text-secondary shrink-0">
+            {{ currentServerStatus?.netInterface || 'Linux' }}
           </span>
         </div>
-      </div>
 
-      <!-- CPU 型号 -->
-      <div class="status-item grid grid-cols-[auto_1fr] items-center gap-3">
-        <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.cpuModelLabel') }}</label>
-        <span class="cpu-model-value truncate text-left" :title="displayCpuModel">{{ displayCpuModel }}</span>
-      </div>
-
-      <!-- 操作系统名称 -->
-      <div class="status-item grid grid-cols-[auto_1fr] items-center gap-3">
-        <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.osLabel') }}</label>
-        <span class="os-name-value truncate text-left" :title="displayOsName">{{ displayOsName }}</span>
-      </div>
-
-      <!-- 资源使用率分组 -->
-      <div class="resource-monitor-group grid gap-3 mb-3">
-        <!-- CPU 使用率 -->
-        <!-- 设置第一列固定宽度为 80px -->
-        <div class="status-item grid grid-cols-[40px_1fr] items-center gap-3">
-          <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.cpuLabel') }}</label>
-          <div class="value-wrapper flex items-center gap-2">
-            <el-progress
-              :percentage="displayCpuPercent"
-              :stroke-width="16"
-              color="#3b82f6"
-              :show-text="true"
-              :text-inside="true"
-              :format="formatPercentageText"
-              class="themed-progress flex-grow"
-            />
-            <!-- 移除 w-12 和 text-right 以实现左对齐 -->
+        <div class="grid grid-cols-1 gap-1.5 text-xs pt-0.5">
+          <!-- 操作系统 -->
+          <div class="flex items-start gap-2">
+            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[50px]">
+              <i class="fab fa-linux text-xs text-text-secondary"></i>
+              <span>{{ t('statusMonitor.osLabel', '系统:') }}</span>
+            </span>
+            <span class="font-medium text-foreground break-words flex-1 leading-snug" :title="displayOsName">
+              {{ displayOsName }}
+            </span>
           </div>
-        </div>
 
-        <!-- 内存使用率 -->
-        <!-- 设置第一列固定宽度为 80px -->
-        <div class="status-item grid grid-cols-[40px_1fr] items-center gap-3">
-          <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.memoryLabel') }}</label>
-          <div class="value-wrapper flex items-center gap-2">
-            <el-progress
-              :percentage="displayMemPercent"
-              :stroke-width="16"
-              color="#22c55e"
-              :show-text="true"
-              :text-inside="true"
-              :format="formatPercentageText"
-              class="themed-progress flex-grow"
-            />
-            <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ memDisplay }}</span>
-          </div>
-        </div>
-
-         <!-- swap -->
-         <!-- 设置第一列固定宽度为 80px -->
-         <div class="status-item grid grid-cols-[40px_1fr] items-center gap-3">
-          <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.swapLabel') }}</label>
-          <div class="value-wrapper flex items-center gap-2">
-            <el-progress
-              :percentage="displaySwapPercent"
-              :stroke-width="16"
-              :color="(currentServerStatus?.swapPercent ?? 0) > 0 ? '#eab308' : '#6b7280'"
-              :show-text="true"
-              :text-inside="true"
-              :format="formatPercentageText"
-              class="themed-progress flex-grow"
-            />
-            <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ swapDisplay }}</span>
-          </div>
-        </div>
-
-        <!-- 磁盘使用率 -->
-        <!-- 设置第一列固定宽度为 80px -->
-        <div class="status-item grid grid-cols-[40px_1fr] items-center gap-3">
-          <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.diskLabel') }}</label>
-          <div class="value-wrapper flex items-center gap-2">
-            <el-progress
-              :percentage="displayDiskPercent"
-              :stroke-width="16"
-              color="#a855f7"
-              :show-text="true"
-              :text-inside="true"
-              :format="formatPercentageText"
-              class="themed-progress flex-grow"
-            />
-            <span class="mem-disk-details font-mono text-xs whitespace-nowrap text-left">{{ diskDisplay }}</span>
+          <!-- CPU 型号 -->
+          <div class="flex items-start gap-2">
+            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[50px]">
+              <i class="fas fa-microchip text-xs text-sky-400"></i>
+              <span>{{ t('statusMonitor.cpuModelLabel', 'CPU:') }}</span>
+            </span>
+            <span class="font-mono text-[11px] text-foreground/90 break-words flex-1 leading-snug" :title="displayCpuModel">
+              {{ displayCpuModel }}
+            </span>
           </div>
         </div>
       </div>
 
+      <!-- 2. 四大核心资源指标卡片流 (自适应双列) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <!-- CPU 使用率卡片 -->
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <i class="fas fa-microchip text-xs text-sky-400"></i>
+              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.cpuLabel', 'CPU 使用率') }}</span>
+            </div>
+            <span
+              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+              :class="getLoadStatus(displayCpuPercent).class"
+            >
+              {{ getLoadStatus(displayCpuPercent).text }}
+            </span>
+          </div>
+
+          <div class="flex items-baseline justify-between">
+            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
+              {{ Math.round(displayCpuPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
+            </span>
+          </div>
+
+          <!-- 现代平滑渐变进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+            <div
+              class="h-full rounded-full transition-all duration-300 ease-out"
+              :style="{ width: `${Math.min(100, Math.max(0, displayCpuPercent))}%` }"
+              :class="getProgressGradient(displayCpuPercent, 'blue')"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 内存使用率卡片 -->
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <i class="fas fa-memory text-xs text-emerald-400"></i>
+              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.memoryLabel', '内存使用率') }}</span>
+            </div>
+            <span
+              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+              :class="getLoadStatus(displayMemPercent).class"
+            >
+              {{ getLoadStatus(displayMemPercent).text }}
+            </span>
+          </div>
+
+          <div class="flex items-baseline justify-between">
+            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
+              {{ Math.round(displayMemPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
+            </span>
+            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="memDisplay">
+              {{ memDisplay }}
+            </span>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+            <div
+              class="h-full rounded-full transition-all duration-300 ease-out"
+              :style="{ width: `${Math.min(100, Math.max(0, displayMemPercent))}%` }"
+              :class="getProgressGradient(displayMemPercent, 'emerald')"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Swap 交换分区卡片 -->
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <i class="fas fa-right-left text-xs text-amber-400"></i>
+              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.swapLabel', 'Swap 交换区') }}</span>
+            </div>
+            <span
+              v-if="(currentServerStatus?.swapTotal ?? 0) > 0"
+              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+              :class="getLoadStatus(displaySwapPercent).class"
+            >
+              {{ getLoadStatus(displaySwapPercent).text }}
+            </span>
+            <span v-else class="text-[10px] px-1.5 py-0.2 rounded font-medium bg-header/50 text-text-secondary">
+              未开启
+            </span>
+          </div>
+
+          <div class="flex items-baseline justify-between">
+            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
+              {{ Math.round(displaySwapPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
+            </span>
+            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="swapDisplay">
+              {{ swapDisplay }}
+            </span>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+            <div
+              class="h-full rounded-full transition-all duration-300 ease-out"
+              :style="{ width: `${Math.min(100, Math.max(0, displaySwapPercent))}%` }"
+              :class="getProgressGradient(displaySwapPercent, 'amber')"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 磁盘使用率卡片 -->
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <i class="fas fa-hard-drive text-xs text-purple-400"></i>
+              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.diskLabel', '磁盘存储') }}</span>
+            </div>
+            <span
+              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
+              :class="getLoadStatus(displayDiskPercent).class"
+            >
+              {{ getLoadStatus(displayDiskPercent).text }}
+            </span>
+          </div>
+
+          <div class="flex items-baseline justify-between">
+            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
+              {{ Math.round(displayDiskPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
+            </span>
+            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="diskDisplay">
+              {{ diskDisplay }}
+            </span>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+            <div
+              class="h-full rounded-full transition-all duration-300 ease-out"
+              :style="{ width: `${Math.min(100, Math.max(0, displayDiskPercent))}%` }"
+              :class="getProgressGradient(displayDiskPercent, 'purple')"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 实时网络流量卡片 -->
+      <div class="rounded-xl bg-header/35 border border-border/60 p-3 space-y-2 shadow-2xs">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-1.5 font-semibold text-text-secondary">
+            <i class="fas fa-globe text-primary text-xs"></i>
+            <span>{{ t('statusMonitor.networkLabel', '实时网络流量') }}</span>
+          </div>
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border border-border/60 text-text-secondary">
+            {{ currentServerStatus?.netInterface || 'default' }}
+          </span>
+        </div>
+
+        <!-- 双胶囊速率展示 -->
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
+          <!-- 下行速率 -->
+          <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            <div class="flex items-center gap-1.5 text-xs font-medium">
+              <i class="fas fa-arrow-down text-xs animate-bounce"></i>
+              <span>下载</span>
+            </div>
+            <span class="font-mono text-xs font-bold truncate">
+              {{ formatBytesPerSecond(currentServerStatus?.netRxRate) }}
+            </span>
+          </div>
+
+          <!-- 上行速率 -->
+          <div class="flex items-center justify-between p-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
+            <div class="flex items-center gap-1.5 text-xs font-medium">
+              <i class="fas fa-arrow-up text-xs animate-bounce"></i>
+              <span>上传</span>
+            </div>
+            <span class="font-mono text-xs font-bold truncate">
+              {{ formatBytesPerSecond(currentServerStatus?.netTxRate) }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 原生图表组件 (保持原有图表不变) -->
+      <StatusCharts
+        v-if="activeSessionId && currentServerStatus"
+        :server-status="currentServerStatus"
+        :active-session-id="activeSessionId"
+      />
     </div>
-
-     <!-- 网络速率，仅在有活动会话且有数据时显示 -->
-     <div v-if="activeSessionId && currentServerStatus" class="status-item grid grid-cols-[auto_1fr] items-center gap-3 mt-2">
-          <label class="font-semibold text-text-secondary text-left whitespace-nowrap">{{ t('statusMonitor.networkLabel') }} ({{ currentServerStatus?.netInterface || '...' }}):</label>
-          <div class="network-values flex items-center justify-start gap-4"> <!-- 减小间距 -->
-            <span class="rate down inline-flex items-center gap-1 text-green-500 text-xs whitespace-nowrap">
-              <i class="fas fa-arrow-down w-3 text-center"></i> <!-- Font Awesome 图标 -->
-              <span class="font-mono">{{ formatBytesPerSecond(currentServerStatus?.netRxRate) }}</span>
-            </span>
-            <span class="rate up inline-flex items-center gap-1 text-orange-500 text-xs whitespace-nowrap">
-               <i class="fas fa-arrow-up w-3 text-center"></i> <!-- Font Awesome 图标 -->
-               <span class="font-mono">{{ formatBytesPerSecond(currentServerStatus?.netTxRate) }}</span>
-
-            </span>
-          </div>
-
-      </div>
-<!-- 图表组件 -->
-      <!-- 仅当有活动会话且有数据时渲染图表 -->
-      <StatusCharts v-if="activeSessionId && currentServerStatus" :server-status="currentServerStatus" :active-session-id="activeSessionId" />
   </div>
 </template>
 
-
 <script setup lang="ts">
-
-import { ref, computed, watch, type PropType, nextTick } from 'vue'; 
-import { ElProgress } from 'element-plus';
+import { ref, computed, watch, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import StatusCharts from './StatusCharts.vue';
-import { useSessionStore } from '../stores/session.store'; // 注入 sessionStore
-import { storeToRefs } from 'pinia'; // 导入 storeToRefs
-import { useSettingsStore } from '../stores/settings.store'; //  导入设置 store
-import { useConnectionsStore } from '../stores/connections.store'; // 导入连接 store
-import { useUiNotificationsStore } from '../stores/uiNotifications.store'; // + 导入通知 store
+import { useSessionStore } from '../stores/session.store';
+import { storeToRefs } from 'pinia';
+import { useSettingsStore } from '../stores/settings.store';
+import { useConnectionsStore } from '../stores/connections.store';
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
-const settingsStore = useSettingsStore(); //  实例化设置 store
-const connectionsStore = useConnectionsStore(); // 实例化连接 store
-const uiNotificationsStore = useUiNotificationsStore(); // + 实例化通知 store
-const { sessions } = storeToRefs(sessionStore); // 获取响应式的 sessions
-const { statusMonitorShowIpBoolean } = storeToRefs(settingsStore); //  获取 IP 显示设置
+const settingsStore = useSettingsStore();
+const connectionsStore = useConnectionsStore();
+const uiNotificationsStore = useUiNotificationsStore();
 
-const formatPercentageText = (percentage: number): string => `${Math.round(percentage)}%`;
+const { sessions } = storeToRefs(sessionStore);
+const { statusMonitorShowIpBoolean } = storeToRefs(settingsStore);
 
 interface ServerStatus {
   cpuPercent?: number;
@@ -194,12 +348,12 @@ interface ServerStatus {
 const props = defineProps({
   activeSessionId: {
     type: String as PropType<string | null>,
-    required: false, // 允许为 null
+    required: false,
     default: null,
   },
 });
 
-// --- Computed properties to get current session data ---
+// --- 会话与状态计算属性 ---
 const currentSessionState = computed(() => {
   return props.activeSessionId ? sessions.value.get(props.activeSessionId) : null;
 });
@@ -208,146 +362,164 @@ const currentServerStatus = computed<ServerStatus | null>(() => {
   return currentSessionState.value?.statusMonitorManager?.serverStatus?.value ?? null;
 });
 
-// --- 计算属性，用于绑定到进度条宽度 ---
-// 始终返回当前状态的百分比。动画由 CSS 类控制。
-const displayCpuPercent = computed(() => {
-  return currentServerStatus.value?.cpuPercent ?? 0;
-});
-
-const displayMemPercent = computed(() => {
-  return currentServerStatus.value?.memPercent ?? 0;
-});
-
-const displaySwapPercent = computed(() => {
-  return currentServerStatus.value?.swapPercent ?? 0;
-});
-
-const displayDiskPercent = computed(() => {
-  return currentServerStatus.value?.diskPercent ?? 0;
-});
-
 const currentStatusError = computed<string | null>(() => {
   return currentSessionState.value?.statusMonitorManager?.statusError?.value ?? null;
 });
 
-// --- 缓存逻辑保持不变 ---
-const cachedCpuModel = ref<string | null>(null);
-const cachedOsName = ref<string | null>(null);
-
-// --- Watcher for caching CPU Model and OS Name ---
-// 现在监听 currentServerStatus
-watch(currentServerStatus, (newData) => {
-  if (newData) {
-    if (newData.cpuModel !== undefined && newData.cpuModel !== null && newData.cpuModel !== '') {
-      cachedCpuModel.value = newData.cpuModel;
-    }
-    if (newData.osName !== undefined && newData.osName !== null && newData.osName !== '') {
-      cachedOsName.value = newData.osName;
-    }
-  }
-}, { immediate: true });
-
-// --- Computed properties for display ---
-const displayCpuModel = computed(() => {
-  // 使用 currentServerStatus
-  return (currentServerStatus.value?.cpuModel ?? cachedCpuModel.value) || t('statusMonitor.notAvailable');
-});
-
-const displayOsName = computed(() => {
-  // 使用 currentServerStatus
-  return (currentServerStatus.value?.osName ?? cachedOsName.value) || t('statusMonitor.notAvailable');
-});
-
-const formatBytesPerSecond = (bytes?: number): string => {
-    if (bytes === undefined || bytes === null || isNaN(bytes)) return t('statusMonitor.notAvailable');
-    if (bytes < 1024) return `${bytes} ${t('statusMonitor.bytesPerSecond')}`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t('statusMonitor.kiloBytesPerSecond')}`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('statusMonitor.megaBytesPerSecond')}`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} ${t('statusMonitor.gigaBytesPerSecond')}`;
-};
-
-const formatKbToGb = (kb?: number): string => {
-    if (kb === undefined || kb === null) return t('statusMonitor.notAvailable');
-    if (kb === 0) return `0.0 ${t('statusMonitor.gigaBytes')}`;
-    const gb = kb / 1024 / 1024;
-    return `${gb.toFixed(1)} ${t('statusMonitor.gigaBytes')}`;
-};
-
-// 辅助函数，用于在需要时将 MB 格式化为 GB
-const formatMemorySize = (mb?: number): string => {
-    if (mb === undefined || mb === null || isNaN(mb)) return t('statusMonitor.notAvailable');
-    if (mb < 1024) {
-        const value = Number.isInteger(mb) ? mb : mb.toFixed(1);
-        return `${value} ${t('statusMonitor.megaBytes')}`;
-    } else {
-        const gb = mb / 1024;
-        return `${gb.toFixed(1)} ${t('statusMonitor.gigaBytes')}`;
-    }
-};
-
-const memDisplay = computed(() => {
-    const data = currentServerStatus.value; // 使用 currentServerStatus
-    if (!data || data.memUsed === undefined || data.memTotal === undefined) return t('statusMonitor.notAvailable');
-    return `${formatMemorySize(data.memUsed)} / ${formatMemorySize(data.memTotal)}`;
-});
-
-const diskDisplay = computed(() => {
-    const data = currentServerStatus.value; // 使用 currentServerStatus
-    if (!data || data.diskUsed === undefined || data.diskTotal === undefined) return t('statusMonitor.notAvailable');
-    return `${formatKbToGb(data.diskUsed)} / ${formatKbToGb(data.diskTotal)}`;
-});
-
-const swapDisplay = computed(() => {
-    const data = currentServerStatus.value; // 使用 currentServerStatus
-    const used = data?.swapUsed ?? 0;
-    const total = data?.swapTotal ?? 0;
-    const percentVal = data?.swapPercent ?? 0;
-
-    // 仅当交换空间总量 > 0 时显示详细信息
-    if (total === 0) {
-        return t('statusMonitor.swapNotAvailable'); // 或更具体的消息
-    }
-
-    return `${formatMemorySize(used)} / ${formatMemorySize(total)}`;
-});
-
-const sessionIpAddress = computed(() => {
+// 计算当前会话关联的连接配置
+const currentConnectionInfo = computed(() => {
   const sessionState = currentSessionState.value;
-  if (sessionState && sessionState.connectionId) {
-    //  直接从 connectionsStore 的 connections 数组中查找
-    const connectionIdAsNumber = parseInt(sessionState.connectionId, 10);
-    if (isNaN(connectionIdAsNumber)) {
-      return null; // 如果 connectionId 不是有效的数字，则返回 null
-    }
-    const connectionInfo = connectionsStore.connections.find(conn => conn.id === connectionIdAsNumber);
-    return connectionInfo?.host || null;
-  }
-  return null;
+  if (!sessionState || !sessionState.connectionId) return null;
+  const connectionIdAsNumber = parseInt(sessionState.connectionId, 10);
+  if (isNaN(connectionIdAsNumber)) return null;
+  return connectionsStore.connections.find(conn => conn.id === connectionIdAsNumber) || null;
 });
 
+// 主机友好名称
+const sessionConnectionName = computed(() => {
+  return currentConnectionInfo.value?.name || (props.activeSessionId ? `会话 ${props.activeSessionId}` : null);
+});
+
+// IP 地址
+const sessionIpAddress = computed(() => {
+  return currentConnectionInfo.value?.host || null;
+});
+
+// 复制 IP 地址
 const copyIpToClipboard = async (ipAddress: string | null) => {
   if (!ipAddress) return;
   try {
     await navigator.clipboard.writeText(ipAddress);
-    uiNotificationsStore.showSuccess(t('common.copied', '已复制!')); 
+    uiNotificationsStore.showSuccess(t('common.copied', '已复制!'));
   } catch (err) {
     console.error('Failed to copy IP address: ', err);
     uiNotificationsStore.showError(t('statusMonitor.copyIpError', '复制 IP 失败'));
   }
 };
 
+// 资源使用率数值计算
+const displayCpuPercent = computed(() => currentServerStatus.value?.cpuPercent ?? 0);
+const displayMemPercent = computed(() => currentServerStatus.value?.memPercent ?? 0);
+const displaySwapPercent = computed(() => currentServerStatus.value?.swapPercent ?? 0);
+const displayDiskPercent = computed(() => currentServerStatus.value?.diskPercent ?? 0);
+
+// 缓存硬件与系统信息
+const cachedCpuModel = ref<string | null>(null);
+const cachedOsName = ref<string | null>(null);
+
+watch(currentServerStatus, (newData) => {
+  if (newData) {
+    if (newData.cpuModel && newData.cpuModel !== '') {
+      cachedCpuModel.value = newData.cpuModel;
+    }
+    if (newData.osName && newData.osName !== '') {
+      cachedOsName.value = newData.osName;
+    }
+  }
+}, { immediate: true });
+
+const displayCpuModel = computed(() => {
+  return (currentServerStatus.value?.cpuModel ?? cachedCpuModel.value) || t('statusMonitor.notAvailable', '未知型号');
+});
+
+const displayOsName = computed(() => {
+  return (currentServerStatus.value?.osName ?? cachedOsName.value) || t('statusMonitor.notAvailable', 'Linux');
+});
+
+// 格式化网络速率
+const formatBytesPerSecond = (bytes?: number): string => {
+  if (bytes === undefined || bytes === null || isNaN(bytes)) return t('statusMonitor.notAvailable', '0 B/s');
+  if (bytes < 1024) return `${bytes} ${t('statusMonitor.bytesPerSecond', 'B/s')}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t('statusMonitor.kiloBytesPerSecond', 'KB/s')}`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} ${t('statusMonitor.megaBytesPerSecond', 'MB/s')}`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} ${t('statusMonitor.gigaBytesPerSecond', 'GB/s')}`;
+};
+
+// 格式化 KB 为 GB
+const formatKbToGb = (kb?: number): string => {
+  if (kb === undefined || kb === null) return t('statusMonitor.notAvailable', '0.0 GB');
+  if (kb === 0) return `0.0 ${t('statusMonitor.gigaBytes', 'GB')}`;
+  const gb = kb / 1024 / 1024;
+  return `${gb.toFixed(1)} ${t('statusMonitor.gigaBytes', 'GB')}`;
+};
+
+// 格式化 MB 为 GB / MB
+const formatMemorySize = (mb?: number): string => {
+  if (mb === undefined || mb === null || isNaN(mb)) return t('statusMonitor.notAvailable', '0 MB');
+  if (mb < 1024) {
+    const value = Number.isInteger(mb) ? mb : mb.toFixed(1);
+    return `${value} ${t('statusMonitor.megaBytes', 'MB')}`;
+  } else {
+    const gb = mb / 1024;
+    return `${gb.toFixed(1)} ${t('statusMonitor.gigaBytes', 'GB')}`;
+  }
+};
+
+const memDisplay = computed(() => {
+  const data = currentServerStatus.value;
+  if (!data || data.memUsed === undefined || data.memTotal === undefined) return t('statusMonitor.notAvailable', '0 / 0');
+  return `${formatMemorySize(data.memUsed)} / ${formatMemorySize(data.memTotal)}`;
+});
+
+const diskDisplay = computed(() => {
+  const data = currentServerStatus.value;
+  if (!data || data.diskUsed === undefined || data.diskTotal === undefined) return t('statusMonitor.notAvailable', '0 / 0');
+  return `${formatKbToGb(data.diskUsed)} / ${formatKbToGb(data.diskTotal)}`;
+});
+
+const swapDisplay = computed(() => {
+  const data = currentServerStatus.value;
+  const used = data?.swapUsed ?? 0;
+  const total = data?.swapTotal ?? 0;
+  if (total === 0) {
+    return t('statusMonitor.swapNotAvailable', '未启用 Swap');
+  }
+  return `${formatMemorySize(used)} / ${formatMemorySize(total)}`;
+});
+
+// 计算负荷状态文案与样式
+const getLoadStatus = (percent: number) => {
+  if (percent > 85) {
+    return {
+      text: t('statusMonitor.loadHigh', '高负荷'),
+      class: 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
+    };
+  }
+  if (percent > 65) {
+    return {
+      text: t('statusMonitor.loadMedium', '中负荷'),
+      class: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+    };
+  }
+  return {
+    text: t('statusMonitor.loadNormal', '正常'),
+    class: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
+  };
+};
+
+// 渐变进度条颜色
+const getProgressGradient = (percent: number, baseType: 'blue' | 'emerald' | 'amber' | 'purple') => {
+  if (percent > 85) {
+    return 'bg-gradient-to-r from-amber-500 to-rose-500';
+  }
+  if (percent > 65) {
+    return 'bg-gradient-to-r from-sky-500 to-amber-500';
+  }
+  switch (baseType) {
+    case 'blue':
+      return 'bg-gradient-to-r from-sky-500 to-blue-500';
+    case 'emerald':
+      return 'bg-gradient-to-r from-teal-500 to-emerald-500';
+    case 'amber':
+      return 'bg-gradient-to-r from-yellow-500 to-amber-500';
+    case 'purple':
+      return 'bg-gradient-to-r from-indigo-500 to-purple-500';
+  }
+};
 </script>
 
 <style scoped>
-::v-deep(.el-progress-bar__outer) {
-  background-color: var(--header-bg-color) !important; 
-}
-::v-deep(.themed-progress .el-progress-bar__inner) {
-  transition: width 0.3s ease-in-out;
-}
-::v-deep(.el-progress-bar__innerText) {
-  font-size: 10px;
-  position: relative;
-  top: -0.5px;       
+.metric-card {
+  backdrop-filter: blur(4px);
 }
 </style>
