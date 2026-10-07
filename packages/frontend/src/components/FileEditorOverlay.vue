@@ -308,13 +308,6 @@ const handleResizerMouseDown = (e: MouseEvent) => {
   }
 };
 
-// 移动端搜索
-const handleOpenSearch = () => {
-  if (primaryPaneRef.value) {
-    primaryPaneRef.value.openSearch();
-  }
-};
-
 // 监听弹窗触发信号
 watch(popupTrigger, () => {
   if (!showPopupFileEditorBoolean.value || !popupFileInfo.value) {
@@ -372,7 +365,6 @@ watch(popupTrigger, () => {
             @split-editor="handleSplitEditor"
             @close-split="closeSplit"
             @toggle-split-direction="toggleSplitDirection"
-            @open-search="handleOpenSearch"
           >
             <template #header-actions>
               <button
@@ -434,7 +426,6 @@ watch(popupTrigger, () => {
             @split-editor="handleSplitEditor"
             @close-split="closeSplit"
             @toggle-split-direction="toggleSplitDirection"
-            @open-search="handleOpenSearch"
           />
         </div>
       </div>

@@ -167,6 +167,12 @@ defineExpose({
   getScrollInfo: () => {
     return monacoEditorRef.value?.getScrollInfo() ?? { scrollTop: 0, scrollLeft: 0, scrollHeight: 0, clientHeight: 0 };
   },
+  openSearch: () => {
+    codeMirrorMobileEditorRef.value?.openSearch?.();
+  },
+  toggleSearch: () => {
+    codeMirrorMobileEditorRef.value?.toggleSearch?.();
+  },
 });
 </script>
 

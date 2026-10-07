@@ -68,7 +68,6 @@ const emit = defineEmits<{
   (e: 'split-editor', direction: SplitDirection, tabId?: string): void;
   (e: 'close-split', paneId: PaneId): void;
   (e: 'toggle-split-direction'): void;
-  (e: 'open-search'): void;
 }>();
 
 const { t } = useI18n();
@@ -192,9 +191,25 @@ const focusActiveEditor = (): boolean => {
   return false;
 };
 
+// 移动端搜索按钮点击或外部触发搜索处理
+const handleOpenSearch = () => {
+  if (isMarkdownFile.value) {
+    (monacoEditorRef.value as any)?.toggleSearch?.();
+  } else {
+    codeMirrorMobileEditorRef.value?.toggleSearch?.();
+  }
+};
+
 defineExpose({
   focusActiveEditor,
-  openSearch: () => codeMirrorMobileEditorRef.value?.openSearch(),
+  openSearch: () => {
+    if (isMarkdownFile.value) {
+      (monacoEditorRef.value as any)?.openSearch?.();
+    } else {
+      codeMirrorMobileEditorRef.value?.openSearch?.();
+    }
+  },
+  toggleSearch: handleOpenSearch,
 });
 </script>
 
@@ -274,7 +289,7 @@ defineExpose({
             v-if="props.isMobile && !activeTab.isLoading"
             class="action-icon-btn search-btn is-mobile"
             :title="t('fileManager.actions.search', '搜索')"
-            @click="emit('open-search')"
+            @click="handleOpenSearch"
           >
             <i class="fas fa-search text-xs"></i>
           </button>
