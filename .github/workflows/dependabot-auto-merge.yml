@@ -1,0 +1,39 @@
+name: Dependabot 补丁自动合并工作流
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot-automerge:
+    runs-on: ubuntu-latest
+    # 仅当 PR 由 Dependabot 机器人发起时触发
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: 获取 Dependabot 元数据
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # 判断条件：
+      # 1. 明确关联了安全漏洞警报 (alert-lookup-url 不为空)
+      # 2. 或者属于生产/开发依赖分组补丁 (包含 production-dependencies / dev-dependencies)
+      # 3. 且非破坏性的大版本跨越 (semver-major)
+      - name: 批准并自动合并安全补丁
+        if: |
+          steps.metadata.outputs.alert-lookup-url != '' ||
+          steps.metadata.outputs.dependency-group == 'production-dependencies' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          echo "检测到安全补丁或非破坏性更新，正在自动批准并合并..."
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
