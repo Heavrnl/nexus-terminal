@@ -177,22 +177,6 @@ docker compose up -d
 1. **移动端可以通过双指手势放大缩小终端字体**
 2. 如需启用 Passkey 登录，请在 `.env` 文件中设置 `RP_ID` 和 `RP_ORIGIN` 环境变量。
 
-## 📖 工程与开发文档中心
-
-星枢终端具备完整的工程规范与设计文档，欢迎阅读：
-
-*   **API 接口契约**：
-    *   [RESTful API 规范手册](./doc/api/rest-api.md)
-    *   [WebSocket 实时通信协议规范](./doc/api/websocket-spec.md)
-*   **架构与系统设计**：
-    *   [系统总体架构设计](./doc/architecture/system-architecture.md)
-    *   [数据库设计与数据字典](./doc/architecture/database-design.md)
-    *   [系统安全架构与凭证加密白皮书](./doc/architecture/security.md)
-*   **开发者与协作指引**：
-    *   [本地源码开发与调试手册](./doc/DEVELOPMENT.md)
-    *   [开源贡献指南](./CONTRIBUTING.md)
-    *   [版本变更日志](./CHANGELOG.md)
-
 ## ⚠️ 注意事项
 
 1.  **双文件管理器**：可以在布局中添加两个文件管理器组件（实验性功能，可能存在不稳定情况）。
