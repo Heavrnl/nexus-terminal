@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import SshKeySelector from '../../SshKeySelector.vue';
+import MobileSshKeySelector from './MobileSshKeySelector.vue';
 
 // 定义 Props
 const props = defineProps<{
@@ -136,7 +136,7 @@ const showVncPassword = ref(false);
           {{ t('connections.form.sshKey', 'SSH 密钥') }} <span class="text-red-400">*</span>
         </label>
         <div class="mobile-ssh-key-selector">
-          <SshKeySelector v-model="props.formData.selected_ssh_key_id" />
+          <MobileSshKeySelector v-model="props.formData.selected_ssh_key_id" />
         </div>
       </div>
     </template>

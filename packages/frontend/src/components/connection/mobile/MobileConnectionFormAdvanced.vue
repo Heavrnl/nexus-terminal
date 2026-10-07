@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, type PropType } from 'vue';
+import { ref, computed, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import TagInput from '../../TagInput.vue';
+import MobileTagInput from '../../MobileTagInput.vue';
+import MobileSelectDrawer, { type MobileSelectOption } from '../../common/MobileSelectDrawer.vue';
 import type { ProxyInfo } from '../../../stores/proxies.store';
 import type { TagInfo } from '../../../stores/tags.store';
 import type { ConnectionInfo } from '../../../stores/connections.store';
@@ -58,6 +59,26 @@ const setConnectionMode = (mode: 'proxy' | 'jump') => {
   emit('update:advancedConnectionMode', mode);
 };
 
+// 代理选项格式化为移动端抽屉选择器选项
+const proxyOptions = computed<MobileSelectOption[]>(() => {
+  return [
+    {
+      value: null,
+      label: t('connections.form.noProxy', '不使用代理 (直连)'),
+      sublabel: '通过当前网络直接发起连接',
+      icon: 'fas fa-unlink',
+    },
+    ...props.proxies.map(p => ({
+      value: p.id,
+      label: p.name,
+      sublabel: `${p.host}:${p.port}`,
+      badge: p.type,
+      icon: 'fas fa-network-wired',
+    })),
+  ];
+});
+
+// 计算特定跳板机层级可用的连接节点
 const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] => {
   return props.connections.filter(conn => {
     if (conn.type !== 'SSH') return false;
@@ -66,6 +87,26 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       return index !== currentIndex && jumpHostId === conn.id;
     });
   });
+};
+
+// 跳板机选项格式化为移动端抽屉选择器选项
+const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] => {
+  const available = getAvailableJumpHostsForIndex(currentIndex);
+  return [
+    {
+      value: null,
+      label: t('connections.form.selectJumpHost', '请选择跳板机节点'),
+      sublabel: '点击选择可用的一级 SSH 节点',
+      icon: 'fas fa-server',
+    },
+    ...available.map(h => ({
+      value: h.id,
+      label: h.name || h.host,
+      sublabel: `${h.username ? h.username + '@' : ''}${h.host}:${h.port}`,
+      badge: h.type,
+      icon: 'fas fa-terminal',
+    })),
+  ];
 };
 </script>
 
@@ -130,24 +171,20 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           </div>
         </div>
 
-        <!-- 代理选择器 (模式为 proxy 时) -->
+        <!-- 移动端抽屉式代理选择器 (模式为 proxy 时) -->
         <div v-if="props.advancedConnectionMode === 'proxy'" class="space-y-1.5">
-          <label for="m-conn-proxy" class="block text-xs font-medium text-text-secondary">
+          <label class="block text-xs font-medium text-text-secondary">
             {{ t('connections.form.proxy', '指定代理服务器') }}
           </label>
-          <div class="relative">
-            <select
-              id="m-conn-proxy"
-              v-model="props.formData.proxy_id"
-              class="w-full h-10 pl-3 pr-8 text-xs bg-header/20 border border-border/60 rounded-xl text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
-            >
-              <option :value="null">{{ t('connections.form.noProxy', '不使用代理 (直连)') }}</option>
-              <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
-                {{ proxy.name }} ({{ proxy.type }} - {{ proxy.host }}:{{ proxy.port }})
-              </option>
-            </select>
-            <i class="fas fa-chevron-down absolute right-3 top-3.5 text-xs text-text-secondary pointer-events-none"></i>
-          </div>
+          <MobileSelectDrawer
+            v-model="props.formData.proxy_id"
+            :options="proxyOptions"
+            title="选择代理服务器"
+            placeholder="点击选择代理服务器 (支持直连)"
+            :disabled="props.isProxyLoading"
+            icon="fas fa-globe"
+            :allow-clear="true"
+          />
           <div v-if="props.isProxyLoading" class="text-[11px] text-text-secondary">{{ t('proxies.loading', '加载代理列表中...') }}</div>
           <div v-if="props.proxyStoreError" class="text-[11px] text-red-400">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
         </div>
@@ -168,31 +205,29 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
               :key="index"
               class="flex items-center gap-2 p-2.5 bg-header/30 border border-border/60 rounded-xl"
             >
-              <span class="w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+              <span class="w-6 h-6 rounded-full bg-primary/20 text-primary text-[11px] font-bold flex items-center justify-center shrink-0">
                 {{ index + 1 }}
               </span>
 
-              <div class="relative flex-grow min-w-0">
-                <select
+              <div class="flex-grow min-w-0">
+                <MobileSelectDrawer
                   v-model="props.formData.jump_chain[index]"
-                  class="w-full h-9 pl-2.5 pr-7 text-xs bg-background border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
-                >
-                  <option :value="null">{{ t('connections.form.selectJumpHost', '请选择跳板机节点') }}</option>
-                  <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">
-                    {{ host.name }} ({{ host.host }})
-                  </option>
-                </select>
-                <i class="fas fa-chevron-down absolute right-2.5 top-3 text-[10px] text-text-secondary pointer-events-none"></i>
+                  :options="getJumpHostOptionsForIndex(index)"
+                  title="选择跳板机节点"
+                  placeholder="点击选择跳板机..."
+                  icon="fas fa-server"
+                  :allow-clear="true"
+                />
               </div>
 
               <!-- 移除此级跳板机 -->
               <button
                 type="button"
                 @click="props.removeJumpHost(index)"
-                class="w-8 h-8 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                class="w-10 h-10 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-2xs"
                 :title="t('connections.form.removeJumpHostTitle', '移除此跳板机')"
               >
-                <i class="fas fa-times text-xs"></i>
+                <i class="fas fa-trash-alt text-xs"></i>
               </button>
             </div>
           </div>
@@ -201,7 +236,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           <button
             type="button"
             @click="props.addJumpHost()"
-            class="w-full h-9 rounded-xl border border-dashed border-primary/50 text-primary bg-primary/5 hover:bg-primary/10 active:scale-98 flex items-center justify-center gap-2 text-xs font-medium transition-all cursor-pointer"
+            class="w-full h-10 rounded-xl border border-dashed border-primary/50 text-primary bg-primary/5 hover:bg-primary/10 active:scale-98 flex items-center justify-center gap-2 text-xs font-medium transition-all cursor-pointer"
           >
             <i class="fas fa-plus text-xs"></i>
             <span>{{ t('connections.form.addJumpHost', '添加跳板机') }}</span>
@@ -216,22 +251,20 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         </div>
       </div>
 
-      <!-- 2. 分类标签管理 -->
+      <!-- 2. 分类标签管理 (采用全新的移动端专属药丸交互) -->
       <div class="space-y-1.5 pt-1">
         <label class="block text-xs font-medium text-text-secondary">
           {{ t('connections.form.tags', '分类标签') }}
         </label>
-        <div class="mobile-tag-input-container">
-          <TagInput
-            v-model="props.formData.tag_ids"
-            :available-tags="props.tags"
-            :allow-create="true"
-            :allow-delete="true"
-            @create-tag="handleCreateTagEvent"
-            @delete-tag="handleDeleteTagEvent"
-            :placeholder="t('tags.inputPlaceholder', '输入或选择标签...')"
-          />
-        </div>
+        <MobileTagInput
+          v-model="props.formData.tag_ids"
+          :available-tags="props.tags"
+          :allow-create="true"
+          :allow-delete="true"
+          @create-tag="handleCreateTagEvent"
+          @delete-tag="handleDeleteTagEvent"
+          :placeholder="t('tags.inputPlaceholder', '添加或点选标签...')"
+        />
         <div v-if="props.isTagLoading" class="text-[11px] text-text-secondary">{{ t('tags.loading', '加载标签中...') }}</div>
         <div v-if="props.tagStoreError" class="text-[11px] text-red-400">{{ t('tags.error', { error: props.tagStoreError }) }}</div>
       </div>
@@ -252,12 +285,3 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
     </div>
   </div>
 </template>
-
-<style scoped>
-:deep(.mobile-tag-input-container input) {
-  height: 2.25rem;
-  border-radius: 0.75rem;
-  font-size: 0.75rem;
-  background-color: var(--color-header, rgba(0,0,0,0.05));
-}
-</style>

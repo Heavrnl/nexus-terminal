@@ -4,6 +4,10 @@ import { useI18n } from 'vue-i18n';
 import { useSshKeysStore, SshKeyBasicInfo, SshKeyInput } from '../stores/sshKeys.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import MobileSshKeyManagementModal from './MobileSshKeyManagementModal.vue';
+
+const { isMobile } = useDeviceDetection();
 
 const emit = defineEmits(['close']);
 
@@ -131,8 +135,12 @@ const cancelForm = () => {
 </script>
 
 <template>
-    <div class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4">
-        <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-3xl max-h-[80vh] flex flex-col">
+  <MobileSshKeyManagementModal
+    v-if="isMobile"
+    @close="emit('close')"
+  />
+  <div v-else class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4">
+    <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-3xl max-h-[80vh] flex flex-col">
 
             <!-- Main Modal Content -->
             <div v-if="!isAddEditFormVisible" class="flex flex-col h-full">

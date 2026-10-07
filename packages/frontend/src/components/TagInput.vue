@@ -21,8 +21,10 @@ const props = defineProps<{
 const emit = defineEmits(['update:modelValue', 'create-tag', 'delete-tag']);
 
 const { t } = useI18n();
-// const tagsStore = useTagsStore(); // REMOVE
-// const { tags, isLoading, error } = storeToRefs(tagsStore); // REMOVE
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import MobileTagInput from './MobileTagInput.vue';
+
+const { isMobile } = useDeviceDetection();
 
 const inputValue = ref(''); // 输入框的值
 const inputRef = ref<HTMLInputElement | null>(null); // 输入框引用
@@ -173,7 +175,18 @@ const handleDeleteTagGlobally = (tagToDelete: GenericTag) => {
 </script>
 
 <template>
-  <div class="relative w-full">
+  <MobileTagInput
+    v-if="isMobile"
+    :model-value="props.modelValue"
+    :available-tags="props.availableTags"
+    :placeholder="props.placeholder"
+    :allow-create="props.allowCreate"
+    :allow-delete="props.allowDelete"
+    @update:model-value="emit('update:modelValue', $event)"
+    @create-tag="emit('create-tag', $event)"
+    @delete-tag="emit('delete-tag', $event)"
+  />
+  <div v-else class="relative w-full">
     <div class="flex flex-wrap items-center gap-1 p-1.5 border border-border rounded cursor-text bg-background" @click="inputRef?.focus()">
        <div class="inline-flex flex-wrap gap-1">
           <span v-for="tag in selectedTags" :key="tag.id" class="inline-flex items-center bg-background-alt text-foreground text-sm px-2 py-0.5 rounded whitespace-nowrap border border-border">
