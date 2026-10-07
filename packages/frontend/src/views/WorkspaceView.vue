@@ -834,8 +834,8 @@ const closeFileManagerModal = () => {
             <i class="fas fa-folder-open text-primary text-sm sm:text-base"></i>
             <span>{{ t('fileManager.modalTitle', '文件管理器') }} ({{ currentFileManagerSessionId ? (sessionStore.sessions.get(currentFileManagerSessionId)?.connectionName || currentFileManagerSessionId) : '未知会话' }})</span>
           </h2>
-          <button @click="closeFileManagerModal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-header text-text-secondary hover:text-foreground transition-colors shrink-0">
-            <i class="fas fa-times text-base sm:text-xl"></i>
+          <button @click="closeFileManagerModal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-header text-text-secondary hover:text-foreground transition-colors shrink-0" :title="t('common.close', '关闭')">
+            <i :class="isMobile ? 'fas fa-chevron-down text-base' : 'fas fa-times text-base sm:text-xl'"></i>
           </button>
         </div>
         <div class="flex-grow overflow-hidden relative">

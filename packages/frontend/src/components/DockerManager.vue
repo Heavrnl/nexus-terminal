@@ -10,8 +10,9 @@ const sessionStore = useSessionStore();
 const { activeSession } = storeToRefs(sessionStore); // Get reactive active session
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
-// --- 搜索状态 ---
+// --- 搜索与状态过滤 ---
 const searchQuery = ref('');
+const statusFilter = ref<'all' | 'running' | 'exited'>('all');
 
 // --- Get Docker Manager Instance from Active Session ---
 const dockerManager = computed(() => activeSession.value?.dockerManager);
@@ -23,6 +24,10 @@ const error = computed(() => dockerManager.value?.error.value ?? null);
 const isDockerAvailable = computed(() => dockerManager.value?.isDockerAvailable.value ?? false);
 const expandedContainerIds = computed(() => dockerManager.value?.expandedContainerIds.value ?? new Set<string>());
 
+// 状态计数
+const runningCount = computed(() => containers.value.filter(c => c.State === 'running').length);
+const stoppedCount = computed(() => containers.value.filter(c => c.State !== 'running').length);
+
 // --- Computed properties for UI state (independent of dockerManager) ---
 const currentSessionId = computed(() => activeSession.value?.sessionId);
 const sshConnectionStatus = computed(() => activeSession.value?.wsManager.connectionStatus.value ?? 'disconnected');
@@ -33,11 +38,21 @@ const formatContainerName = (names?: readonly string[] | string[]) => {
   return names.map(n => (n.startsWith('/') ? n.slice(1) : n)).join(', ');
 };
 
-// --- 即时搜索过滤容器列表 ---
+// --- 即时搜索与状态过滤容器列表 ---
 const filteredContainers = computed(() => {
+  let list = containers.value;
+
+  // 状态过滤
+  if (statusFilter.value === 'running') {
+    list = list.filter(c => c.State === 'running');
+  } else if (statusFilter.value === 'exited') {
+    list = list.filter(c => c.State !== 'running');
+  }
+
   const query = searchQuery.value.trim().toLowerCase();
-  if (!query) return containers.value;
-  return containers.value.filter(container => {
+  if (!query) return list;
+
+  return list.filter(container => {
     // 匹配容器名（包含去掉前缀斜杠与原生名字）
     const matchName = container.Names?.some(name => {
       const lower = name.toLowerCase();
@@ -130,34 +145,67 @@ const viewContainerLogs = (containerId: string) => {
     </div>
     <!-- Case 8: Active session, SSH connected, Docker available, show toolbar and list -->
     <div v-else class="flex flex-col h-full overflow-hidden">
-      <!-- 顶部操作栏 / 搜索栏 (尺寸大方、视觉清爽) -->
-      <div class="docker-toolbar flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border/40 bg-header/20 shrink-0">
-        <!-- 搜索输入框 (大尺寸 text-sm + h-9，宽敞舒展) -->
-        <div class="relative flex-1 max-w-sm sm:max-w-md">
-          <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary/60 pointer-events-none"></i>
-          <input
-            type="text"
-            v-model="searchQuery"
-            :placeholder="t('dockerManager.searchPlaceholder', '搜索容器名称、镜像或 ID...')"
-            class="w-full h-9 pl-9 pr-8 text-sm bg-background border border-border/70 rounded-lg text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all shadow-2xs"
-            @keydown.esc="clearSearch"
-          />
-          <!-- 一键清空按钮 -->
-          <button
-            v-if="searchQuery"
-            type="button"
-            @click="clearSearch"
-            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-sm p-0.5 rounded cursor-pointer transition-colors"
-            :title="t('dockerManager.clearSearch', '清空搜索')"
-          >
-            <i class="fas fa-times-circle"></i>
-          </button>
+      <!-- 顶部操作栏 / 搜索栏与状态过滤组 -->
+      <div class="docker-toolbar flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b border-border/40 bg-header/20 shrink-0">
+        <!-- 左侧：搜索输入框与状态快速筛选药丸组 -->
+        <div class="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
+          <!-- 搜索输入框 -->
+          <div class="relative w-full max-w-xs sm:max-w-sm">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary/60 pointer-events-none"></i>
+            <input
+              type="text"
+              v-model="searchQuery"
+              :placeholder="t('dockerManager.searchPlaceholder', '搜索容器名称、镜像或 ID...')"
+              class="w-full h-8.5 pl-9 pr-8 text-xs sm:text-sm bg-background border border-border/70 rounded-lg text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all shadow-2xs"
+              @keydown.esc="clearSearch"
+            />
+            <!-- 一键清空按钮 -->
+            <button
+              v-if="searchQuery"
+              type="button"
+              @click="clearSearch"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-sm p-0.5 rounded cursor-pointer transition-colors"
+              :title="t('dockerManager.clearSearch', '清空搜索')"
+            >
+              <i class="fas fa-times-circle"></i>
+            </button>
+          </div>
+
+          <!-- 状态快速筛选药丸组 -->
+          <div class="flex items-center gap-1.5 text-xs select-none shrink-0">
+            <button
+              type="button"
+              @click="statusFilter = 'all'"
+              class="h-8.5 px-3 rounded-lg font-medium transition-all cursor-pointer flex items-center"
+              :class="statusFilter === 'all' ? 'bg-primary text-primary-foreground shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+            >
+              全部 ({{ containers.length }})
+            </button>
+            <button
+              type="button"
+              @click="statusFilter = 'running'"
+              class="h-8.5 px-3 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="statusFilter === 'running' ? 'bg-emerald-500 text-white shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+            >
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>运行中 ({{ runningCount }})</span>
+            </button>
+            <button
+              type="button"
+              @click="statusFilter = 'exited'"
+              class="h-8.5 px-3 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+              :class="statusFilter === 'exited' ? 'bg-rose-500 text-white shadow-2xs' : 'bg-background border border-border/60 text-text-secondary hover:text-foreground hover:bg-header/40'"
+            >
+              <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+              <span>已停止 ({{ stoppedCount }})</span>
+            </button>
+          </div>
         </div>
 
         <!-- 数量统计与刷新按钮 -->
         <div class="flex items-center gap-3 shrink-0 text-sm text-text-secondary">
-          <span v-if="containers.length > 0" class="text-xs font-medium select-none hidden sm:inline-block">
-            <template v-if="searchQuery.trim()">
+          <span v-if="containers.length > 0" class="text-xs font-medium select-none hidden lg:inline-block">
+            <template v-if="searchQuery.trim() || statusFilter !== 'all'">
               {{ t('dockerManager.filteredCount', { filtered: filteredContainers.length, total: containers.length }) }}
             </template>
             <template v-else>
@@ -167,7 +215,7 @@ const viewContainerLogs = (containerId: string) => {
           <button
             @click="refreshContainers"
             :disabled="isLoading"
-            class="h-9 w-9 flex items-center justify-center text-sm text-text-secondary hover:text-foreground hover:bg-header/60 rounded-lg border border-border/50 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+            class="h-8.5 w-8.5 flex items-center justify-center text-sm text-text-secondary hover:text-foreground hover:bg-header/60 rounded-lg border border-border/50 transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
             :title="t('common.refresh', '刷新')"
           >
             <i :class="['fas fa-sync-alt', isLoading ? 'fa-spin text-primary' : '']"></i>
@@ -183,21 +231,31 @@ const viewContainerLogs = (containerId: string) => {
           <p class="font-medium text-base text-foreground">{{ t('dockerManager.noContainers') }}</p>
         </div>
 
-        <!-- 搜索无结果 -->
-        <div v-else-if="filteredContainers.length === 0 && searchQuery.trim()" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary h-full p-8">
-          <i class="fas fa-search text-3xl mb-3 opacity-30"></i>
+        <!-- 搜索或筛选无结果 -->
+        <div v-else-if="filteredContainers.length === 0" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary h-full p-8">
+          <i class="fas fa-filter text-3xl mb-3 opacity-30"></i>
           <p class="text-base font-medium text-foreground mb-1">
-            {{ t('dockerManager.noMatchingContainers', '未找到匹配的容器') }}
+            {{ searchQuery.trim() ? t('dockerManager.noMatchingContainers', '未找到匹配的容器') : '未找到符合筛选条件的容器' }}
           </p>
-          <p class="text-sm text-text-secondary mb-4">
+          <p v-if="searchQuery.trim()" class="text-sm text-text-secondary mb-4">
             {{ t('dockerManager.noMatchingHint', { query: searchQuery }) }}
           </p>
-          <button
-            @click="clearSearch"
-            class="px-3.5 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-header/60 text-foreground transition-colors cursor-pointer"
-          >
-            {{ t('dockerManager.clearSearch', '清空搜索') }}
-          </button>
+          <div class="flex items-center gap-2 mt-2">
+            <button
+              v-if="searchQuery"
+              @click="clearSearch"
+              class="px-3.5 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-header/60 text-foreground transition-colors cursor-pointer"
+            >
+              {{ t('dockerManager.clearSearch', '清空搜索') }}
+            </button>
+            <button
+              v-if="statusFilter !== 'all'"
+              @click="statusFilter = 'all'"
+              class="px-3.5 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-header/60 text-foreground transition-colors cursor-pointer"
+            >
+              显示全部容器
+            </button>
+          </div>
         </div>
 
         <!-- 容器表格 (仅在 tr 级别保留极浅的底部分割线，去除所有 td 的内部实线) -->

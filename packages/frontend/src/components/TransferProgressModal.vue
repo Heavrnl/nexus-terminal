@@ -286,15 +286,15 @@ const handleCancelTask = async (taskId: string) => {
             <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="handleClose"></div>
 
             <div class="flex items-center justify-between">
-              <!-- 左侧收起按钮 -->
+              <!-- 左侧手动刷新按钮 -->
               <button
                 type="button"
-                @click="handleClose"
-                class="px-2 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1"
-                :title="t('common.close', '关闭')"
+                @click="fetchTransferTasks"
+                :disabled="isLoading"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 disabled:opacity-50 transition-colors -ml-1 cursor-pointer"
+                :title="t('common.refresh', '刷新')"
               >
-                <i class="fas fa-chevron-down text-xs"></i>
-                <span>{{ t('common.close', '收起') }}</span>
+                <i :class="['fas fa-sync-alt text-xs', { 'fa-spin': isLoading }]"></i>
               </button>
 
               <!-- 居中标题与活动任务徽标 -->
@@ -310,15 +310,14 @@ const handleCancelTask = async (taskId: string) => {
                 </span>
               </div>
 
-              <!-- 右侧手动刷新按钮 -->
+              <!-- 右侧收起按钮 (移除文字，保持纯图标) -->
               <button
                 type="button"
-                @click="fetchTransferTasks"
-                :disabled="isLoading"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 disabled:opacity-50 transition-colors -mr-1"
-                :title="t('common.refresh', '刷新')"
+                @click="handleClose"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 transition-colors -mr-1 cursor-pointer"
+                :title="t('common.close', '收起')"
               >
-                <i :class="['fas fa-sync-alt text-xs', { 'fa-spin': isLoading }]"></i>
+                <i class="fas fa-chevron-down text-sm"></i>
               </button>
             </div>
           </div>
