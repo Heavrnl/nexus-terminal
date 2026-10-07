@@ -159,19 +159,21 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
             v-if="isAddEditFormVisible"
             type="button"
             @click="cancelForm"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
+            :title="t('common.back', '返回列表')"
+            :aria-label="t('common.back', '返回列表')"
           >
-            <i class="fas fa-chevron-left text-xs shrink-0"></i>
-            <span>返回列表</span>
+            <i class="fas fa-chevron-left text-xs"></i>
           </button>
           <button
             v-else
             type="button"
             @click="emit('close')"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
+            :title="t('common.close', '关闭')"
+            :aria-label="t('common.close', '关闭')"
           >
-            <i class="fas fa-chevron-down text-xs shrink-0"></i>
-            <span>{{ t('common.close', '关闭') }}</span>
+            <i class="fas fa-chevron-down text-xs"></i>
           </button>
 
           <!-- 居中标题 -->
@@ -199,10 +201,11 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
             type="button"
             @click="showAddForm"
             :disabled="isLoading"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
+            class="w-8 h-8 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center justify-center -mr-1 cursor-pointer shrink-0"
+            :title="t('sshKeys.modal.addKey', '新建密钥')"
+            :aria-label="t('sshKeys.modal.addKey', '新建密钥')"
           >
-            <i class="fas fa-plus text-xs shrink-0"></i>
-            <span>{{ t('sshKeys.modal.addKey', '新建密钥') }}</span>
+            <i class="fas fa-plus text-xs"></i>
           </button>
         </div>
       </div>
@@ -256,18 +259,19 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
                   type="button"
                   @click="showEditForm(key)"
                   :disabled="isLoading"
-                  class="h-8 px-2.5 rounded-lg bg-header/60 hover:bg-header text-text-secondary hover:text-foreground active:scale-95 text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0"
+                  class="w-8 h-8 rounded-xl bg-header/60 hover:bg-header text-text-secondary hover:text-foreground active:scale-95 flex items-center justify-center transition-all cursor-pointer shrink-0"
                   :title="t('sshKeys.modal.edit', '编辑')"
+                  :aria-label="t('sshKeys.modal.edit', '编辑')"
                 >
-                  <i class="fas fa-pencil-alt text-xs text-primary shrink-0"></i>
-                  <span>编辑</span>
+                  <i class="fas fa-pencil-alt text-xs text-primary"></i>
                 </button>
                 <button
                   type="button"
                   @click="handleDelete(key)"
                   :disabled="isLoading"
-                  class="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 active:scale-95 flex items-center justify-center transition-all cursor-pointer shrink-0"
+                  class="w-8 h-8 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 active:scale-95 flex items-center justify-center transition-all cursor-pointer shrink-0"
                   :title="t('sshKeys.modal.delete', '删除')"
+                  :aria-label="t('sshKeys.modal.delete', '删除')"
                 >
                   <i class="fas fa-trash-alt text-xs shrink-0"></i>
                 </button>

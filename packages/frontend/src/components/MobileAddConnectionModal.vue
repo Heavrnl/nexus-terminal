@@ -70,11 +70,11 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
           <button
             type="button"
             @click="emit('close')"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
             :title="t('common.cancel', '取消')"
+            :aria-label="t('common.cancel', '取消')"
           >
-            <i class="fas fa-chevron-down text-xs shrink-0"></i>
-            <span>{{ t('common.cancel', '取消') }}</span>
+            <i class="fas fa-chevron-down text-xs"></i>
           </button>
 
           <!-- 居中标题与协议徽章 -->
