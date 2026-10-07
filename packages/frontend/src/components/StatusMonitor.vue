@@ -223,37 +223,37 @@
       </div>
 
       <!-- 3. 实时网络流量卡片 -->
-      <div class="rounded-xl bg-header/35 border border-border/60 p-3 space-y-2 shadow-2xs">
+      <div class="rounded-xl bg-header/25 border border-border/50 hover:border-border/70 p-2.5 space-y-1.5 shadow-2xs transition-all">
         <div class="flex items-center justify-between text-xs">
           <div class="flex items-center gap-1.5 font-semibold text-text-secondary">
-            <i class="fas fa-globe text-primary text-xs"></i>
+            <i class="fas fa-network-wired text-primary text-xs"></i>
             <span>{{ t('statusMonitor.networkLabel', '实时网络流量') }}</span>
           </div>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border border-border/60 text-text-secondary">
+          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border border-border/60 text-text-secondary/80">
             {{ currentServerStatus?.netInterface || 'default' }}
           </span>
         </div>
 
-        <!-- 双胶囊速率展示 -->
-        <div class="grid grid-cols-2 gap-2 pt-0.5">
+        <!-- 双胶囊速率展示 (字号与上方卡片严格协调统一) -->
+        <div class="grid grid-cols-2 gap-1.5 pt-0.5">
           <!-- 下行速率 -->
-          <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-            <div class="flex items-center gap-1.5 text-xs font-medium">
-              <i class="fas fa-arrow-down text-xs animate-bounce"></i>
+          <div class="flex items-center justify-between p-1.5 px-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium shrink-0">
+              <i class="fas fa-arrow-down text-[10px]"></i>
               <span>下载</span>
             </div>
-            <span class="font-mono text-xs font-bold truncate">
+            <span class="font-mono text-[11px] font-bold truncate">
               {{ formatBytesPerSecond(currentServerStatus?.netRxRate) }}
             </span>
           </div>
 
           <!-- 上行速率 -->
-          <div class="flex items-center justify-between p-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
-            <div class="flex items-center gap-1.5 text-xs font-medium">
-              <i class="fas fa-arrow-up text-xs animate-bounce"></i>
+          <div class="flex items-center justify-between p-1.5 px-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
+            <div class="flex items-center gap-1.5 text-[11px] font-medium shrink-0">
+              <i class="fas fa-arrow-up text-[10px]"></i>
               <span>上传</span>
             </div>
-            <span class="font-mono text-xs font-bold truncate">
+            <span class="font-mono text-[11px] font-bold truncate">
               {{ formatBytesPerSecond(currentServerStatus?.netTxRate) }}
             </span>
           </div>
