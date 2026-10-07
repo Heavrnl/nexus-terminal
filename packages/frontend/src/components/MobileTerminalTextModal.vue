@@ -252,23 +252,34 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 };
 
+const isTextReady = ref(false);
+
 watch(
   () => props.isVisible,
   (val) => {
     if (val) {
+      isTextReady.value = false;
       document.addEventListener('keydown', handleKeydown);
       extractTerminalText();
       computeMatches();
-      // 打开时自动平滑滚动到底部，展现最新终端输出
+      // 在 DOM 挂载后立即将滚动条钉在底部，杜绝从顶部跳跃到底部的闪烁
       nextTick(() => {
         if (textContainerRef.value && !searchQuery.value) {
           textContainerRef.value.scrollTop = textContainerRef.value.scrollHeight;
         } else if (searchQuery.value && matches.value.length > 0) {
           scrollToCurrentMatch();
         }
+        // 双重 rAF 确保浏览器首帧布局 Paint 发生在目标位置后，再无感展现
+        requestAnimationFrame(() => {
+          if (textContainerRef.value && !searchQuery.value) {
+            textContainerRef.value.scrollTop = textContainerRef.value.scrollHeight;
+          }
+          isTextReady.value = true;
+        });
       });
     } else {
       document.removeEventListener('keydown', handleKeydown);
+      isTextReady.value = false;
     }
   },
   { immediate: true }
@@ -281,58 +292,64 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <Transition name="bottom-sheet">
+    <!-- 1. 独立全屏遮罩 (纯透明度淡入淡出，绝对独立，绝无包含块与位移冲突) -->
+    <Transition name="sheet-mask-fade">
       <div
         v-if="isVisible"
-        class="bottom-sheet-overlay fixed inset-0 z-50 flex flex-col justify-end bg-black/65 backdrop-blur-xs select-none"
-        @click.self="closeModal"
+        class="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs select-none"
+        @click="closeModal"
+      />
+    </Transition>
+
+    <!-- 2. 独立底部滑出抽屉 (自身负责滑动，直接定位，Vue原生侦测动画生命周期) -->
+    <Transition name="sheet-panel-slide">
+      <div
+        v-if="isVisible"
+        class="fixed bottom-0 left-0 right-0 z-50 mobile-text-sheet w-full h-[82dvh] max-h-[88vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
       >
-        <!-- 移动端原生文本提取抽屉 (Bottom Sheet) -->
+        <!-- 顶部拖拽手柄与点击快速收起指示条 -->
         <div
-          class="mobile-text-sheet w-full h-[82vh] max-h-[88vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
+          class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
+          @click="closeModal"
+          title="点击收起"
         >
-          <!-- 顶部拖拽手柄与点击快速收起指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="closeModal"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
+          <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
+        </div>
 
-          <!-- 顶栏标题与关闭操作 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <i class="fas fa-copy text-sm"></i>
-              </div>
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ t('terminal.bufferText.title', '终端复制') }}
-              </h3>
-              <span
-                v-if="lineCount > 0"
-                class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
-              >
-                {{ lineCount }} {{ t('terminal.bufferText.lines', '行') }}
-              </span>
+        <!-- 顶栏标题与关闭操作 -->
+        <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <i class="fas fa-copy text-sm"></i>
             </div>
-
-            <!-- 收起关闭按钮 -->
-            <button
-              type="button"
-              @click="closeModal"
-              class="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-              :title="t('close', '收起')"
+            <h3 class="text-base font-semibold text-foreground tracking-tight">
+              {{ t('terminal.bufferText.title', '终端复制') }}
+            </h3>
+            <span
+              v-if="lineCount > 0"
+              class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
             >
-              <i class="fas fa-times text-base"></i>
-            </button>
+              {{ lineCount }} {{ t('terminal.bufferText.lines', '行') }}
+            </span>
           </div>
 
-          <!-- 原生 HTML 文本内容区域（原生支持长按水滴选择、全选、复制手势） -->
-          <div
-            ref="textContainerRef"
-            class="flex-grow min-h-0 overflow-y-auto overscroll-contain px-4 py-3 bg-zinc-950/70 [scrollbar-width:thin]"
+          <!-- 收起关闭按钮 -->
+          <button
+            type="button"
+            @click="closeModal"
+            class="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
+            :title="t('close', '收起')"
           >
+            <i class="fas fa-times text-base"></i>
+          </button>
+        </div>
+
+        <!-- 原生 HTML 文本内容区域（原生支持长按水滴选择、全选、复制手势） -->
+        <div
+          ref="textContainerRef"
+          class="flex-grow min-h-0 overflow-y-auto overscroll-contain px-4 py-3 bg-zinc-950/70 [scrollbar-width:thin] transition-opacity duration-150"
+          :class="{ 'opacity-0': !isTextReady, 'opacity-100': isTextReady }"
+        >
             <!-- 文本展示区（v-html 支持搜索高亮渲染，长按直接调动系统水滴划选与系统复制） -->
             <pre
               v-if="terminalText"
@@ -442,8 +459,7 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
   </Teleport>
 </template>
 
@@ -458,23 +474,30 @@ mark {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+/* 1. 遮罩层纯透明度淡入淡出动效 (绝无位移与重排，避免背景闪烁) */
+.sheet-mask-fade-enter-active,
+.sheet-mask-fade-leave-active {
+  transition: opacity 0.24s ease;
 }
 
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
+.sheet-mask-fade-enter-from,
+.sheet-mask-fade-leave-to {
   opacity: 0;
 }
 
-.bottom-sheet-enter-active .mobile-text-sheet,
-.bottom-sheet-leave-active .mobile-text-sheet {
+/* 2. 抽屉面板平滑滑动动效 (直接由抽屉自身承载transform，Vue原生侦测事件结束) */
+.sheet-panel-slide-enter-active {
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
-.bottom-sheet-enter-from .mobile-text-sheet,
-.bottom-sheet-leave-to .mobile-text-sheet {
+.sheet-panel-slide-leave-active {
+  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform;
+}
+
+.sheet-panel-slide-enter-from,
+.sheet-panel-slide-leave-to {
   transform: translateY(100%);
 }
 </style>
