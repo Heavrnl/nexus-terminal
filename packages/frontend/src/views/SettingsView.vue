@@ -1,5 +1,6 @@
 <template>
-  <div class="p-4 bg-background text-foreground min-h-screen"> <!-- Outer container -->
+  <MobileSettingsView v-if="isMobile" />
+  <div v-else class="p-4 bg-background text-foreground min-h-screen"> <!-- Outer container -->
     <div class="max-w-7xl mx-auto"> <!-- Inner container for max-width -->
       <!-- Tabs Navigation -->
       <div class="mb-6 flex space-x-1 bg-background z-10 py-2">
@@ -104,6 +105,10 @@ import WorkspaceSettingsSection from '../components/settings/WorkspaceSettingsSe
 import SystemSettingsSection from '../components/settings/SystemSettingsSection.vue';
 import DataManagementSection from '../components/settings/DataManagementSection.vue';
 import AppearanceSection from '../components/settings/AppearanceSection.vue';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import MobileSettingsView from './MobileSettingsView.vue';
+
+const { isMobile } = useDeviceDetection();
 
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
