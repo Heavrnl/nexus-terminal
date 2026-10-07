@@ -154,26 +154,26 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
         <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
 
         <div class="flex items-center justify-between">
-          <!-- 表单模式：返回列表按钮；列表模式：收起抽屉按钮 -->
+          <!-- 表单模式：返回列表按钮；列表模式：收起抽屉按钮 (统一快捷指令面板样式) -->
           <button
             v-if="isAddEditFormVisible"
             type="button"
             @click="cancelForm"
-            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
             :title="t('common.back', '返回列表')"
             :aria-label="t('common.back', '返回列表')"
           >
-            <i class="fas fa-chevron-left text-xs"></i>
+            <i class="fas fa-chevron-left text-sm"></i>
           </button>
           <button
             v-else
             type="button"
             @click="emit('close')"
-            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
-            :title="t('common.close', '关闭')"
-            :aria-label="t('common.close', '关闭')"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
+            :title="t('common.close', '收起')"
+            :aria-label="t('common.close', '收起')"
           >
-            <i class="fas fa-chevron-down text-xs"></i>
+            <i class="fas fa-chevron-down text-sm"></i>
           </button>
 
           <!-- 居中标题 -->

@@ -66,15 +66,15 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
         <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
 
         <div class="flex items-center justify-between">
-          <!-- 左侧取消/收起按钮 -->
+          <!-- 左侧收起按钮 (统一采用快捷指令面板移动端收起样式) -->
           <button
             type="button"
             @click="emit('close')"
-            class="w-8 h-8 rounded-xl bg-header/60 border border-border/60 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer -ml-1 shrink-0"
-            :title="t('common.cancel', '取消')"
-            :aria-label="t('common.cancel', '取消')"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
+            :title="t('common.close', '收起')"
+            :aria-label="t('common.close', '收起')"
           >
-            <i class="fas fa-chevron-down text-xs"></i>
+            <i class="fas fa-chevron-down text-sm"></i>
           </button>
 
           <!-- 居中标题与协议徽章 -->
