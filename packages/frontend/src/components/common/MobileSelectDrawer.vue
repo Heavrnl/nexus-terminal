@@ -17,12 +17,14 @@ const props = withDefaults(defineProps<{
   disabled?: boolean;
   icon?: string;
   allowClear?: boolean;
+  zIndex?: number;
 }>(), {
   title: '请选择',
   placeholder: '点击进行选择...',
   disabled: false,
   icon: '',
   allowClear: false,
+  zIndex: 1100,
 });
 
 const emit = defineEmits<{
@@ -111,7 +113,8 @@ const handleClear = () => {
       <Transition name="mobile-select-fade">
         <div
           v-if="isOpen"
-          class="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
+          class="fixed inset-0 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
+          :style="{ zIndex: props.zIndex }"
           @click.self="closeDrawer"
         >
           <div

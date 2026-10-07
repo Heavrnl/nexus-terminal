@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useTerminalHighlightStore } from '../../../stores/terminal-highlight.store';
 import { useUiNotificationsStore } from '../../../stores/uiNotifications.store';
+import MobileSelectDrawer, { type MobileSelectOption } from '../../common/MobileSelectDrawer.vue';
 import type {
   TerminalHighlightGroup,
   HighlightPriority,
@@ -32,15 +33,15 @@ const PALETTE_COLORS = [
   '#facc15', '#94a3b8',
 ];
 
-// 内置类型候选项
-const BUILTIN_TYPE_OPTIONS: { value: BuiltinMatcherType; label: string }[] = [
-  { value: 'date', label: '🕒 时间戳' },
-  { value: 'error', label: '🔴 错误与异常' },
-  { value: 'warning', label: '🟡 警告与告警' },
-  { value: 'success', label: '🟢 成功与运行状态' },
-  { value: 'info', label: '🔵 日志级别' },
-  { value: 'ip', label: '🟣 IP 地址与端口' },
-  { value: 'url', label: '🌐 Web 链接' },
+// 内置类型候选项 (适配移动端抽屉选择器)
+const BUILTIN_TYPE_OPTIONS: MobileSelectOption[] = [
+  { value: 'date', label: '时间戳', sublabel: 'ISO8601、毫秒时间戳、带时区时间', icon: 'fas fa-clock' },
+  { value: 'error', label: '错误与异常', sublabel: 'Error, Fatal, Exception, Failed', icon: 'fas fa-exclamation-circle' },
+  { value: 'warning', label: '警告与告警', sublabel: 'Warn, Warning, Alert', icon: 'fas fa-exclamation-triangle' },
+  { value: 'success', label: '成功与运行状态', sublabel: 'Success, Up, Ready, Healthy, OK', icon: 'fas fa-check-circle' },
+  { value: 'info', label: '日志级别', sublabel: 'Info, Debug, Trace, Notice', icon: 'fas fa-info-circle' },
+  { value: 'ip', label: 'IP 地址与端口', sublabel: 'IPv4 / IPv6 / Port', icon: 'fas fa-network-wired' },
+  { value: 'url', label: 'Web 链接', sublabel: 'http://, https://', icon: 'fas fa-globe' },
 ];
 
 interface FormMatcherItem {
@@ -590,20 +591,16 @@ const handleSave = () => {
                     </div>
                   </div>
 
-                  <!-- 内置类型下拉 -->
-                  <div v-else-if="item.type === 'builtin'">
-                    <select
+                  <!-- 内置类型下拉 (移动端专属抽屉选择器) -->
+                  <div v-else-if="item.type === 'builtin'" class="pt-0.5">
+                    <MobileSelectDrawer
                       v-model="item.builtinType"
-                      class="w-full px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground focus:outline-none focus:border-primary"
-                    >
-                      <option
-                        v-for="opt in BUILTIN_TYPE_OPTIONS"
-                        :key="opt.value"
-                        :value="opt.value"
-                      >
-                        {{ opt.label }}
-                      </option>
-                    </select>
+                      :options="BUILTIN_TYPE_OPTIONS"
+                      title="选择内置规则分类"
+                      placeholder="点击选择内置分类..."
+                      icon="fas fa-shield-halved"
+                      :z-index="1100"
+                    />
                   </div>
                 </div>
 
