@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, nextTick, watchEffect } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, watchEffect } from 'vue';
 import { Terminal, ITerminalAddon, IDisposable } from 'xterm';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useAppearanceStore } from '../stores/appearance.store';
@@ -191,7 +191,102 @@ const removeContextMenuListener = () => {
 };
 
 
-// --- 移动端模式下通过双指放大缩小终端字号 ---
+// --- 移动端模式下触摸控制与右侧悬浮滚动条 ---
+const mobileScrollTrackRef = ref<HTMLDivElement | null>(null);
+const canScroll = ref(false);
+const scrollProgress = ref(1); // 0 (顶部历史) 到 1 (底部最新输出)
+const thumbHeightRatio = ref(0.2);
+const isScrollbarDragging = ref(false);
+
+const thumbHeightPercent = computed(() => {
+  return Math.round(thumbHeightRatio.value * 100);
+});
+
+const thumbTopPercent = computed(() => {
+  const maxTop = 100 - thumbHeightPercent.value;
+  return Math.min(maxTop, Math.max(0, scrollProgress.value * maxTop));
+});
+
+// 计算当前文本是否超出视口并刷新进度
+const updateScrollState = () => {
+  if (!terminal) {
+    canScroll.value = false;
+    return;
+  }
+  const buffer = terminal.buffer.active;
+  const baseY = buffer.baseY;
+  const rows = terminal.rows;
+
+  // 当 baseY > 0 说明存在历史回滚行，即文本超出了当前终端视口
+  if (baseY > 0) {
+    canScroll.value = true;
+    const viewportY = buffer.viewportY;
+    scrollProgress.value = Math.min(1, Math.max(0, viewportY / baseY));
+    const totalLines = baseY + rows;
+    thumbHeightRatio.value = Math.min(1, Math.max(0.08, rows / totalLines));
+  } else {
+    canScroll.value = false;
+    scrollProgress.value = 1;
+    thumbHeightRatio.value = 1;
+  }
+};
+
+// 触摸滚动条拖拽计算
+const handleScrollbarDragTo = (clientY: number) => {
+  if (!terminal || !canScroll.value || !mobileScrollTrackRef.value) return;
+
+  const rect = mobileScrollTrackRef.value.getBoundingClientRect();
+  const trackHeight = rect.height;
+  if (trackHeight <= 0) return;
+
+  const thumbHeightPx = Math.max(28, thumbHeightRatio.value * trackHeight);
+  const maxTopPx = trackHeight - thumbHeightPx;
+  if (maxTopPx <= 0) return;
+
+  const relativeY = clientY - rect.top;
+  const targetTopPx = relativeY - thumbHeightPx / 2;
+  const progress = Math.min(1, Math.max(0, targetTopPx / maxTopPx));
+
+  const baseY = terminal.buffer.active.baseY;
+  const targetLine = Math.round(progress * baseY);
+  terminal.scrollToLine(targetLine);
+  updateScrollState();
+};
+
+const handleScrollbarTouchStart = (event: TouchEvent) => {
+  if (event.touches.length > 0) {
+    isScrollbarDragging.value = true;
+    handleScrollbarDragTo(event.touches[0].clientY);
+  }
+};
+
+const handleScrollbarTouchMove = (event: TouchEvent) => {
+  if (event.touches.length > 0) {
+    handleScrollbarDragTo(event.touches[0].clientY);
+  }
+};
+
+const handleScrollbarTouchEnd = () => {
+  isScrollbarDragging.value = false;
+};
+
+const handleScrollbarMouseDown = (event: MouseEvent) => {
+  isScrollbarDragging.value = true;
+  handleScrollbarDragTo(event.clientY);
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    handleScrollbarDragTo(moveEvent.clientY);
+  };
+  const onMouseUp = () => {
+    isScrollbarDragging.value = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
+
+// --- 移动端双指缩放字号 ---
 const getDistanceBetweenTouches = (touches: TouchList): number => {
   const touch1 = touches[0];
   const touch2 = touches[1];
@@ -203,6 +298,7 @@ const getDistanceBetweenTouches = (touches: TouchList): number => {
 
 const handleTouchStart = (event: TouchEvent) => {
   if (event.touches.length === 2 && terminal) {
+    // 双指捏合：准备缩放字号
     event.preventDefault(); 
     initialPinchDistance = getDistanceBetweenTouches(event.touches);
     currentFontSizeOnPinchStart = terminal.options.fontSize || currentTerminalFontSize.value;
@@ -211,6 +307,7 @@ const handleTouchStart = (event: TouchEvent) => {
 
 const handleTouchMove = (event: TouchEvent) => {
   if (event.touches.length === 2 && terminal && initialPinchDistance > 0) {
+    // 双指缩放
     event.preventDefault();
     const currentDistance = getDistanceBetweenTouches(event.touches);
     if (currentDistance > 0) {
@@ -222,7 +319,7 @@ const handleTouchMove = (event: TouchEvent) => {
       if (newSize !== currentTerminalOptFontSize) {
         terminal.options.fontSize = newSize;
         fitAndEmitResizeNow(terminal);
-        debouncedSaveFontSize(newSize); // 使用新的区分设备的保存函数
+        debouncedSaveFontSize(newSize);
       }
     }
   }
@@ -230,7 +327,7 @@ const handleTouchMove = (event: TouchEvent) => {
 
 const handleTouchEnd = (event: TouchEvent) => {
   if (event.touches.length < 2) {
-    initialPinchDistance = 0; // Reset pinch distance
+    initialPinchDistance = 0;
   }
 };
 
@@ -588,6 +685,21 @@ onMounted(() => {
       terminalRef.value.addEventListener('touchcancel', handleTouchEnd, { passive: false }); // Also handle cancel
     }
 
+    // 监听终端滚动、输出解析与尺寸变化，动态刷新滚动条显示与位置
+    if (terminal) {
+      terminal.onScroll(() => {
+        updateScrollState();
+      });
+      terminal.onWriteParsed(() => {
+        updateScrollState();
+      });
+      terminal.onResize(() => {
+        updateScrollState();
+      });
+      nextTick(() => {
+        updateScrollState();
+      });
+    }
 
   }
 });
@@ -796,7 +908,7 @@ const handleTerminalClick = () => {
     class="terminal-outer-wrapper transition-all duration-150 relative"
     :class="{
       'ring-2 ring-primary ring-inset': isDraggingOverTerminal,
-      'no-wrap': terminalNoWrapBoolean
+      'is-mobile': isMobile
     }"
     @click="handleTerminalClick"
     @dragenter="handleTerminalDragEnter"
@@ -815,8 +927,37 @@ const handleTerminalClick = () => {
       </div>
     </div>
 
-    <!-- xterm 实际挂载点 -->
-    <div ref="terminalRef" class="terminal-inner-container"></div>
+    <!-- 内部横向滚动视口容器 (与右侧悬浮滚动条解耦，横向滑动时不漂移) -->
+    <div
+      class="terminal-scroll-viewport"
+      :class="{ 'no-wrap': terminalNoWrapBoolean }"
+    >
+      <!-- xterm 实际挂载点 -->
+      <div ref="terminalRef" class="terminal-inner-container"></div>
+    </div>
+
+    <!-- 移动端专属右侧悬浮滚动条 (固定跟随手机屏幕物理右边缘，仅当文本超出当前终端显示时才出现) -->
+    <div
+      v-if="isMobile && canScroll"
+      ref="mobileScrollTrackRef"
+      class="mobile-terminal-scrollbar-track"
+      :class="{ 'is-dragging': isScrollbarDragging }"
+      @touchstart.stop.prevent="handleScrollbarTouchStart"
+      @touchmove.stop.prevent="handleScrollbarTouchMove"
+      @touchend.stop.prevent="handleScrollbarTouchEnd"
+      @touchcancel.stop.prevent="handleScrollbarTouchEnd"
+      @mousedown.stop.prevent="handleScrollbarMouseDown"
+    >
+      <div
+        class="mobile-terminal-scrollbar-thumb"
+        :style="{
+          height: `${thumbHeightPercent}%`,
+          top: `${thumbTopPercent}%`
+        }"
+      >
+        <div class="thumb-pill"></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -828,12 +969,20 @@ const handleTerminalClick = () => {
   position: relative;
 }
 
-.terminal-outer-wrapper.no-wrap {
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
+.terminal-scroll-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
 }
 
-.terminal-outer-wrapper.no-wrap .terminal-inner-container {
+.terminal-scroll-viewport.no-wrap {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.terminal-scroll-viewport.no-wrap .terminal-inner-container {
   width: max-content !important;
   min-width: 100% !important;
 }
@@ -864,9 +1013,62 @@ const handleTerminalClick = () => {
   text-shadow: var(--terminal-shadow);
 }
 
-/*
-  移除以下样式，因为它依赖于本组件内部管理的 .has-terminal-background 类，
-  该逻辑已移至 LayoutRenderer.vue
-*/
+/* 移动端终端隐藏原生浏览器粗糙滚动条，由移动端专属胶囊滚动条统一呈现 */
+.terminal-outer-wrapper.is-mobile :deep(.xterm-viewport) {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.terminal-outer-wrapper.is-mobile :deep(.xterm-viewport::-webkit-scrollbar) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* 移动端专属终端悬浮滚动条样式 */
+.mobile-terminal-scrollbar-track {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 2px;
+  width: 24px; /* 宽触摸热区，方便手指盲抓 */
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.mobile-terminal-scrollbar-thumb {
+  position: absolute;
+  right: 2px;
+  width: 14px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* 谷歌浏览器 Chrome 风格极简中性灰滚动条 */
+.thumb-pill {
+  width: 5px;
+  height: 100%;
+  border-radius: 9999px;
+  background-color: rgba(156, 163, 175, 0.45);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
+  transition: width 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* 拖动激活态或触摸按下态 */
+.mobile-terminal-scrollbar-track.is-dragging .thumb-pill,
+.mobile-terminal-scrollbar-track:active .thumb-pill {
+  width: 7px;
+  opacity: 1;
+  background-color: rgba(209, 213, 219, 0.8);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.45);
+}
 </style>
 
