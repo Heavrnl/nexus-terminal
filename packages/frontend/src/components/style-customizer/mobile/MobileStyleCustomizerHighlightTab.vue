@@ -1,17 +1,21 @@
-<script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import ToggleSwitch from '../../common/ToggleSwitch.vue';
+import MobileHighlightRuleEditModal from './MobileHighlightRuleEditModal.vue';
 import { useTerminalHighlightStore } from '../../../stores/terminal-highlight.store';
 import { useUiNotificationsStore } from '../../../stores/uiNotifications.store';
+import { useConfirmDialog } from '../../../composables/useConfirmDialog';
 import { ansiToHtml } from '../../../utils/terminal-highlighter';
 import type { TerminalHighlightGroup } from '../../../types/terminal-highlight.types';
 
 const { t } = useI18n();
 const highlightStore = useTerminalHighlightStore();
 const notificationsStore = useUiNotificationsStore();
+const { showConfirmDialog } = useConfirmDialog();
 
 const showPreview = ref(false);
+const isEditModalOpen = ref(false);
+const editingGroup = ref<TerminalHighlightGroup | null>(null);
 
 // 调色盘候选色
 const PALETTE_COLORS = [
@@ -66,10 +70,40 @@ const updateGroupColor = (group: TerminalHighlightGroup, color: string) => {
   highlightStore.updateGroup(group.id, { color });
 };
 
+// 打开新建分组弹窗
+const openAddModal = () => {
+  editingGroup.value = null;
+  isEditModalOpen.value = true;
+};
+
+// 打开编辑分组弹窗
+const openEditModal = (group: TerminalHighlightGroup) => {
+  editingGroup.value = group;
+  isEditModalOpen.value = true;
+};
+
+// 删除高亮规则
+const handleDeleteGroup = async (group: TerminalHighlightGroup) => {
+  const confirmed = await showConfirmDialog({
+    title: '删除高亮规则',
+    message: `确定要删除高亮规则“${group.name}”吗？`,
+  });
+  if (confirmed) {
+    highlightStore.deleteGroup(group.id);
+    notificationsStore.addNotification({ type: 'success', message: '已删除高亮规则' });
+  }
+};
+
 // 重置默认规则
-const handleReset = () => {
-  highlightStore.resetToDefault();
-  notificationsStore.addNotification({ type: 'info', message: '已恢复默认高亮规则' });
+const handleReset = async () => {
+  const confirmed = await showConfirmDialog({
+    title: '恢复预设规则',
+    message: '确定要重置为系统默认高亮规则吗？您的自定义高亮规则将被清空。',
+  });
+  if (confirmed) {
+    highlightStore.resetToDefault();
+    notificationsStore.addNotification({ type: 'info', message: '已恢复默认高亮规则' });
+  }
 };
 </script>
 
@@ -135,13 +169,25 @@ const handleReset = () => {
     <div class="space-y-2">
       <div class="flex items-center justify-between px-0.5">
         <div class="text-xs font-semibold text-text-secondary">高亮规则清单</div>
-        <button
-          type="button"
-          @click="handleReset"
-          class="text-[11px] text-primary hover:underline cursor-pointer"
-        >
-          恢复预设
-        </button>
+        <div class="flex items-center gap-2">
+          <!-- 添加新规则按钮 -->
+          <button
+            type="button"
+            @click="openAddModal"
+            class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
+          >
+            <i class="fas fa-plus text-[10px]"></i>
+            <span>添加规则</span>
+          </button>
+          <!-- 恢复预设按钮 -->
+          <button
+            type="button"
+            @click="handleReset"
+            class="text-[11px] text-text-secondary hover:text-foreground cursor-pointer px-1"
+          >
+            恢复预设
+          </button>
+        </div>
       </div>
 
       <div class="space-y-2.5">
@@ -165,11 +211,32 @@ const handleReset = () => {
               </span>
             </div>
 
-            <!-- 单项开关 -->
-            <ToggleSwitch
-              :model-value="group.enabled"
-              @update:model-value="toggleGroup(group)"
-            />
+            <!-- 右侧动作区：编辑、删除与开关 -->
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                @click="openEditModal(group)"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
+                title="编辑规则"
+              >
+                <i class="fas fa-pencil-alt text-xs text-primary"></i>
+              </button>
+
+              <button
+                type="button"
+                @click="handleDeleteGroup(group)"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-red-500 hover:bg-red-500/10 active:scale-95 transition-all cursor-pointer"
+                title="删除规则"
+              >
+                <i class="fas fa-trash-alt text-xs"></i>
+              </button>
+
+              <!-- 单项开关 -->
+              <ToggleSwitch
+                :model-value="group.enabled"
+                @update:model-value="toggleGroup(group)"
+              />
+            </div>
           </div>
 
           <!-- 快速调色盘 -->
@@ -200,5 +267,12 @@ const handleReset = () => {
         </div>
       </div>
     </div>
+
+    <!-- 4. 移动端高亮规则添加/编辑抽屉模态 -->
+    <MobileHighlightRuleEditModal
+      :is-visible="isEditModalOpen"
+      :group-to-edit="editingGroup"
+      @close="isEditModalOpen = false"
+    />
   </div>
 </template>
