@@ -463,7 +463,8 @@ watch(popupTrigger, () => {
   position: absolute;
   background-color: #1e1e1e;
   border: 1px solid #454545;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -588,5 +589,6 @@ watch(popupTrigger, () => {
   cursor: se-resize;
   z-index: 1001;
   background: linear-gradient(135deg, transparent 50%, #555 50%);
+  border-bottom-right-radius: 9px;
 }
 </style>
