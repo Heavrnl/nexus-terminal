@@ -75,13 +75,19 @@ const zoomPercentage = computed<string>(() => {
   return `${Math.round(scale.value * 100)}%`;
 });
 
+// 控制是否已完成初次视口自适应适配（防止首次渲染时因 transform transition 产生从大缩小的抽搐入场动画）
+const isInitialFitDone = ref<boolean>(false);
+
 // 图片变换样式
 const imageTransformStyle = computed(() => {
   const scaleX = flipH.value ? -scale.value : scale.value;
   const scaleY = flipV.value ? -scale.value : scale.value;
+  // 仅在首次自适应完成且未拖拽时才启用平滑过渡，初次打开时强制 transition: none 瞬间定位
+  const enableTransition = isInitialFitDone.value && !isDragging.value;
   return {
     transform: `translate(${translateX.value}px, ${translateY.value}px) rotate(${rotate.value}deg) scale(${scaleX}, ${scaleY})`,
-    transition: isDragging.value ? 'none' : 'transform 0.15s cubic-bezier(0.2, 0, 0, 1)',
+    transition: enableTransition ? 'transform 0.15s cubic-bezier(0.2, 0, 0, 1)' : 'none',
+    opacity: isLoaded.value ? 1 : 0,
   };
 });
 
@@ -211,22 +217,28 @@ const handleImageLoad = (e: Event) => {
   const target = e.target as HTMLImageElement;
   naturalWidth.value = target.naturalWidth;
   naturalHeight.value = target.naturalHeight;
-  isLoaded.value = true;
   isError.value = false;
-  // 首次载入自适应窗口（若尺寸大于容器）
+  // 首次载入瞬间自适应视口（此时 isInitialFitDone 为 false，以 transition: none 直接渲染到目标尺寸，杜绝动画）
   fitToView();
+  isLoaded.value = true;
+  // 下一帧再开放交互动画（用于用户后续点击工具栏按钮时）
+  requestAnimationFrame(() => {
+    isInitialFitDone.value = true;
+  });
 };
 
 // 图片加载出错
 const handleImageError = () => {
   isLoaded.value = false;
   isError.value = true;
+  isInitialFitDone.value = false;
 };
 
 // 标签切换或源变化时重置
 watch(
   () => props.tab?.id,
   () => {
+    isInitialFitDone.value = false;
     resetView();
     isLoaded.value = false;
     isError.value = false;
@@ -237,8 +249,11 @@ onMounted(() => {
   if (imageRef.value && imageRef.value.complete && imageRef.value.naturalWidth > 0) {
     naturalWidth.value = imageRef.value.naturalWidth;
     naturalHeight.value = imageRef.value.naturalHeight;
-    isLoaded.value = true;
     fitToView();
+    isLoaded.value = true;
+    requestAnimationFrame(() => {
+      isInitialFitDone.value = true;
+    });
   }
 });
 
@@ -485,6 +500,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
   border-radius: 2px;
   image-rendering: -webkit-optimize-contrast;
+  transition: opacity 0.12s ease-out;
 }
 
 /* 加载中与错误提示 */
