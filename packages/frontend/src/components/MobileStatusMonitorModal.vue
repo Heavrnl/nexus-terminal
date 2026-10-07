@@ -137,6 +137,17 @@ const copyIpToClipboard = async (ip: string) => {
   }
 };
 
+// 渐变进度条颜色：统一根据百分比从绿色（安全）-> 橙黄（预警）-> 红色（高负荷）
+const getProgressGradient = (percent: number) => {
+  if (percent > 80) {
+    return 'bg-gradient-to-r from-orange-500 to-rose-500';
+  }
+  if (percent > 60) {
+    return 'bg-gradient-to-r from-amber-400 to-amber-500';
+  }
+  return 'bg-gradient-to-r from-emerald-500 to-green-500';
+};
+
 const handleClose = () => {
   emit('close');
 };
@@ -281,11 +292,7 @@ const handleClose = () => {
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="[
-                        (currentServerStatus.cpuPercent ?? 0) > 85 ? 'bg-rose-500' :
-                        (currentServerStatus.cpuPercent ?? 0) > 60 ? 'bg-amber-500' :
-                        'bg-sky-500'
-                      ]"
+                      :class="getProgressGradient(currentServerStatus.cpuPercent ?? 0)"
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.cpuPercent ?? 0))}%` }"
                     ></div>
                   </div>
@@ -311,11 +318,7 @@ const handleClose = () => {
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="[
-                        (currentServerStatus.memPercent ?? 0) > 85 ? 'bg-rose-500' :
-                        (currentServerStatus.memPercent ?? 0) > 65 ? 'bg-amber-500' :
-                        'bg-emerald-500'
-                      ]"
+                      :class="getProgressGradient(currentServerStatus.memPercent ?? 0)"
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.memPercent ?? 0))}%` }"
                     ></div>
                   </div>
@@ -342,11 +345,7 @@ const handleClose = () => {
                     <div
                       class="h-full rounded-full transition-all duration-300"
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.swapPercent ?? 0))}%` }"
-                      :class="[
-                        (currentServerStatus.swapPercent ?? 0) > 75 ? 'bg-rose-500' :
-                        (currentServerStatus.swapPercent ?? 0) > 0 ? 'bg-amber-500' :
-                        'bg-neutral-500'
-                      ]"
+                      :class="getProgressGradient(currentServerStatus.swapPercent ?? 0)"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行 -->
@@ -371,11 +370,7 @@ const handleClose = () => {
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
-                      :class="[
-                        (currentServerStatus.diskPercent ?? 0) > 85 ? 'bg-rose-500' :
-                        (currentServerStatus.diskPercent ?? 0) > 70 ? 'bg-amber-500' :
-                        'bg-purple-500'
-                      ]"
+                      :class="getProgressGradient(currentServerStatus.diskPercent ?? 0)"
                       :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.diskPercent ?? 0))}%` }"
                     ></div>
                   </div>
@@ -425,21 +420,11 @@ const handleClose = () => {
               </div>
 
               <!-- 历史走势趋势折线图 -->
-              <div class="rounded-xl bg-header/20 border border-border/50 p-3 shadow-2xs space-y-2">
-                <div class="flex items-center justify-between">
-                  <span class="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <i class="fas fa-chart-line text-primary"></i>
-                    <span>实时动态走势</span>
-                  </span>
-                </div>
-                <div class="w-full overflow-hidden">
-                  <StatusCharts
-                    v-if="activeSessionId && currentServerStatus"
-                    :server-status="currentServerStatus"
-                    :active-session-id="activeSessionId"
-                  />
-                </div>
-              </div>
+              <StatusCharts
+                v-if="activeSessionId && currentServerStatus"
+                :server-status="currentServerStatus"
+                :active-session-id="activeSessionId"
+              />
             </template>
 
             <!-- 底部安全区垫高 -->

@@ -130,7 +130,7 @@
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayCpuPercent))}%` }"
-              :class="getProgressGradient(displayCpuPercent, 'blue')"
+              :class="getProgressGradient(displayCpuPercent)"
             ></div>
           </div>
 
@@ -157,7 +157,7 @@
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayMemPercent))}%` }"
-              :class="getProgressGradient(displayMemPercent, 'emerald')"
+              :class="getProgressGradient(displayMemPercent)"
             ></div>
           </div>
 
@@ -184,7 +184,7 @@
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displaySwapPercent))}%` }"
-              :class="getProgressGradient(displaySwapPercent, 'amber')"
+              :class="getProgressGradient(displaySwapPercent)"
             ></div>
           </div>
 
@@ -211,7 +211,7 @@
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayDiskPercent))}%` }"
-              :class="getProgressGradient(displayDiskPercent, 'purple')"
+              :class="getProgressGradient(displayDiskPercent)"
             ></div>
           </div>
 
@@ -440,24 +440,15 @@ const swapDisplay = computed(() => {
   return `${formatMemorySize(used)} / ${formatMemorySize(total)}`;
 });
 
-// 渐变进度条颜色
-const getProgressGradient = (percent: number, baseType: 'blue' | 'emerald' | 'amber' | 'purple') => {
-  if (percent > 85) {
-    return 'bg-gradient-to-r from-amber-500 to-rose-500';
+// 渐变进度条颜色：统一根据百分比从绿色（安全）-> 橙黄（预警）-> 红色（高负荷）
+const getProgressGradient = (percent: number) => {
+  if (percent > 80) {
+    return 'bg-gradient-to-r from-orange-500 to-rose-500';
   }
-  if (percent > 65) {
-    return 'bg-gradient-to-r from-sky-500 to-amber-500';
+  if (percent > 60) {
+    return 'bg-gradient-to-r from-amber-400 to-amber-500';
   }
-  switch (baseType) {
-    case 'blue':
-      return 'bg-gradient-to-r from-sky-500 to-blue-500';
-    case 'emerald':
-      return 'bg-gradient-to-r from-teal-500 to-emerald-500';
-    case 'amber':
-      return 'bg-gradient-to-r from-yellow-500 to-amber-500';
-    case 'purple':
-      return 'bg-gradient-to-r from-indigo-500 to-purple-500';
-  }
+  return 'bg-gradient-to-r from-emerald-500 to-green-500';
 };
 </script>
 

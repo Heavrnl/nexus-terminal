@@ -1,38 +1,49 @@
 <template>
-  <div class="status-charts grid grid-cols-1 gap-4 mt-4">
-    <div class="chart-container bg-header rounded p-3">
-      <div class="flex justify-between items-center mb-2">
-        <h5 class="text-sm font-medium text-text-secondary">{{ $t('statusMonitor.cpuUsageTitle') }}</h5>
-        <span class="text-xs text-text-tertiary ml-2">
-          {{ $t('statusMonitor.latestCpuValue', { value: cpuChartData.datasets[0].data[MAX_DATA_POINTS - 1]?.toFixed(1) }) }}
-        </span>
+  <div class="status-charts grid grid-cols-1 gap-2.5 mt-2.5">
+    <!-- 1. CPU 历史趋势卡片 -->
+    <div class="chart-container rounded-xl bg-header/25 border border-border/50 hover:border-border/70 p-3 shadow-2xs transition-all flex flex-col space-y-2">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <i class="fas fa-chart-line text-xs text-sky-400 shrink-0"></i>
+          <span class="text-xs font-semibold text-text-secondary truncate">
+            {{ t('statusMonitor.cpuUsageTitle', 'CPU 使用率') }}
+          </span>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          <span class="font-mono text-xs font-bold text-foreground">
+            {{ latestCpuVal }}%
+          </span>
+        </div>
       </div>
-      <div class="chart-wrapper h-40">
+      <div class="chart-wrapper h-36 w-full">
         <Line :data="cpuChartData" :options="percentageChartOptions" :key="cpuChartKey" />
       </div>
     </div>
-    <!-- 内存使用图表已注释掉 -->
-    <!--
-    <div class="chart-container bg-header rounded p-3">
-      <div class="flex justify-between items-center mb-2">
-        <h5 class="text-sm font-medium text-text-secondary">{{ $t('statusMonitor.memoryUsageTitleUnit', { unit: memoryUnitIsGB ? 'GB' : 'MB' }) }}</h5>
-        <span class="text-xs text-text-tertiary ml-2">
-           {{ $t('statusMonitor.latestMemoryValue', { value: memoryChartData.datasets[0].data[MAX_DATA_POINTS - 1]?.toFixed(1), unit: memoryUnitIsGB ? 'GB' : 'MB' }) }}
-        </span>
+
+    <!-- 2. 网络速率走势卡片 -->
+    <div class="chart-container rounded-xl bg-header/25 border border-border/50 hover:border-border/70 p-3 shadow-2xs transition-all flex flex-col space-y-2">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <i class="fas fa-chart-area text-xs text-primary shrink-0"></i>
+          <span class="text-xs font-semibold text-text-secondary truncate">
+            {{ t('statusMonitor.networkSpeedTitleUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' }) }}
+          </span>
+        </div>
+        <!-- 图例与最新数值 -->
+        <div class="flex items-center gap-2.5 text-[11px] font-mono shrink-0">
+          <div class="flex items-center gap-1 text-emerald-400" :title="t('statusMonitor.networkDownloadLabelUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' })">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+            <span class="text-text-secondary/60">↓</span>
+            <span class="font-bold">{{ latestRxVal }}</span>
+          </div>
+          <div class="flex items-center gap-1 text-orange-400" :title="t('statusMonitor.networkUploadLabelUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' })">
+            <span class="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0"></span>
+            <span class="text-text-secondary/60">↑</span>
+            <span class="font-bold">{{ latestTxVal }}</span>
+          </div>
+        </div>
       </div>
-      <div class="chart-wrapper h-40">
-        <Line :data="memoryChartData" :options="memoryChartOptions" :key="memoryChartKey" />
-      </div>
-    </div>
-    -->
-    <div class="chart-container bg-header rounded p-3">
-      <div class="flex justify-between items-center mb-2">
-        <h5 class="text-sm font-medium text-text-secondary">{{ $t('statusMonitor.networkSpeedTitleUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' }) }}</h5>
-        <span class="text-xs text-text-tertiary ml-2">
-          {{ $t('statusMonitor.latestNetworkValue', { download: networkChartData.datasets[0].data[MAX_DATA_POINTS - 1]?.toFixed(1), upload: networkChartData.datasets[1].data[MAX_DATA_POINTS - 1]?.toFixed(1), unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' }) }}
-        </span>
-      </div>
-      <div class="chart-wrapper h-40">
+      <div class="chart-wrapper h-36 w-full">
         <Line :data="networkChartData" :options="networkChartOptions" :key="networkChartKey" />
       </div>
     </div>
@@ -54,6 +65,7 @@ import {
   LinearScale,
   PointElement,
   CategoryScale,
+  Filler,
   ChartOptions,
   TooltipItem,
 } from 'chart.js';
@@ -65,7 +77,8 @@ ChartJS.register(
   LineElement,
   LinearScale,
   PointElement,
-  CategoryScale
+  CategoryScale,
+  Filler
 );
 
 // Define a more specific type for serverStatus if possible, or use as is if memUsed/memTotal are reliably present.
@@ -137,19 +150,50 @@ const currentNetTxHistory = computed(() => {
 });
 
 
+// --- 计算最新数值展示 ---
+const latestCpuVal = computed(() => {
+  const data = cpuChartData.value.datasets[0]?.data;
+  const v = data?.[MAX_DATA_POINTS - 1];
+  if (v !== undefined && v !== null && !isNaN(v)) {
+    return v.toFixed(1);
+  }
+  return (props.serverStatus?.cpuPercent ?? 0).toFixed(1);
+});
+
+const latestRxVal = computed(() => {
+  const data = networkChartData.value.datasets[0]?.data;
+  const v = data?.[MAX_DATA_POINTS - 1];
+  const precision = networkRateUnitIsMB.value ? 2 : 1;
+  if (v !== undefined && v !== null && !isNaN(v)) {
+    return v.toFixed(precision);
+  }
+  return '0.0';
+});
+
+const latestTxVal = computed(() => {
+  const data = networkChartData.value.datasets[1]?.data;
+  const v = data?.[MAX_DATA_POINTS - 1];
+  const precision = networkRateUnitIsMB.value ? 2 : 1;
+  if (v !== undefined && v !== null && !isNaN(v)) {
+    return v.toFixed(precision);
+  }
+  return '0.0';
+});
+
 // --- 图表数据结构，现在 data 指向 computed 属性 ---
 const cpuChartData = computed(() => ({
   labels: initialLabels, // 标签保持不变
   datasets: [
     {
-      label: t('statusMonitor.cpuUsageLabel'),
-      backgroundColor: 'rgba(54, 162, 235, 0.2)',
-      borderColor: 'rgba(54, 162, 235, 1)',
-      borderWidth: 1,
+      label: t('statusMonitor.cpuUsageLabel', 'CPU 使用率 (%)'),
+      backgroundColor: 'rgba(56, 189, 248, 0.12)',
+      borderColor: '#38bdf8',
+      borderWidth: 1.5,
+      fill: true,
       data: currentCpuHistory.value.map(v => v ?? 0), // 将 null 映射为 0 用于图表
-      tension: 0.1,
+      tension: 0.25,
       pointRadius: 0,
-      pointHoverRadius: 5,
+      pointHoverRadius: 4,
     },
   ],
 }));
@@ -216,23 +260,25 @@ const networkChartData = computed(() => {
         datasets: [
             {
                 label: t('statusMonitor.networkDownloadLabelUnit', { unit: requiresMB ? 'MB/s' : 'KB/s' }),
-                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                borderColor: 'rgba(75, 192, 192, 1)',
-                borderWidth: 1,
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                borderColor: '#10b981',
+                borderWidth: 1.5,
+                fill: true,
                 data: displayRxData.map(v => v ?? 0), // 将 null 映射为 0
-                tension: 0.1,
+                tension: 0.25,
                 pointRadius: 0,
-                pointHoverRadius: 5,
+                pointHoverRadius: 4,
             },
             {
                 label: t('statusMonitor.networkUploadLabelUnit', { unit: requiresMB ? 'MB/s' : 'KB/s' }),
-                backgroundColor: 'rgba(255, 159, 64, 0.2)',
-                borderColor: 'rgba(255, 159, 64, 1)',
-                borderWidth: 1,
+                backgroundColor: 'rgba(249, 115, 22, 0.12)',
+                borderColor: '#f97316',
+                borderWidth: 1.5,
+                fill: true,
                 data: displayTxData.map(v => v ?? 0), // 将 null 映射为 0
-                tension: 0.1,
+                tension: 0.25,
                 pointRadius: 0,
-                pointHoverRadius: 5,
+                pointHoverRadius: 4,
             },
         ],
     };
@@ -243,8 +289,22 @@ const baseChartOptions: Omit<ChartOptions<'line'>, 'scales'> = {
   maintainAspectRatio: false,
   animation: false,
   plugins: {
-    legend: { labels: { color: '#9CA3AF' } },
-    tooltip: { enabled: true, mode: 'index', intersect: false },
+    legend: { display: false },
+    tooltip: {
+      enabled: true,
+      mode: 'index',
+      intersect: false,
+      backgroundColor: 'rgba(15, 23, 42, 0.92)',
+      titleColor: '#e2e8f0',
+      bodyColor: '#cbd5e1',
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 1,
+      padding: 8,
+      boxPadding: 4,
+      titleFont: { size: 11, family: 'ui-monospace, monospace' },
+      bodyFont: { size: 11, family: 'ui-monospace, monospace' },
+      cornerRadius: 6,
+    },
   },
   interaction: { mode: 'index', intersect: false },
 };
@@ -256,12 +316,19 @@ const percentageChartOptions = ref<ChartOptions<'line'>>({ // For CPU
       beginAtZero: true,
       min: 0,
       max: 100,
-      ticks: { color: '#9CA3AF', callback: value => `${value}%` },
-      grid: { color: 'rgba(156, 163, 175, 0.1)' },
+      ticks: {
+        color: 'rgba(156, 163, 175, 0.7)',
+        font: { size: 10, family: 'ui-monospace, monospace' },
+        callback: value => `${value}%`,
+        maxTicksLimit: 5,
+      },
+      grid: { color: 'rgba(255, 255, 255, 0.05)' },
+      border: { display: false },
     },
     x: {
-      ticks: { display: false, color: '#9CA3AF', maxRotation: 0, minRotation: 0 },
+      ticks: { display: false },
       grid: { display: false },
+      border: { display: false },
     },
   },
 });
@@ -294,16 +361,19 @@ const memoryChartOptions = ref<ChartOptions<'line'>>({
       min: 0,
       // max will be set dynamically based on memTotal
       ticks: {
-        color: '#9CA3AF',
+        color: 'rgba(156, 163, 175, 0.7)',
+        font: { size: 10, family: 'ui-monospace, monospace' },
         callback: function(value) {
           return `${parseFloat(Number(value).toFixed(1))}`; // Unit will be implicit from title or tooltip
         }
       },
-      grid: { color: 'rgba(156, 163, 175, 0.1)' },
+      grid: { color: 'rgba(255, 255, 255, 0.05)' },
+      border: { display: false },
     },
     x: {
-      ticks: { display: false, color: '#9CA3AF', maxRotation: 0, minRotation: 0 },
+      ticks: { display: false },
       grid: { display: false },
+      border: { display: false },
     },
   },
 });
@@ -337,23 +407,24 @@ const networkChartOptions = ref<ChartOptions<'line'>>({
       min: 0,
       max: 10, // 初始值，将动态更新
       ticks: {
-        color: '#9CA3AF',
+        color: 'rgba(156, 163, 175, 0.7)',
+        font: { size: 10, family: 'ui-monospace, monospace' },
+        maxTicksLimit: 5,
         callback: function(value) {
           const precision = networkRateUnitIsMB.value ? 2 : 0; // KB/s usually whole numbers, MB/s two decimal places
-          // For KB/s, if the value is very small (e.g. < 1), it might be better to show 1 decimal.
-          // However, for simplicity and typical KB/s display, 0 is often fine.
-          // Let's adjust for KB to show 1 decimal if it's not a whole number and small.
           if (!networkRateUnitIsMB.value && Number(value) !== parseInt(String(value)) && Number(value) < 100) {
             return `${Number(value).toFixed(1)}`;
           }
           return `${Number(value).toFixed(precision)}`;
         }
       },
-      grid: { color: 'rgba(156, 163, 175, 0.1)' },
+      grid: { color: 'rgba(255, 255, 255, 0.05)' },
+      border: { display: false },
     },
     x: {
-      ticks: { display: false, color: '#9CA3AF', maxRotation: 0, minRotation: 0 },
+      ticks: { display: false },
       grid: { display: false },
+      border: { display: false },
     },
   },
 });
@@ -452,3 +523,9 @@ onMounted(() => {
 });
 
 </script>
+
+<style scoped>
+.chart-container {
+  backdrop-filter: blur(4px);
+}
+</style>
