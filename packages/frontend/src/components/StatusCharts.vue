@@ -5,12 +5,12 @@
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1.5 min-w-0">
           <i class="fas fa-chart-line text-xs text-sky-400 shrink-0"></i>
-          <span class="text-xs font-semibold text-text-secondary truncate">
+          <span class="text-xs font-bold text-text-secondary truncate">
             {{ t('statusMonitor.cpuUsageTitle', 'CPU 使用率') }}
           </span>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          <span class="font-mono text-xs font-bold text-foreground">
+          <span class="font-mono text-sm font-bold text-foreground">
             {{ latestCpuVal }}%
           </span>
         </div>
@@ -25,12 +25,12 @@
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-1.5 min-w-0">
           <i class="fas fa-chart-area text-xs text-primary shrink-0"></i>
-          <span class="text-xs font-semibold text-text-secondary truncate">
+          <span class="text-xs font-bold text-text-secondary truncate">
             {{ t('statusMonitor.networkSpeedTitleUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' }) }}
           </span>
         </div>
-        <!-- 图例与最新数值 -->
-        <div class="flex items-center gap-2.5 text-[11px] font-mono shrink-0">
+        <!-- 图例与最新数值 (升级至 text-xs 提升可读性) -->
+        <div class="flex items-center gap-2.5 text-xs font-mono shrink-0">
           <div class="flex items-center gap-1 text-emerald-400" :title="t('statusMonitor.networkDownloadLabelUnit', { unit: networkRateUnitIsMB ? 'MB/s' : 'KB/s' })">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
             <span class="text-text-secondary/60">↓</span>
@@ -318,7 +318,7 @@ const percentageChartOptions = ref<ChartOptions<'line'>>({ // For CPU
       max: 100,
       ticks: {
         color: 'rgba(156, 163, 175, 0.7)',
-        font: { size: 10, family: 'ui-monospace, monospace' },
+        font: { size: 11, family: 'ui-monospace, monospace' },
         callback: value => `${value}%`,
         maxTicksLimit: 5,
       },
@@ -362,7 +362,7 @@ const memoryChartOptions = ref<ChartOptions<'line'>>({
       // max will be set dynamically based on memTotal
       ticks: {
         color: 'rgba(156, 163, 175, 0.7)',
-        font: { size: 10, family: 'ui-monospace, monospace' },
+        font: { size: 11, family: 'ui-monospace, monospace' },
         callback: function(value) {
           return `${parseFloat(Number(value).toFixed(1))}`; // Unit will be implicit from title or tooltip
         }
@@ -408,7 +408,7 @@ const networkChartOptions = ref<ChartOptions<'line'>>({
       max: 10, // 初始值，将动态更新
       ticks: {
         color: 'rgba(156, 163, 175, 0.7)',
-        font: { size: 10, family: 'ui-monospace, monospace' },
+        font: { size: 11, family: 'ui-monospace, monospace' },
         maxTicksLimit: 5,
         callback: function(value) {
           const precision = networkRateUnitIsMB.value ? 2 : 0; // KB/s usually whole numbers, MB/s two decimal places

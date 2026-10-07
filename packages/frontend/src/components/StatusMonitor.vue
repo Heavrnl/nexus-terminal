@@ -77,56 +77,56 @@
         <div class="flex items-center justify-between text-xs pb-1.5 border-b border-border/40">
           <div class="flex items-center gap-2 min-w-0">
             <i class="fas fa-server text-primary text-xs shrink-0"></i>
-            <span class="font-semibold text-foreground truncate" :title="sessionConnectionName || '当前主机'">
+            <span class="text-sm font-bold text-foreground truncate" :title="sessionConnectionName || '当前主机'">
               {{ sessionConnectionName || '当前主机' }}
             </span>
           </div>
-          <span class="text-[11px] font-mono text-text-secondary shrink-0">
+          <span class="text-xs font-mono text-text-secondary/80 shrink-0">
             {{ currentServerStatus?.netInterface || 'Linux' }}
           </span>
         </div>
 
-        <div class="grid grid-cols-1 gap-1.5 text-xs pt-0.5">
+        <div class="grid grid-cols-1 gap-2 text-xs pt-0.5">
           <!-- 操作系统 -->
           <div class="flex items-start gap-2">
-            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[50px]">
+            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[54px] font-medium">
               <i class="fab fa-linux text-xs text-text-secondary"></i>
               <span>{{ t('statusMonitor.osLabel', '系统:') }}</span>
             </span>
-            <span class="font-medium text-foreground break-words flex-1 leading-snug" :title="displayOsName">
+            <span class="text-xs font-medium text-foreground break-words flex-1 leading-snug" :title="displayOsName">
               {{ displayOsName }}
             </span>
           </div>
 
           <!-- CPU 型号 -->
           <div class="flex items-start gap-2">
-            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[50px]">
+            <span class="shrink-0 text-text-secondary flex items-center gap-1.5 min-w-[54px] font-medium">
               <i class="fas fa-microchip text-xs text-sky-400"></i>
               <span>{{ t('statusMonitor.cpuModelLabel', 'CPU:') }}</span>
             </span>
-            <span class="font-mono text-[11px] text-foreground/90 break-words flex-1 leading-snug" :title="displayCpuModel">
+            <span class="font-mono text-xs text-foreground/90 break-words flex-1 leading-snug" :title="displayCpuModel">
               {{ displayCpuModel }}
             </span>
           </div>
         </div>
       </div>
 
-      <!-- 2. 四大核心资源指标卡片 (紧凑 2x2 双列网格，高度适宜，上下分行杜绝挤压) -->
+      <!-- 2. 四大核心资源指标卡片 (紧凑 2x2 双列网格，字号适度饱满清晰) -->
       <div class="grid grid-cols-2 gap-2">
         <!-- CPU 使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-2 shadow-2xs transition-all">
           <div class="flex items-center justify-between gap-1">
             <div class="flex items-center gap-1.5 min-w-0">
               <i class="fas fa-microchip text-xs text-sky-400 shrink-0"></i>
-              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.cpuLabel', 'CPU') }}</span>
+              <span class="text-xs font-bold text-text-secondary truncate">{{ t('statusMonitor.cpuLabel', 'CPU') }}</span>
             </div>
-            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+            <span class="text-sm font-bold font-mono tracking-tight text-foreground shrink-0">
               {{ Math.round(displayCpuPercent) }}%
             </span>
           </div>
 
-          <!-- 细致进度条 -->
-          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 饱满进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayCpuPercent))}%` }"
@@ -135,25 +135,25 @@
           </div>
 
           <!-- 底部占用率独占一行 -->
-          <div class="text-[10px] font-mono text-text-secondary/70 truncate text-right">
+          <div class="text-xs font-mono text-text-secondary/80 truncate text-right">
             利用率 {{ (displayCpuPercent).toFixed(1) }}%
           </div>
         </div>
 
         <!-- 内存使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-2 shadow-2xs transition-all">
           <div class="flex items-center justify-between gap-1">
             <div class="flex items-center gap-1.5 min-w-0">
               <i class="fas fa-memory text-xs text-emerald-400 shrink-0"></i>
-              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.memoryLabel', '内存') }}</span>
+              <span class="text-xs font-bold text-text-secondary truncate">{{ t('statusMonitor.memoryLabel', '内存') }}</span>
             </div>
-            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+            <span class="text-sm font-bold font-mono tracking-tight text-foreground shrink-0">
               {{ Math.round(displayMemPercent) }}%
             </span>
           </div>
 
-          <!-- 细致进度条 -->
-          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 饱满进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayMemPercent))}%` }"
@@ -162,25 +162,25 @@
           </div>
 
           <!-- 底部详情：独占一行位于进度条下方，绝不与百分比挤压 -->
-          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="memDisplay">
+          <div class="text-xs font-mono text-text-secondary/85 truncate text-right" :title="memDisplay">
             {{ memDisplay }}
           </div>
         </div>
 
         <!-- Swap 交换分区卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-2 shadow-2xs transition-all">
           <div class="flex items-center justify-between gap-1">
             <div class="flex items-center gap-1.5 min-w-0">
               <i class="fas fa-right-left text-xs text-amber-400 shrink-0"></i>
-              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.swapLabel', 'Swap') }}</span>
+              <span class="text-xs font-bold text-text-secondary truncate">{{ t('statusMonitor.swapLabel', 'Swap') }}</span>
             </div>
-            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+            <span class="text-sm font-bold font-mono tracking-tight text-foreground shrink-0">
               {{ Math.round(displaySwapPercent) }}%
             </span>
           </div>
 
-          <!-- 细致进度条 -->
-          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 饱满进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displaySwapPercent))}%` }"
@@ -189,25 +189,25 @@
           </div>
 
           <!-- 底部详情 -->
-          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="swapDisplay">
+          <div class="text-xs font-mono text-text-secondary/85 truncate text-right" :title="swapDisplay">
             {{ swapDisplay }}
           </div>
         </div>
 
         <!-- 磁盘使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-2 shadow-2xs transition-all">
           <div class="flex items-center justify-between gap-1">
             <div class="flex items-center gap-1.5 min-w-0">
               <i class="fas fa-hard-drive text-xs text-purple-400 shrink-0"></i>
-              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.diskLabel', '磁盘') }}</span>
+              <span class="text-xs font-bold text-text-secondary truncate">{{ t('statusMonitor.diskLabel', '磁盘') }}</span>
             </div>
-            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+            <span class="text-sm font-bold font-mono tracking-tight text-foreground shrink-0">
               {{ Math.round(displayDiskPercent) }}%
             </span>
           </div>
 
-          <!-- 细致进度条 -->
-          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 饱满进度条 -->
+          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayDiskPercent))}%` }"
@@ -216,44 +216,44 @@
           </div>
 
           <!-- 底部详情 -->
-          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="diskDisplay">
+          <div class="text-xs font-mono text-text-secondary/85 truncate text-right" :title="diskDisplay">
             {{ diskDisplay }}
           </div>
         </div>
       </div>
 
       <!-- 3. 实时网络流量卡片 -->
-      <div class="rounded-xl bg-header/25 border border-border/50 hover:border-border/70 p-2.5 space-y-1.5 shadow-2xs transition-all">
+      <div class="rounded-xl bg-header/25 border border-border/50 hover:border-border/70 p-2.5 space-y-2 shadow-2xs transition-all">
         <div class="flex items-center justify-between text-xs">
-          <div class="flex items-center gap-1.5 font-semibold text-text-secondary">
+          <div class="flex items-center gap-1.5 font-bold text-text-secondary">
             <i class="fas fa-network-wired text-primary text-xs"></i>
             <span>{{ t('statusMonitor.networkLabel', '实时网络流量') }}</span>
           </div>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border border-border/60 text-text-secondary/80">
+          <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-background border border-border/60 text-text-secondary/80">
             {{ currentServerStatus?.netInterface || 'default' }}
           </span>
         </div>
 
         <!-- 双胶囊速率展示 (字号与上方卡片严格协调统一) -->
-        <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
           <!-- 下行速率 -->
-          <div class="flex items-center justify-between p-1.5 px-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-            <div class="flex items-center gap-1.5 text-[11px] font-medium shrink-0">
-              <i class="fas fa-arrow-down text-[10px]"></i>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            <div class="flex items-center gap-1.5 text-xs font-medium shrink-0">
+              <i class="fas fa-arrow-down text-[11px]"></i>
               <span>下载</span>
             </div>
-            <span class="font-mono text-[11px] font-bold truncate">
+            <span class="font-mono text-xs font-bold truncate">
               {{ formatBytesPerSecond(currentServerStatus?.netRxRate) }}
             </span>
           </div>
 
           <!-- 上行速率 -->
-          <div class="flex items-center justify-between p-1.5 px-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
-            <div class="flex items-center gap-1.5 text-[11px] font-medium shrink-0">
-              <i class="fas fa-arrow-up text-[10px]"></i>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400">
+            <div class="flex items-center gap-1.5 text-xs font-medium shrink-0">
+              <i class="fas fa-arrow-up text-[11px]"></i>
               <span>上传</span>
             </div>
-            <span class="font-mono text-[11px] font-bold truncate">
+            <span class="font-mono text-xs font-bold truncate">
               {{ formatBytesPerSecond(currentServerStatus?.netTxRate) }}
             </span>
           </div>
