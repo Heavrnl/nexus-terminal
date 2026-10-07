@@ -277,19 +277,9 @@ const handleClose = () => {
                     <span class="text-xs font-semibold text-text-secondary">CPU 使用率</span>
                     <i class="fas fa-microchip text-xs text-sky-400"></i>
                   </div>
-                  <div class="flex items-baseline justify-between">
+                  <div>
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.cpuPercent ?? 0) }}%
-                    </span>
-                    <span
-                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-                      :class="[
-                        (currentServerStatus.cpuPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
-                        (currentServerStatus.cpuPercent ?? 0) > 60 ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-emerald-500/10 text-emerald-400'
-                      ]"
-                    >
-                      {{ (currentServerStatus.cpuPercent ?? 0) > 85 ? '高负荷' : (currentServerStatus.cpuPercent ?? 0) > 60 ? '中负荷' : '正常' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -317,19 +307,9 @@ const handleClose = () => {
                     <span class="text-xs font-semibold text-text-secondary">物理内存</span>
                     <i class="fas fa-memory text-xs text-emerald-400"></i>
                   </div>
-                  <div class="flex items-baseline justify-between">
+                  <div>
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.memPercent ?? 0) }}%
-                    </span>
-                    <span
-                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-                      :class="[
-                        (currentServerStatus.memPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
-                        (currentServerStatus.memPercent ?? 0) > 65 ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-emerald-500/10 text-emerald-400'
-                      ]"
-                    >
-                      {{ (currentServerStatus.memPercent ?? 0) > 85 ? '吃紧' : (currentServerStatus.memPercent ?? 0) > 65 ? '适中' : '充足' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
@@ -357,31 +337,21 @@ const handleClose = () => {
                     <span class="text-xs font-semibold text-text-secondary">SWAP 交换区</span>
                     <i class="fas fa-exchange-alt text-xs text-amber-400"></i>
                   </div>
-                  <div class="flex items-baseline justify-between">
+                  <div>
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.swapPercent ?? 0) }}%
-                    </span>
-                    <span
-                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-                      :class="[
-                        (currentServerStatus.swapPercent ?? 0) > 75 ? 'bg-rose-500/10 text-rose-400' :
-                        (currentServerStatus.swapPercent ?? 0) > 0 ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-neutral-500/10 text-neutral-400'
-                      ]"
-                    >
-                      {{ (currentServerStatus.swapPercent ?? 0) > 75 ? '偏高' : (currentServerStatus.swapPercent ?? 0) > 0 ? '占用中' : '无占用' }}
                     </span>
                   </div>
                   <!-- 进度条 -->
                   <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-300"
+                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.swapPercent ?? 0))}%` }"
                       :class="[
                         (currentServerStatus.swapPercent ?? 0) > 75 ? 'bg-rose-500' :
                         (currentServerStatus.swapPercent ?? 0) > 0 ? 'bg-amber-500' :
                         'bg-neutral-500'
                       ]"
-                      :style="{ width: `${Math.min(100, Math.max(0, currentServerStatus.swapPercent ?? 0))}%` }"
                     ></div>
                   </div>
                   <!-- 底部数值独占一行 -->
@@ -397,19 +367,9 @@ const handleClose = () => {
                     <span class="text-xs font-semibold text-text-secondary">根磁盘空间</span>
                     <i class="fas fa-hdd text-xs text-purple-400"></i>
                   </div>
-                  <div class="flex items-baseline justify-between">
+                  <div>
                     <span class="text-xl font-bold font-mono text-foreground">
                       {{ Math.round(currentServerStatus.diskPercent ?? 0) }}%
-                    </span>
-                    <span
-                      class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-                      :class="[
-                        (currentServerStatus.diskPercent ?? 0) > 85 ? 'bg-rose-500/10 text-rose-400' :
-                        (currentServerStatus.diskPercent ?? 0) > 70 ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-emerald-500/10 text-emerald-400'
-                      ]"
-                    >
-                      {{ (currentServerStatus.diskPercent ?? 0) > 85 ? '告急' : (currentServerStatus.diskPercent ?? 0) > 70 ? '注意' : '充裕' }}
                     </span>
                   </div>
                   <!-- 进度条 -->

@@ -119,142 +119,113 @@
         </div>
       </div>
 
-      <!-- 2. 四大核心资源指标卡片流 (自适应双列) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <!-- 2. 四大核心资源指标卡片 (紧凑 2x2 双列网格，高度适宜，上下分行杜绝挤压) -->
+      <div class="grid grid-cols-2 gap-2">
         <!-- CPU 使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <i class="fas fa-microchip text-xs text-sky-400"></i>
-              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.cpuLabel', 'CPU 使用率') }}</span>
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between gap-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i class="fas fa-microchip text-xs text-sky-400 shrink-0"></i>
+              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.cpuLabel', 'CPU') }}</span>
             </div>
-            <span
-              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-              :class="getLoadStatus(displayCpuPercent).class"
-            >
-              {{ getLoadStatus(displayCpuPercent).text }}
+            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+              {{ Math.round(displayCpuPercent) }}%
             </span>
           </div>
 
-          <div class="flex items-baseline justify-between">
-            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
-              {{ Math.round(displayCpuPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
-            </span>
-          </div>
-
-          <!-- 现代平滑渐变进度条 -->
-          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 细致进度条 -->
+          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayCpuPercent))}%` }"
               :class="getProgressGradient(displayCpuPercent, 'blue')"
             ></div>
           </div>
+
+          <!-- 底部占用率独占一行 -->
+          <div class="text-[10px] font-mono text-text-secondary/70 truncate text-right">
+            利用率 {{ (displayCpuPercent).toFixed(1) }}%
+          </div>
         </div>
 
         <!-- 内存使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <i class="fas fa-memory text-xs text-emerald-400"></i>
-              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.memoryLabel', '内存使用率') }}</span>
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between gap-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i class="fas fa-memory text-xs text-emerald-400 shrink-0"></i>
+              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.memoryLabel', '内存') }}</span>
             </div>
-            <span
-              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-              :class="getLoadStatus(displayMemPercent).class"
-            >
-              {{ getLoadStatus(displayMemPercent).text }}
+            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+              {{ Math.round(displayMemPercent) }}%
             </span>
           </div>
 
-          <div class="flex items-baseline justify-between">
-            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
-              {{ Math.round(displayMemPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
-            </span>
-            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="memDisplay">
-              {{ memDisplay }}
-            </span>
-          </div>
-
-          <!-- 进度条 -->
-          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 细致进度条 -->
+          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayMemPercent))}%` }"
               :class="getProgressGradient(displayMemPercent, 'emerald')"
             ></div>
           </div>
+
+          <!-- 底部详情：独占一行位于进度条下方，绝不与百分比挤压 -->
+          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="memDisplay">
+            {{ memDisplay }}
+          </div>
         </div>
 
         <!-- Swap 交换分区卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <i class="fas fa-right-left text-xs text-amber-400"></i>
-              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.swapLabel', 'Swap 交换区') }}</span>
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between gap-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i class="fas fa-right-left text-xs text-amber-400 shrink-0"></i>
+              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.swapLabel', 'Swap') }}</span>
             </div>
-            <span
-              v-if="(currentServerStatus?.swapTotal ?? 0) > 0"
-              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-              :class="getLoadStatus(displaySwapPercent).class"
-            >
-              {{ getLoadStatus(displaySwapPercent).text }}
-            </span>
-            <span v-else class="text-[10px] px-1.5 py-0.2 rounded font-medium bg-header/50 text-text-secondary">
-              未开启
+            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+              {{ Math.round(displaySwapPercent) }}%
             </span>
           </div>
 
-          <div class="flex items-baseline justify-between">
-            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
-              {{ Math.round(displaySwapPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
-            </span>
-            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="swapDisplay">
-              {{ swapDisplay }}
-            </span>
-          </div>
-
-          <!-- 进度条 -->
-          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 细致进度条 -->
+          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displaySwapPercent))}%` }"
               :class="getProgressGradient(displaySwapPercent, 'amber')"
             ></div>
           </div>
+
+          <!-- 底部详情 -->
+          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="swapDisplay">
+            {{ swapDisplay }}
+          </div>
         </div>
 
         <!-- 磁盘使用率卡片 -->
-        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-3 flex flex-col justify-between space-y-2.5 shadow-2xs transition-all">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-1.5">
-              <i class="fas fa-hard-drive text-xs text-purple-400"></i>
-              <span class="text-xs font-semibold text-text-secondary">{{ t('statusMonitor.diskLabel', '磁盘存储') }}</span>
+        <div class="metric-card rounded-xl bg-header/25 border border-border/50 hover:border-border p-2.5 flex flex-col justify-between space-y-1.5 shadow-2xs transition-all">
+          <div class="flex items-center justify-between gap-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i class="fas fa-hard-drive text-xs text-purple-400 shrink-0"></i>
+              <span class="text-xs font-semibold text-text-secondary truncate">{{ t('statusMonitor.diskLabel', '磁盘') }}</span>
             </div>
-            <span
-              class="text-[10px] px-1.5 py-0.2 rounded font-medium"
-              :class="getLoadStatus(displayDiskPercent).class"
-            >
-              {{ getLoadStatus(displayDiskPercent).text }}
+            <span class="text-xs font-bold font-mono tracking-tight text-foreground shrink-0">
+              {{ Math.round(displayDiskPercent) }}%
             </span>
           </div>
 
-          <div class="flex items-baseline justify-between">
-            <span class="text-2xl font-bold font-mono tracking-tight text-foreground">
-              {{ Math.round(displayDiskPercent) }}<span class="text-xs font-normal text-text-secondary">%</span>
-            </span>
-            <span class="text-[11px] font-mono text-text-secondary truncate max-w-[120px]" :title="diskDisplay">
-              {{ diskDisplay }}
-            </span>
-          </div>
-
-          <!-- 进度条 -->
-          <div class="w-full h-2 rounded-full bg-border/40 overflow-hidden relative">
+          <!-- 细致进度条 -->
+          <div class="w-full h-1.5 rounded-full bg-border/40 overflow-hidden relative">
             <div
               class="h-full rounded-full transition-all duration-300 ease-out"
               :style="{ width: `${Math.min(100, Math.max(0, displayDiskPercent))}%` }"
               :class="getProgressGradient(displayDiskPercent, 'purple')"
             ></div>
+          </div>
+
+          <!-- 底部详情 -->
+          <div class="text-[10px] font-mono text-text-secondary/80 truncate text-right" :title="diskDisplay">
+            {{ diskDisplay }}
           </div>
         </div>
       </div>
@@ -476,26 +447,6 @@ const swapDisplay = computed(() => {
   }
   return `${formatMemorySize(used)} / ${formatMemorySize(total)}`;
 });
-
-// 计算负荷状态文案与样式
-const getLoadStatus = (percent: number) => {
-  if (percent > 85) {
-    return {
-      text: t('statusMonitor.loadHigh', '高负荷'),
-      class: 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
-    };
-  }
-  if (percent > 65) {
-    return {
-      text: t('statusMonitor.loadMedium', '中负荷'),
-      class: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
-    };
-  }
-  return {
-    text: t('statusMonitor.loadNormal', '正常'),
-    class: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
-  };
-};
 
 // 渐变进度条颜色
 const getProgressGradient = (percent: number, baseType: 'blue' | 'emerald' | 'amber' | 'purple') => {
