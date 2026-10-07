@@ -15,6 +15,7 @@ import { storeToRefs } from 'pinia';
 import UINotificationDisplay from './components/UINotificationDisplay.vue';
 import FileEditorOverlay from './components/FileEditorOverlay.vue';
 import StyleCustomizer from './components/StyleCustomizer.vue';
+import MobileStyleCustomizerModal from './components/MobileStyleCustomizerModal.vue';
 import FocusSwitcherConfigurator from './components/FocusSwitcherConfigurator.vue';
 import RemoteDesktopModal from './components/RemoteDesktopModal.vue';
 import VncModal from './components/VncModal.vue';
@@ -331,8 +332,15 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
     <!-- 根据设置条件渲染全局文件编辑器弹窗 -->
     <FileEditorOverlay v-if="showPopupFileEditorBoolean" :is-mobile="isMobile" />
 
-    <!-- 条件渲染样式自定义器，使用 store 的状态和方法 -->
-    <StyleCustomizer v-if="isStyleCustomizerVisible" @close="closeStyleCustomizer" />
+    <!-- 条件渲染样式自定义器：移动端与桌面端完全解耦渲染 -->
+    <MobileStyleCustomizerModal
+      v-if="isStyleCustomizerVisible && isMobile"
+      @close="closeStyleCustomizer"
+    />
+    <StyleCustomizer
+      v-else-if="isStyleCustomizerVisible && !isMobile"
+      @close="closeStyleCustomizer"
+    />
 
     <!-- +++ 条件渲染焦点切换配置器 (使用 v-show 保持实例) +++ -->
     <FocusSwitcherConfigurator
