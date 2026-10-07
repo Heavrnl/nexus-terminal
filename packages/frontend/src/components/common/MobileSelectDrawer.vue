@@ -80,13 +80,13 @@ const handleClear = () => {
       type="button"
       @click="openDrawer"
       :disabled="props.disabled"
-      class="w-full h-10 px-3 bg-header/20 border border-border/60 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer select-none active:bg-header/40 disabled:opacity-50 disabled:cursor-not-allowed"
+      class="w-full h-10 px-3 bg-header/20 border border-border/60 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer select-none active:bg-header/40 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
       :class="isOpen ? 'ring-1 ring-primary border-primary' : ''"
     >
-      <div class="flex items-center gap-2 min-w-0">
+      <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
         <i v-if="props.icon" :class="[props.icon, 'text-xs text-text-secondary/70 shrink-0']"></i>
-        <div v-if="selectedOption" class="flex items-center gap-1.5 min-w-0">
-          <span class="text-xs font-medium text-foreground truncate">
+        <div v-if="selectedOption" class="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+          <span class="text-xs font-medium text-foreground truncate block">
             {{ selectedOption.label }}
           </span>
           <span
@@ -96,12 +96,12 @@ const handleClear = () => {
             {{ selectedOption.badge }}
           </span>
         </div>
-        <span v-else class="text-xs text-text-secondary/50 truncate">
+        <span v-else class="text-xs text-text-secondary/50 truncate block flex-1">
           {{ props.placeholder }}
         </span>
       </div>
 
-      <div class="flex items-center gap-1.5 text-text-secondary/60 shrink-0">
+      <div class="flex items-center gap-1 text-text-secondary/60 shrink-0 ml-1">
         <i class="fas fa-chevron-down text-xs transition-transform duration-200" :class="isOpen ? 'rotate-180' : ''"></i>
       </div>
     </button>

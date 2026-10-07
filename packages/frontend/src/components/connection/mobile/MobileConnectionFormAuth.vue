@@ -74,25 +74,25 @@ const showVncPassword = ref(false);
           <button
             type="button"
             @click="props.formData.auth_method = 'password'"
-            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-2"
             :class="props.formData.auth_method === 'password'
               ? 'bg-primary text-primary-foreground shadow-xs'
               : 'text-text-secondary hover:text-foreground active:bg-border/30'"
           >
-            <i class="fas fa-key text-xs"></i>
-            <span>{{ t('connections.form.authMethodPassword', '密码认证') }}</span>
+            <i class="fas fa-key text-xs shrink-0"></i>
+            <span class="truncate">{{ t('connections.form.authMethodPassword', '密码认证') }}</span>
           </button>
 
           <button
             type="button"
             @click="props.formData.auth_method = 'key'"
-            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-2"
             :class="props.formData.auth_method === 'key'
               ? 'bg-primary text-primary-foreground shadow-xs'
               : 'text-text-secondary hover:text-foreground active:bg-border/30'"
           >
-            <i class="fas fa-id-badge text-xs"></i>
-            <span>{{ t('connections.form.authMethodKey', '密钥认证') }}</span>
+            <i class="fas fa-id-badge text-xs shrink-0"></i>
+            <span class="truncate">{{ t('connections.form.authMethodKey', '密钥认证') }}</span>
           </button>
         </div>
       </div>
@@ -135,7 +135,7 @@ const showVncPassword = ref(false);
         <label class="block text-xs font-medium text-text-secondary">
           {{ t('connections.form.sshKey', 'SSH 密钥') }} <span class="text-red-400">*</span>
         </label>
-        <div class="mobile-ssh-key-selector">
+        <div class="w-full">
           <MobileSshKeySelector v-model="props.formData.selected_ssh_key_id" />
         </div>
       </div>
@@ -212,20 +212,3 @@ const showVncPassword = ref(false);
     </template>
   </div>
 </template>
-
-<style scoped>
-:deep(.mobile-ssh-key-selector select) {
-  height: 2.5rem;
-  border-radius: 0.75rem;
-  background-color: var(--color-header, rgba(0,0,0,0.05));
-  font-size: 0.75rem;
-}
-:deep(.mobile-ssh-key-selector button) {
-  height: 2.5rem;
-  width: 2.5rem;
-  border-radius: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-</style>

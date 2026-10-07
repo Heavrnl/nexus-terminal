@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 
@@ -46,7 +46,7 @@ const selectedTags = computed(() => {
     .filter((tag): tag is GenericTag => tag !== undefined);
 });
 
-// 未选中的可用标签列表 (供快速点选)
+// 未选中的可用标签列表 (供快捷点选)
 const unselectedTags = computed(() => {
   const selectedSet = new Set(props.modelValue || []);
   return availableTagsList.value.filter(tag => !selectedSet.has(tag.id));
@@ -81,7 +81,6 @@ const handleCreateNewTag = () => {
   );
 
   if (existing) {
-    // 若已存在但未选中，则选中
     if (!(props.modelValue || []).includes(existing.id)) {
       emit('update:modelValue', [...(props.modelValue || []), existing.id]);
     }
@@ -96,7 +95,7 @@ const handleCreateNewTag = () => {
 // 全局删除标签 (危险操作，带确认保护)
 const handleDeleteTagGlobally = async (tag: GenericTag) => {
   const confirmed = await showConfirmDialog({
-    message: t('tags.deleteConfirm', { name: tag.name }, `确定要全局删除标签“${tag.name}”吗？`)
+    message: t('tags.deleteConfirm', { name: tag.name }, `确定要全局删除标签“${tag.name}”吗？此操作无法撤销。`)
   });
   if (confirmed) {
     emit('delete-tag', tag.id);
@@ -105,66 +104,69 @@ const handleDeleteTagGlobally = async (tag: GenericTag) => {
 </script>
 
 <template>
-  <div class="mobile-tag-input space-y-2.5">
+  <div class="mobile-tag-input space-y-2.5 w-full min-w-0">
     <!-- 1. 已选中标签药丸流 -->
-    <div class="min-h-[2.5rem] p-2 bg-header/20 border border-border/60 rounded-xl flex flex-wrap items-center gap-1.5">
+    <div class="min-h-[2.5rem] p-2 bg-header/20 border border-border/60 rounded-xl flex flex-wrap items-center gap-1.5 w-full min-w-0">
       <template v-if="selectedTags.length > 0">
         <span
           v-for="tag in selectedTags"
           :key="tag.id"
-          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary text-primary-foreground shadow-2xs transition-all"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-primary text-primary-foreground shadow-2xs transition-all max-w-full"
         >
-          <span>{{ tag.name }}</span>
+          <span class="truncate max-w-[160px]">{{ tag.name }}</span>
           <button
             type="button"
             @click.stop="removeSelectedTag(tag.id)"
-            class="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black/20 active:scale-90 text-[11px] cursor-pointer"
+            class="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black/20 active:scale-90 text-[11px] cursor-pointer shrink-0"
             :title="t('tags.removeSelection', '移除选中')"
           >
             <i class="fas fa-times"></i>
           </button>
         </span>
       </template>
-      <span v-else class="text-xs text-text-secondary/60 px-1 py-0.5 select-none">
+      <span v-else class="text-xs text-text-secondary/60 px-1 py-0.5 select-none truncate">
         {{ props.placeholder || t('tags.inputPlaceholder', '暂未选择标签，轻点下方可选标签即可添加') }}
       </span>
     </div>
 
     <!-- 2. 可选标签池 (快捷点选，彻底解决打字繁琐问题) -->
-    <div v-if="unselectedTags.length > 0" class="space-y-1.5">
+    <div v-if="unselectedTags.length > 0" class="space-y-1.5 w-full min-w-0">
       <div class="text-[11px] text-text-secondary/70 flex items-center justify-between">
         <span>快捷点选已有标签：</span>
         <span>共 {{ availableTagsList.length }} 个</span>
       </div>
 
-      <div class="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto pr-0.5">
-        <button
+      <div class="flex flex-wrap items-center gap-1.5 max-h-28 overflow-y-auto pr-0.5 w-full min-w-0">
+        <!-- 使用 div 代替嵌套 button，避免 HTML 规范冲突导致的排版崩坏 -->
+        <div
           v-for="tag in unselectedTags"
           :key="tag.id"
-          type="button"
+          role="button"
+          tabindex="0"
           @click="toggleTag(tag.id)"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-background border border-border/70 text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer shadow-2xs"
+          @keydown.enter="toggleTag(tag.id)"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-background border border-border/70 text-text-secondary hover:text-foreground active:scale-95 transition-all cursor-pointer shadow-2xs max-w-full select-none"
         >
-          <i class="fas fa-plus text-[10px] text-primary/70"></i>
-          <span>{{ tag.name }}</span>
+          <i class="fas fa-plus text-[10px] text-primary/70 shrink-0"></i>
+          <span class="truncate max-w-[130px]">{{ tag.name }}</span>
 
           <!-- 全局删除标签小图标 (仅当开启 allowDelete 时显示) -->
           <button
             v-if="allowDeleteTag"
             type="button"
             @click.stop="handleDeleteTagGlobally(tag)"
-            class="ml-0.5 text-text-secondary/40 hover:text-red-400 p-0.5 text-[10px] cursor-pointer"
+            class="ml-0.5 text-text-secondary/40 hover:text-red-400 p-0.5 text-[10px] cursor-pointer shrink-0 flex items-center justify-center"
             :title="t('tags.deleteTagGlobally', '删除此标签')"
           >
             <i class="fas fa-trash-alt"></i>
           </button>
-        </button>
+        </div>
       </div>
     </div>
 
     <!-- 3. 新建标签输入栏 -->
-    <div v-if="allowCreateTag" class="flex items-center gap-1.5 pt-1">
-      <div class="relative flex-grow">
+    <div v-if="allowCreateTag" class="flex items-center gap-1.5 pt-1 w-full min-w-0">
+      <div class="relative flex-1 min-w-0">
         <input
           type="text"
           v-model="newTagName"
@@ -177,7 +179,7 @@ const handleDeleteTagGlobally = async (tag: GenericTag) => {
           v-if="newTagName"
           type="button"
           @click="newTagName = ''"
-          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary/60 text-xs p-1"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary/60 text-xs p-1 cursor-pointer"
         >
           <i class="fas fa-times-circle"></i>
         </button>
@@ -187,10 +189,10 @@ const handleDeleteTagGlobally = async (tag: GenericTag) => {
         type="button"
         @click="handleCreateNewTag"
         :disabled="!newTagName.trim()"
-        class="h-8.5 px-3 rounded-xl bg-primary text-primary-foreground font-semibold text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 active:scale-95 transition-all shrink-0 flex items-center gap-1 cursor-pointer"
+        class="h-8.5 px-3.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90 active:scale-95 transition-all shrink-0 flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs"
       >
-        <i class="fas fa-plus text-xs"></i>
-        <span>添加标签</span>
+        <i class="fas fa-plus text-xs shrink-0"></i>
+        <span>添加</span>
       </button>
     </div>
   </div>

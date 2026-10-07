@@ -116,21 +116,23 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
     <button
       type="button"
       @click="isExpanded = !isExpanded"
-      class="w-full p-4 flex items-center justify-between text-left cursor-pointer active:bg-header/40 transition-colors select-none"
+      class="w-full p-3.5 flex items-center justify-between text-left cursor-pointer active:bg-header/40 transition-colors select-none gap-2"
     >
-      <div class="flex items-center gap-2">
-        <div class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-xs">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-xs shrink-0">
           <i class="fas fa-sliders-h"></i>
         </div>
-        <div>
-          <span class="text-sm font-semibold text-foreground tracking-tight">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-foreground tracking-tight leading-tight">
             {{ t('connections.form.sectionAdvanced', '高级选项') }}
-          </span>
-          <span class="text-[11px] text-text-secondary/70 ml-2">代理、跳板机、标签、备注</span>
+          </div>
+          <div class="text-[10px] text-text-secondary/70 truncate mt-0.5 max-w-[190px]">
+            代理、跳板机、标签、备注
+          </div>
         </div>
       </div>
 
-      <div class="flex items-center gap-1.5 text-text-secondary">
+      <div class="flex items-center gap-1.5 text-text-secondary shrink-0">
         <span class="text-xs">{{ isExpanded ? '收起' : '展开' }}</span>
         <i :class="['fas text-xs transition-transform duration-200', isExpanded ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
       </div>
@@ -148,25 +150,25 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             <button
               type="button"
               @click="setConnectionMode('proxy')"
-              class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1.5"
               :class="props.advancedConnectionMode === 'proxy'
                 ? 'bg-primary text-primary-foreground shadow-xs'
                 : 'text-text-secondary hover:text-foreground active:bg-border/30'"
             >
-              <i class="fas fa-globe text-xs"></i>
-              <span>{{ t('connections.form.connectionModeProxy', '正向代理') }}</span>
+              <i class="fas fa-globe text-xs shrink-0"></i>
+              <span class="truncate">{{ t('connections.form.connectionModeProxy', '正向代理') }}</span>
             </button>
 
             <button
               type="button"
               @click="setConnectionMode('jump')"
-              class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1.5"
               :class="props.advancedConnectionMode === 'jump'
                 ? 'bg-primary text-primary-foreground shadow-xs'
                 : 'text-text-secondary hover:text-foreground active:bg-border/30'"
             >
-              <i class="fas fa-random text-xs"></i>
-              <span>{{ t('connections.form.connectionModeJumpHost', '跳板机链') }}</span>
+              <i class="fas fa-random text-xs shrink-0"></i>
+              <span class="truncate">{{ t('connections.form.connectionModeJumpHost', '跳板机链') }}</span>
             </button>
           </div>
         </div>

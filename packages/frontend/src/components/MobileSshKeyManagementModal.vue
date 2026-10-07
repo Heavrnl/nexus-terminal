@@ -159,24 +159,24 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
             v-if="isAddEditFormVisible"
             type="button"
             @click="cancelForm"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer"
+            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <i class="fas fa-chevron-left text-xs"></i>
+            <i class="fas fa-chevron-left text-xs shrink-0"></i>
             <span>返回列表</span>
           </button>
           <button
             v-else
             type="button"
             @click="emit('close')"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer"
+            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <i class="fas fa-chevron-down text-xs"></i>
+            <i class="fas fa-chevron-down text-xs shrink-0"></i>
             <span>{{ t('common.close', '关闭') }}</span>
           </button>
 
           <!-- 居中标题 -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-sm font-semibold text-foreground tracking-tight">
+          <div class="flex items-center gap-1.5 min-w-0 px-2">
+            <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[150px]">
               {{ isAddEditFormVisible
                 ? (keyToEdit ? t('sshKeys.modal.editTitle', '编辑 SSH 密钥') : t('sshKeys.modal.addTitle', '添加 SSH 密钥'))
                 : t('sshKeys.modal.title', 'SSH 密钥管理') }}
@@ -189,9 +189,9 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
             type="button"
             @click="handleSubmit"
             :disabled="isLoading"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer"
+            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <i v-if="isLoading" class="fas fa-spinner fa-spin text-xs"></i>
+            <i v-if="isLoading" class="fas fa-spinner fa-spin text-xs shrink-0"></i>
             <span>{{ keyToEdit ? t('common.save', '保存') : t('common.add', '添加') }}</span>
           </button>
           <button
@@ -199,9 +199,9 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
             type="button"
             @click="showAddForm"
             :disabled="isLoading"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1 -mr-1 cursor-pointer"
+            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <i class="fas fa-plus text-xs"></i>
+            <i class="fas fa-plus text-xs shrink-0"></i>
             <span>{{ t('sshKeys.modal.addKey', '新建密钥') }}</span>
           </button>
         </div>
@@ -256,20 +256,20 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
                   type="button"
                   @click="showEditForm(key)"
                   :disabled="isLoading"
-                  class="h-8 px-2.5 rounded-lg bg-header/60 hover:bg-header text-text-secondary hover:text-foreground active:scale-95 text-xs font-medium flex items-center gap-1 transition-all cursor-pointer"
+                  class="h-8 px-2.5 rounded-lg bg-header/60 hover:bg-header text-text-secondary hover:text-foreground active:scale-95 text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0"
                   :title="t('sshKeys.modal.edit', '编辑')"
                 >
-                  <i class="fas fa-pencil-alt text-xs text-primary"></i>
+                  <i class="fas fa-pencil-alt text-xs text-primary shrink-0"></i>
                   <span>编辑</span>
                 </button>
                 <button
                   type="button"
                   @click="handleDelete(key)"
                   :disabled="isLoading"
-                  class="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 active:scale-95 flex items-center justify-center transition-all cursor-pointer"
+                  class="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 active:scale-95 flex items-center justify-center transition-all cursor-pointer shrink-0"
                   :title="t('sshKeys.modal.delete', '删除')"
                 >
-                  <i class="fas fa-trash-alt text-xs"></i>
+                  <i class="fas fa-trash-alt text-xs shrink-0"></i>
                 </button>
               </div>
             </div>
@@ -308,20 +308,20 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
               </label>
 
               <!-- 便捷粘贴与清空工具条 -->
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   @click="pastePrivateKeyFromClipboard"
-                  class="text-[11px] text-primary flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-primary/10 active:scale-95 transition-all cursor-pointer"
+                  class="text-[11px] text-primary flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-primary/10 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
                 >
-                  <i class="fas fa-paste text-[10px]"></i>
+                  <i class="fas fa-paste text-[10px] shrink-0"></i>
                   <span>粘贴剪贴板</span>
                 </button>
                 <button
                   v-if="formData.private_key"
                   type="button"
                   @click="formData.private_key = ''"
-                  class="text-[11px] text-text-secondary hover:text-red-400 px-1.5 py-0.5 cursor-pointer"
+                  class="text-[11px] text-text-secondary hover:text-red-400 px-1.5 py-0.5 cursor-pointer whitespace-nowrap shrink-0"
                 >
                   清空
                 </button>

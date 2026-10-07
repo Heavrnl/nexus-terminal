@@ -54,9 +54,9 @@ const closeManagementModal = () => {
 </script>
 
 <template>
-  <div class="mobile-ssh-key-selector-wrapper flex items-center gap-2">
+  <div class="mobile-ssh-key-selector-wrapper flex items-center gap-2 w-full min-w-0">
     <!-- 移动端抽屉选择器 -->
-    <div class="flex-grow min-w-0">
+    <div class="flex-1 min-w-0">
       <MobileSelectDrawer
         :model-value="props.modelValue"
         :options="keyOptions"

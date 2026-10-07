@@ -81,37 +81,37 @@ const selectPresetColor = (color: string) => {
         <button
           type="button"
           @click="setConnectionType('SSH')"
-          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1"
           :class="props.formData.type === 'SSH'
             ? 'bg-primary text-primary-foreground shadow-xs'
             : 'text-text-secondary hover:text-foreground active:bg-border/30'"
         >
-          <i class="fas fa-terminal text-xs"></i>
-          <span>SSH</span>
+          <i class="fas fa-terminal text-xs shrink-0"></i>
+          <span class="truncate">SSH</span>
         </button>
 
         <button
           type="button"
           @click="setConnectionType('RDP')"
-          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1"
           :class="props.formData.type === 'RDP'
             ? 'bg-primary text-primary-foreground shadow-xs'
             : 'text-text-secondary hover:text-foreground active:bg-border/30'"
         >
-          <i class="fas fa-desktop text-xs"></i>
-          <span>RDP</span>
+          <i class="fas fa-desktop text-xs shrink-0"></i>
+          <span class="truncate">RDP</span>
         </button>
 
         <button
           type="button"
           @click="setConnectionType('VNC')"
-          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+          class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1"
           :class="props.formData.type === 'VNC'
             ? 'bg-primary text-primary-foreground shadow-xs'
             : 'text-text-secondary hover:text-foreground active:bg-border/30'"
         >
-          <i class="fas fa-plug text-xs"></i>
-          <span>VNC</span>
+          <i class="fas fa-plug text-xs shrink-0"></i>
+          <span class="truncate">VNC</span>
         </button>
       </div>
     </div>
@@ -229,14 +229,14 @@ const selectPresetColor = (color: string) => {
         v-if="props.formData.custom_background_color"
         class="space-y-3 p-3 bg-header/30 border border-border/60 rounded-xl"
       >
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-medium text-text-secondary">选择调色板</span>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-medium text-text-secondary truncate">选择调色板</span>
           <button
             type="button"
             @click="handleRandomColor"
-            class="h-7 px-2.5 rounded-lg text-xs font-medium bg-header border border-border/70 text-foreground flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+            class="h-7 px-2.5 rounded-lg text-xs font-medium bg-header border border-border/70 text-foreground flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
-            <i class="fas fa-dice text-primary text-xs"></i>
+            <i class="fas fa-dice text-primary text-xs shrink-0"></i>
             <span>随机色彩</span>
           </button>
         </div>

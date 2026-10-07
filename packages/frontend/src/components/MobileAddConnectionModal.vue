@@ -70,16 +70,16 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
           <button
             type="button"
             @click="emit('close')"
-            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer"
+            class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground active:bg-border/30 rounded-lg transition-colors -ml-1 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
             :title="t('common.cancel', '取消')"
           >
-            <i class="fas fa-chevron-down text-xs"></i>
+            <i class="fas fa-chevron-down text-xs shrink-0"></i>
             <span>{{ t('common.cancel', '取消') }}</span>
           </button>
 
           <!-- 居中标题与协议徽章 -->
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[170px]">
+          <div class="flex items-center gap-1.5 min-w-0 px-1">
+            <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[140px]">
               {{ formTitle }}
             </span>
             <span
@@ -99,9 +99,9 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
             type="button"
             @click="handleSubmit"
             :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer"
+            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
@@ -181,26 +181,26 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
           <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
           <div
             v-if="formData.type === 'SSH' && !isScriptModeActive"
-            class="flex items-center justify-between p-3 rounded-xl bg-header/30 border border-border/60"
+            class="flex items-center justify-between p-3 rounded-xl bg-header/30 border border-border/60 gap-2"
           >
             <button
               type="button"
               @click="handleTestConnection"
               :disabled="isLoading || testStatus === 'testing'"
-              class="h-8 px-3 text-xs font-semibold rounded-lg border border-border/70 text-text-secondary bg-background/80 hover:bg-border/40 active:bg-border disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              class="h-8 px-3 text-xs font-semibold rounded-lg border border-border/70 text-text-secondary bg-background/80 hover:bg-border/40 active:bg-border disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <svg v-if="testStatus === 'testing'" class="animate-spin h-3.5 w-3.5 text-text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <svg v-if="testStatus === 'testing'" class="animate-spin h-3.5 w-3.5 text-text-secondary shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <i v-else class="fas fa-bolt text-xs text-amber-500"></i>
+              <i v-else class="fas fa-bolt text-xs text-amber-500 shrink-0"></i>
               <span>{{ testButtonText }}</span>
             </button>
 
-            <div class="text-xs font-mono">
-              <span v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse">{{ t('connections.test.testingInProgress', '测试中...') }}</span>
-              <span v-else-if="testStatus === 'success'" class="font-bold" :style="{ color: latencyColor }">✓ {{ testResult }}</span>
-              <span v-else-if="testStatus === 'error'" class="text-red-400 font-medium truncate max-w-[180px]" :title="String(testResult)">✗ {{ testResult }}</span>
+            <div class="text-xs font-mono min-w-0 flex-1 text-right">
+              <span v-if="testStatus === 'testing'" class="text-text-secondary animate-pulse text-[11px]">{{ t('connections.test.testingInProgress', '测试中...') }}</span>
+              <span v-else-if="testStatus === 'success'" class="font-bold text-[11px]" :style="{ color: latencyColor }">✓ {{ testResult }}</span>
+              <span v-else-if="testStatus === 'error'" class="text-red-400 font-medium truncate block text-[11px]" :title="String(testResult)">✗ {{ testResult }}</span>
             </div>
           </div>
 
@@ -211,9 +211,9 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
               type="button"
               @click="handleDeleteConnection"
               :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-              class="h-10 px-4 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 active:scale-98 disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+              class="h-10 px-4 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 active:scale-98 disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
-              <i class="fas fa-trash-alt text-xs"></i>
+              <i class="fas fa-trash-alt text-xs shrink-0"></i>
               <span>{{ t('connections.actions.delete', '删除') }}</span>
             </button>
 
@@ -221,13 +221,13 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
               type="button"
               @click="handleSubmit"
               :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-              class="flex-grow h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
+              class="flex-grow min-w-0 h-10 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
             >
-              <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span>{{ submitButtonText }}</span>
+              <span class="truncate">{{ submitButtonText }}</span>
             </button>
           </div>
         </div>
