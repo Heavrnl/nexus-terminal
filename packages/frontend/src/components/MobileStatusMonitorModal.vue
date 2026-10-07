@@ -170,11 +170,6 @@ const handleClose = () => {
               <h3 class="text-base font-semibold text-foreground tracking-tight">
                 {{ t('statusMonitor.title', '状态监视器') }}
               </h3>
-              <!-- 实时心跳指示灯 -->
-              <span v-if="currentServerStatus" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>实时监控</span>
-              </span>
             </div>
 
             <button

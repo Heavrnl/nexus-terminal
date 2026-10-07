@@ -13,14 +13,6 @@
         <div>
           <h4 class="m-0 text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
             <span>{{ t('statusMonitor.title', '状态监视器') }}</span>
-            <!-- 实时心跳指示灯 -->
-            <span
-              v-if="currentServerStatus"
-              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-            >
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>实时</span>
-            </span>
           </h4>
         </div>
       </div>
