@@ -152,6 +152,31 @@ const handleTreeSelectDirectory = (path: string) => {
   }
 };
 
+const handleTreeSelectFile = (filePath: string, fileName: string) => {
+  const fileInfo: FileInfo = { name: fileName, fullPath: filePath };
+
+  if (settingsStore.showPopupFileEditorBoolean) {
+    fileEditorStore.triggerPopup(filePath, props.sessionId);
+  }
+
+  if (shareFileEditorTabsBoolean.value) {
+    fileEditorStore.openFile(filePath, props.sessionId, props.instanceId);
+  } else {
+    sessionStore.openFileInSession(props.sessionId, fileInfo);
+  }
+
+  // 同步右侧表格定位到该文件的父目录并高亮此文件
+  const lastSlash = filePath.lastIndexOf('/');
+  const parentDir = lastSlash <= 0 ? '/' : filePath.substring(0, lastSlash);
+  if (currentSftpManager.value) {
+    if (currentSftpManager.value.currentPath.value !== parentDir) {
+      currentSftpManager.value.loadDirectory(parentDir);
+    }
+    selectedItems.value.clear();
+    selectedItems.value.add(fileName);
+  }
+};
+
 const startTreeResize = (e: MouseEvent) => {
   e.preventDefault();
   isResizingTree.value = true;
@@ -1206,9 +1231,11 @@ defineExpose({ focusSearchInput, startPathEdit });
             v-if="showDirectoryTree"
             :current-path="currentSftpManager?.currentPath?.value ?? '/'"
             :is-connected="Boolean(props.wsDeps.isConnected.value)"
+            :is-sftp-ready="Boolean(props.wsDeps.isSftpReady.value)"
             :sftp-manager="currentSftpManager"
             :width="directoryTreeWidth"
             @select-directory="handleTreeSelectDirectory"
+            @select-file="handleTreeSelectFile"
           />
 
           <!-- 拖拽调整宽度的竖线分割条 -->

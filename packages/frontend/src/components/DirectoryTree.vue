@@ -3,15 +3,26 @@ import { ref, watch, nextTick, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { SftpManagerInstance } from '../composables/useSftpActions';
 
-const props = defineProps<{
-  currentPath: string;
-  isConnected: boolean;
-  sftpManager: SftpManagerInstance | null;
-  width?: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    currentPath: string;
+    isConnected: boolean;
+    isSftpReady?: boolean;
+    sftpManager: SftpManagerInstance | null;
+    width?: number;
+    showFiles?: boolean;
+  }>(),
+  {
+    width: 220,
+    isSftpReady: false,
+    showFiles: undefined,
+  }
+);
 
 const emit = defineEmits<{
   (e: 'select-directory', path: string): void;
+  (e: 'select-file', path: string, filename: string): void;
+  (e: 'update:showFiles', value: boolean): void;
 }>();
 
 const { t } = useI18n();
@@ -20,30 +31,51 @@ interface TreeNode {
   path: string;
   name: string;
   depth: number;
+  isDirectory: boolean;
   isExpanded: boolean;
   isLoading: boolean;
-  children: string[] | null; // 子目录的完整路径列表
+  children: string[] | null; // 子项的完整路径列表
   hasChildren: boolean;
 }
+
+// 本地持久化配置 Key
+const LS_SHOW_FILES_KEY = 'file_manager_tree_show_files';
+
+// 响应式版本号，确保 Map 内节点对象变更能被 computed 追踪
+const treeVersion = ref(0);
+
+// 内部维护显示文件状态（支持 props 受控或本地独立维护）
+const internalShowFiles = ref<boolean>(
+  typeof localStorage !== 'undefined'
+    ? localStorage.getItem(LS_SHOW_FILES_KEY) === 'true'
+    : false
+);
+
+const isShowingFiles = computed<boolean>(() => {
+  return props.showFiles !== undefined ? props.showFiles : internalShowFiles.value;
+});
 
 // 路径 -> 节点映射表
 const nodesMap = ref<Map<string, TreeNode>>(new Map());
 const treeContainerRef = ref<HTMLDivElement | null>(null);
 
 // 保证节点存在
-const ensureNode = (path: string, name: string, depth: number): TreeNode => {
+const ensureNode = (path: string, name: string, depth: number, isDirectory = true): TreeNode => {
   let node = nodesMap.value.get(path);
   if (!node) {
     node = {
       path,
       name,
       depth,
+      isDirectory,
       isExpanded: path === '/', // 根目录默认展开
       isLoading: false,
-      children: null,
-      hasChildren: true, // 初始假设可能有子项，加载后更新
+      children: isDirectory ? null : [],
+      hasChildren: isDirectory, // 目录初始假设可能有子项，加载后更新；普通文件没有子项
     };
     nodesMap.value.set(path, node);
+  } else {
+    node.isDirectory = isDirectory;
   }
   return node;
 };
@@ -62,23 +94,62 @@ const getParentPath = (path: string): string => {
   return lastSlash <= 0 ? '/' : norm.substring(0, lastSlash);
 };
 
-// 加载指定路径的子目录
+// 获取文件图标与颜色类名
+const getFileIconClass = (filename: string): { icon: string; color: string } => {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  if (['js', 'ts', 'jsx', 'tsx', 'vue', 'json', 'html', 'css', 'scss', 'py', 'sh', 'c', 'cpp', 'rs', 'go', 'java', 'sql', 'php'].includes(ext)) {
+    return { icon: 'fas fa-file-code', color: 'text-sky-400' };
+  }
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'].includes(ext)) {
+    return { icon: 'far fa-file-image', color: 'text-emerald-400' };
+  }
+  if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'tgz'].includes(ext)) {
+    return { icon: 'far fa-file-zipper', color: 'text-purple-400' };
+  }
+  if (['md', 'txt', 'log', 'conf', 'ini', 'yaml', 'yml', 'env', 'config'].includes(ext)) {
+    return { icon: 'far fa-file-lines', color: 'text-amber-400' };
+  }
+  if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) {
+    return { icon: 'far fa-file-audio', color: 'text-pink-400' };
+  }
+  if (['mp4', 'mkv', 'avi', 'mov'].includes(ext)) {
+    return { icon: 'far fa-file-video', color: 'text-rose-400' };
+  }
+  if (['pdf'].includes(ext)) {
+    return { icon: 'far fa-file-pdf', color: 'text-red-400' };
+  }
+  return { icon: 'far fa-file', color: 'text-text-secondary/70' };
+};
+
+// 加载指定路径的子项目
 const loadChildren = async (node: TreeNode, forceRefresh = false): Promise<void> => {
-  if (!props.sftpManager || !props.isConnected) return;
+  if (!node.isDirectory) return;
+  if (!props.sftpManager || !props.isConnected || !props.isSftpReady) return;
   if (!forceRefresh && node.children !== null) return;
 
   node.isLoading = true;
+  treeVersion.value++;
   try {
     const rawItems = await props.sftpManager.listDirectoryContents(node.path);
-    // 仅保留文件夹，过滤掉普通文件和隐藏系统特异项
-    const dirItems = rawItems
-      .filter((item) => item.attrs.isDirectory && item.filename !== '.' && item.filename !== '..')
-      .sort((a, b) => a.filename.localeCompare(b.filename));
+    // 过滤掉 '.' 和 '..'
+    let validItems = rawItems.filter((item) => item.filename !== '.' && item.filename !== '..');
+
+    if (!isShowingFiles.value) {
+      // 仅保留文件夹
+      validItems = validItems.filter((item) => item.attrs.isDirectory);
+    }
+
+    // 排序：文件夹优先，同类型按名称字母序
+    validItems.sort((a, b) => {
+      if (a.attrs.isDirectory && !b.attrs.isDirectory) return -1;
+      if (!a.attrs.isDirectory && b.attrs.isDirectory) return 1;
+      return a.filename.localeCompare(b.filename);
+    });
 
     const childPaths: string[] = [];
-    for (const item of dirItems) {
+    for (const item of validItems) {
       const subPath = node.path === '/' ? `/${item.filename}` : `${node.path}/${item.filename}`;
-      ensureNode(subPath, item.filename, node.depth + 1);
+      ensureNode(subPath, item.filename, node.depth + 1, item.attrs.isDirectory);
       childPaths.push(subPath);
     }
 
@@ -86,40 +157,52 @@ const loadChildren = async (node: TreeNode, forceRefresh = false): Promise<void>
     node.hasChildren = childPaths.length > 0;
   } catch (error) {
     console.warn(`[DirectoryTree] 加载目录 ${node.path} 失败:`, error);
-    node.children = [];
-    node.hasChildren = false;
+    // 未就绪或网络抖动时不硬编码写死为空，保持 null 以便重试
+    node.children = null;
   } finally {
     node.isLoading = false;
+    treeVersion.value++;
   }
 };
 
 // 展开/收起某个节点
 const toggleExpand = async (node: TreeNode, event?: MouseEvent) => {
   if (event) event.stopPropagation();
+  if (!node.isDirectory) return;
 
   if (node.isExpanded) {
     node.isExpanded = false;
+    treeVersion.value++;
   } else {
     node.isExpanded = true;
     if (node.children === null) {
       await loadChildren(node);
+    } else {
+      treeVersion.value++;
     }
   }
 };
 
-// 点击目录项：展开并跳转
+// 点击节点项：目录则展开并跳转，文件则触发选中打开
 const handleSelectNode = async (node: TreeNode) => {
-  if (!node.isExpanded && node.hasChildren) {
-    node.isExpanded = true;
-    if (node.children === null) {
-      await loadChildren(node);
+  if (node.isDirectory) {
+    if (!node.isExpanded && node.hasChildren) {
+      node.isExpanded = true;
+      if (node.children === null) {
+        await loadChildren(node);
+      } else {
+        treeVersion.value++;
+      }
     }
+    emit('select-directory', node.path);
+  } else {
+    emit('select-file', node.path, node.name);
   }
-  emit('select-directory', node.path);
 };
 
 // 展开并确保所有祖先路径就绪
 const expandAncestors = async (targetPath: string) => {
+  if (!props.isSftpReady) return;
   const norm = normalizePath(targetPath);
   const segments = norm === '/' ? [] : norm.split('/').filter(Boolean);
 
@@ -143,8 +226,13 @@ const expandAncestors = async (targetPath: string) => {
     const currentNode = nodesMap.value.get(p);
     if (currentNode && i < pathsToExpand.length - 1) {
       currentNode.isExpanded = true;
+      if (currentNode.children === null) {
+        await loadChildren(currentNode);
+      }
     }
   }
+
+  treeVersion.value++;
 
   // 滚动到当前高亮节点
   nextTick(() => {
@@ -157,6 +245,9 @@ const expandAncestors = async (targetPath: string) => {
 
 // 拍平渲染的可见节点列表
 const visibleNodes = computed<TreeNode[]>(() => {
+  // 显式依赖版本号，确保状态变化必然重新触发计算
+  void treeVersion.value;
+
   const list: TreeNode[] = [];
 
   const traverse = (nodePath: string) => {
@@ -165,7 +256,7 @@ const visibleNodes = computed<TreeNode[]>(() => {
 
     list.push(node);
 
-    if (node.isExpanded && node.children) {
+    if (node.isDirectory && node.isExpanded && node.children) {
       for (const childPath of node.children) {
         traverse(childPath);
       }
@@ -178,41 +269,66 @@ const visibleNodes = computed<TreeNode[]>(() => {
 
 // 刷新整个树
 const refreshTree = async () => {
-  const root = ensureNode('/', '/', 0);
+  if (!props.isSftpReady) return;
+  nodesMap.value.clear();
+  const root = ensureNode('/', '/', 0, true);
   await loadChildren(root, true);
   await expandAncestors(props.currentPath);
+};
+
+// 切换显示文件模式
+const toggleShowFiles = async () => {
+  const nextValue = !isShowingFiles.value;
+  internalShowFiles.value = nextValue;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LS_SHOW_FILES_KEY, String(nextValue));
+  }
+  emit('update:showFiles', nextValue);
+  await refreshTree();
 };
 
 // 监听当前路径变化，自动展开对应树枝
 watch(
   () => props.currentPath,
   (newPath) => {
-    if (newPath) {
+    if (newPath && props.isSftpReady) {
       expandAncestors(newPath);
+    }
+  }
+);
+
+// 监听 SFTP 会话就绪状态
+watch(
+  () => props.isSftpReady,
+  (ready) => {
+    if (ready) {
+      refreshTree();
     }
   },
   { immediate: true }
 );
 
-// 监听连接状态
+// 外部属性改变时同步刷新
 watch(
-  () => props.isConnected,
-  (connected) => {
-    if (connected) {
+  () => props.showFiles,
+  (newVal) => {
+    if (newVal !== undefined && newVal !== internalShowFiles.value) {
+      internalShowFiles.value = newVal;
       refreshTree();
     }
   }
 );
 
 onMounted(() => {
-  ensureNode('/', '/', 0);
-  if (props.isConnected) {
+  ensureNode('/', '/', 0, true);
+  if (props.isSftpReady) {
     refreshTree();
   }
 });
 
 defineExpose({
   refreshTree,
+  toggleShowFiles,
 });
 </script>
 
@@ -221,20 +337,36 @@ defineExpose({
     class="flex-shrink-0 flex flex-col border-r border-border/50 bg-background/50 select-none overflow-hidden transition-all duration-100"
     :style="{ width: `${width || 220}px` }"
   >
-    <!-- 顶部标题工具栏 -->
+    <!-- 顶部标题工具栏（“目录树”栏） -->
     <div class="px-2.5 py-1.5 text-[11px] font-semibold text-text-secondary flex items-center justify-between border-b border-border/40 bg-header/40 flex-shrink-0">
-      <span class="flex items-center gap-1.5 tracking-wider">
-        <i class="fas fa-sitemap text-primary/80"></i>
-        <span>{{ t('fileManager.directoryTree', '目录树') }}</span>
+      <span class="flex items-center gap-1.5 tracking-wider truncate">
+        <i :class="isShowingFiles ? 'fas fa-folder-tree text-primary/80' : 'fas fa-sitemap text-primary/80'"></i>
+        <span>{{ isShowingFiles ? t('fileManager.fileTree', '文件树') : t('fileManager.directoryTree', '目录树') }}</span>
       </span>
-      <button
-        type="button"
-        @click="refreshTree"
-        class="w-5 h-5 rounded flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition"
-        :title="t('fileManager.actions.refresh', '刷新目录树')"
-      >
-        <i class="fas fa-rotate-right text-[10px]"></i>
-      </button>
+
+      <!-- 右侧操作工具按钮组 -->
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <!-- 切换是否显示普通文件 -->
+        <button
+          type="button"
+          @click="toggleShowFiles"
+          class="w-5 h-5 rounded flex items-center justify-center transition-colors"
+          :class="isShowingFiles ? 'text-primary bg-primary/20 hover:bg-primary/25 font-bold' : 'text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10'"
+          :title="isShowingFiles ? t('fileManager.actions.hideFiles', '仅显示目录') : t('fileManager.actions.showFiles', '显示文件')"
+        >
+          <i :class="isShowingFiles ? 'fas fa-file-lines text-[10px]' : 'far fa-file text-[10px]'"></i>
+        </button>
+
+        <!-- 刷新目录树 -->
+        <button
+          type="button"
+          @click="refreshTree"
+          class="w-5 h-5 rounded flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          :title="t('fileManager.actions.refresh', '刷新目录树')"
+        >
+          <i class="fas fa-rotate-right text-[10px]"></i>
+        </button>
+      </div>
     </div>
 
     <!-- 树节点滚动列表 -->
@@ -248,44 +380,55 @@ defineExpose({
         @click="handleSelectNode(node)"
         class="group flex items-center py-1 px-1.5 rounded cursor-pointer transition-colors duration-100"
         :class="[
-          normalizePath(props.currentPath) === normalizePath(node.path)
+          node.isDirectory && normalizePath(props.currentPath) === normalizePath(node.path)
             ? 'active-tree-node bg-primary/15 text-primary border-r-2 border-primary font-medium'
             : 'text-text-secondary hover:text-foreground hover:bg-header/70',
         ]"
         :style="{ paddingLeft: `${node.depth * 14 + 6}px` }"
         :title="node.path"
       >
-        <!-- 展开/折叠箭头或小圆点 -->
+        <!-- 展开/折叠箭头（文件节点占位留白） -->
         <span
           class="w-4 h-4 flex items-center justify-center mr-1 text-text-secondary/70 hover:text-foreground transition-transform"
           @click.stop="toggleExpand(node, $event)"
         >
-          <i
-            v-if="node.isLoading"
-            class="fas fa-circle-notch fa-spin text-[10px] text-primary"
-          ></i>
-          <i
-            v-else-if="node.hasChildren"
-            class="fas fa-chevron-right text-[9px] transition-transform duration-150"
-            :class="{ 'rotate-90': node.isExpanded }"
-          ></i>
-          <span
-            v-else
-            class="inline-block w-1 h-1 rounded-full bg-border"
-          ></span>
+          <template v-if="node.isDirectory">
+            <i
+              v-if="node.isLoading"
+              class="fas fa-circle-notch fa-spin text-[10px] text-primary"
+            ></i>
+            <i
+              v-else-if="node.hasChildren"
+              class="fas fa-chevron-right text-[9px] transition-transform duration-150"
+              :class="{ 'rotate-90': node.isExpanded }"
+            ></i>
+            <span
+              v-else
+              class="inline-block w-1 h-1 rounded-full bg-border"
+            ></span>
+          </template>
+          <span v-else class="inline-block w-1.5 h-1.5 rounded-full bg-border/40"></span>
         </span>
 
-        <!-- 文件夹图标 -->
-        <i
-          class="fas mr-1.5 text-xs flex-shrink-0"
-          :class="[
-            node.isExpanded
-              ? 'fa-folder-open text-amber-500/90'
-              : 'fa-folder text-amber-500/80',
-          ]"
-        ></i>
+        <!-- 图标：文件夹或文件对应类型图标 -->
+        <template v-if="node.isDirectory">
+          <i
+            class="fas mr-1.5 text-xs flex-shrink-0"
+            :class="[
+              node.isExpanded
+                ? 'fa-folder-open text-amber-500/90'
+                : 'fa-folder text-amber-500/80',
+            ]"
+          ></i>
+        </template>
+        <template v-else>
+          <i
+            class="mr-1.5 text-xs flex-shrink-0"
+            :class="[getFileIconClass(node.name).icon, getFileIconClass(node.name).color]"
+          ></i>
+        </template>
 
-        <!-- 文件夹名称 -->
+        <!-- 名称 -->
         <span class="truncate flex-1 select-none text-[11px] leading-tight">
           {{ node.path === '/' ? '/' : node.name }}
         </span>
