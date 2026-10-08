@@ -984,6 +984,16 @@
       "terminalEnableRightClickPasteDescription": "Allows pasting clipboard content using the right mouse button within the terminal area.",
       "terminalRightClickPasteSuccess": "Terminal right-click paste setting saved.",
       "terminalRightClickPasteError": "Failed to save terminal right-click paste setting.",
+      "terminalRightClickBehaviorTitle": "Terminal Right-Click Action",
+      "terminalRightClickBehaviorDescription": "Customize the right-click behavior in the terminal. When no text is selected, right-clicking directly pastes clipboard content; when text is selected, the configured action is triggered.",
+      "rightClickBehaviorContextMenu": "Open Context Menu (Default)",
+      "rightClickBehaviorPaste": "Directly Paste Clipboard Content",
+      "rightClickBehaviorCopy": "Copy Selected Text",
+      "rightClickBehaviorOpenPath": "Open Path",
+      "rightClickBehaviorOpenFile": "Open File",
+      "rightClickBehaviorSaveQuickCommand": "Save as Quick Command",
+      "rightClickBehaviorNone": "No Action",
+      "terminalContextMenuItemsTitle": "Context Menu Items",
       "fileManagerDoubleClickToOpenTitle": "Double-Click to Open Files/Folders",
       "fileManagerDoubleClickToOpenDescription": "When enabled, double-click to open files or folders and single-click to select; when disabled, single-click opens directly",
       "fileManagerDoubleClickToOpenSuccess": "Double-click setting saved successfully.",
@@ -1797,6 +1807,13 @@
       "nextMatch": "Next",
       "matchCase": "Match case",
       "useRegex": "Use regex"
+    },
+    "contextMenu": {
+      "copy": "Copy",
+      "paste": "Paste",
+      "openPath": "Open Path",
+      "openFile": "Open File",
+      "saveQuickCommand": "Save as Quick Command"
     }
   }
 }

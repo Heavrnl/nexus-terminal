@@ -12,6 +12,8 @@ import MobileWorkspaceView from './MobileWorkspaceView.vue';
 import LayoutConfigurator from '../components/LayoutConfigurator.vue';
 import FileManagerModal from '../components/FileManagerModal.vue'; 
 import TransferProgressModal from '../components/TransferProgressModal.vue';
+import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
+import type { QuickCommandFE } from '../stores/quickCommands.store';
 import { useSessionStore } from '../stores/session.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
 import { useSettingsStore } from '../stores/settings.store';
@@ -84,6 +86,17 @@ const currentFileManagerSessionId = ref<string | null>(null);
 const showTransferProgressModal = ref(false);
 const handleOpenTransferProgressModal = () => {
   showTransferProgressModal.value = true;
+};
+
+// --- 快捷指令添加模态框状态 (响应终端等全局添加请求) ---
+const showQuickCommandAddModal = ref(false);
+const initialQuickCommandText = ref('');
+const quickCommandToAddOrEdit = ref<QuickCommandFE | null>(null);
+
+const handleRequestAddQuickCommand = (payload?: { initialCommand?: string }) => {
+  quickCommandToAddOrEdit.value = null;
+  initialQuickCommandText.value = payload?.initialCommand || '';
+  showQuickCommandAddModal.value = true;
 };
 
 // --- 处理全局键盘事件 ---
@@ -173,6 +186,7 @@ onMounted(() => {
   subscribeToWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
   subscribeToWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
   subscribeToWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
+  subscribeToWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
 });
 
 onBeforeUnmount(() => {
@@ -219,6 +233,7 @@ onBeforeUnmount(() => {
   unsubscribeFromWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
   unsubscribeFromWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 取消订阅文件管理器打开请求 +++
   unsubscribeFromWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
+  unsubscribeFromWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
 });
 
 const subscribeToWorkspaceEvents = useWorkspaceEventSubscriber(); // +++ 定义订阅和取消订阅函数 +++
@@ -743,6 +758,14 @@ const closeFileManagerModal = () => {
     <TransferProgressModal
       v-model:visible="showTransferProgressModal"
       :is-mobile="isMobile"
+    />
+
+    <!-- Quick Command Add Modal -->
+    <AddEditQuickCommandForm
+      v-if="showQuickCommandAddModal"
+      :command-to-edit="quickCommandToAddOrEdit"
+      :initial-command="initialQuickCommandText"
+      @close="() => { showQuickCommandAddModal = false; quickCommandToAddOrEdit = null; initialQuickCommandText = ''; }"
     />
 
   </div>

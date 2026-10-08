@@ -981,6 +981,16 @@
       "terminalEnableRightClickPasteDescription": "允许在终端区域内使用鼠标右键粘贴剪贴板内容。",
       "terminalRightClickPasteSuccess": "终端右键粘贴设置已保存。",
       "terminalRightClickPasteError": "保存终端右键粘贴设置失败。",
+      "terminalRightClickBehaviorTitle": "终端鼠标右键交互",
+      "terminalRightClickBehaviorDescription": "自定义在终端中点击鼠标右键的操作。未选中文本时直接粘贴剪贴板内容，选中文本时触发所选行为。",
+      "rightClickBehaviorContextMenu": "弹出右键菜单 (默认)",
+      "rightClickBehaviorPaste": "直接粘贴剪贴板内容",
+      "rightClickBehaviorCopy": "复制选中文本",
+      "rightClickBehaviorOpenPath": "打开路径",
+      "rightClickBehaviorOpenFile": "打开文件",
+      "rightClickBehaviorSaveQuickCommand": "保存为快捷命令",
+      "rightClickBehaviorNone": "无操作",
+      "terminalContextMenuItemsTitle": "右键菜单功能项",
       "fileManagerDoubleClickToOpenTitle": "双击打开文件/文件夹",
       "fileManagerDoubleClickToOpenDescription": "开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开",
       "fileManagerDoubleClickToOpenSuccess": "双击打开文件/文件夹设置已保存。",
@@ -1802,6 +1812,13 @@
       "nextMatch": "下一个",
       "matchCase": "区分大小写",
       "useRegex": "使用正则表达式"
+    },
+    "contextMenu": {
+      "copy": "复制",
+      "paste": "粘贴",
+      "openPath": "打开路径",
+      "openFile": "打开文件",
+      "saveQuickCommand": "保存为快捷命令"
     }
   }
 }

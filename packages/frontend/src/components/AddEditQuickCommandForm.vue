@@ -3,6 +3,7 @@
   <MobileAddEditQuickCommandForm
     v-if="isMobile"
     :command-to-edit="props.commandToEdit"
+    :initial-command="props.initialCommand"
     @close="closeForm"
   />
 
@@ -127,6 +128,7 @@ import { useAlertDialog } from '../composables/useAlertDialog';
 
 const props = defineProps<{
     commandToEdit?: QuickCommandFE | null; // 接收要编辑的指令对象 (应包含标签ID和变量)
+    initialCommand?: string; // 初始命令文本（新增时预填）
 }>();
 
 const emit = defineEmits(['close']);
@@ -152,7 +154,7 @@ const { width: resizableWidth, height: resizableHeight } = useResizable(modalCon
   minHeight: R_MIN_HEIGHT,
 });
 
-const isEditing = computed(() => !!props.commandToEdit);
+const isEditing = computed(() => !!(props.commandToEdit && props.commandToEdit.id > 0));
 
 const formData = reactive({
     name: '',
@@ -199,6 +201,8 @@ onMounted(() => {
     } else {
       localVariables.value = [];
     }
+  } else if (props.initialCommand) {
+    formData.command = props.initialCommand;
   }
 });
 

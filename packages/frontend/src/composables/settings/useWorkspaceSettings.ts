@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue';
-import { useSettingsStore } from '../../stores/settings.store';
+import { useSettingsStore, type TerminalRightClickBehavior, type TerminalContextMenuSettings } from '../../stores/settings.store';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 
@@ -19,6 +19,8 @@ export function useWorkspaceSettings() {
     fileManagerShowDeleteConfirmationBoolean,
     fileManagerDoubleClickToOpenBoolean,
     terminalEnableRightClickPasteBoolean,
+    terminalRightClickBehaviorString,
+    terminalContextMenuItemsObject,
     terminalNoWrapBoolean,
     showPopupFileManagerBoolean, 
     statusMonitorShowIpBoolean,
@@ -361,6 +363,58 @@ export function useWorkspaceSettings() {
     }
   };
 
+  // --- Terminal Right Click Behavior ---
+  const terminalRightClickBehaviorLocal = ref<TerminalRightClickBehavior>('contextMenu');
+  const terminalRightClickBehaviorLoading = ref(false);
+  const terminalRightClickBehaviorMessage = ref('');
+  const terminalRightClickBehaviorSuccess = ref(false);
+
+  const handleUpdateTerminalRightClickBehavior = async () => {
+    terminalRightClickBehaviorLoading.value = true;
+    terminalRightClickBehaviorMessage.value = '';
+    terminalRightClickBehaviorSuccess.value = false;
+    try {
+      await settingsStore.updateTerminalRightClickBehavior(terminalRightClickBehaviorLocal.value);
+      terminalRightClickBehaviorMessage.value = t('common.saved', '已保存');
+      terminalRightClickBehaviorSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新终端右键行为设置失败:', error);
+      terminalRightClickBehaviorMessage.value = error.message || t('common.saveFailed', '保存失败');
+      terminalRightClickBehaviorSuccess.value = false;
+    } finally {
+      terminalRightClickBehaviorLoading.value = false;
+    }
+  };
+
+  // --- Terminal Context Menu Items ---
+  const terminalContextMenuItemsLocal = ref<TerminalContextMenuSettings>({
+    copy: true,
+    paste: true,
+    openPath: true,
+    openFile: true,
+    saveQuickCommand: true,
+  });
+  const terminalContextMenuItemsLoading = ref(false);
+  const terminalContextMenuItemsMessage = ref('');
+  const terminalContextMenuItemsSuccess = ref(false);
+
+  const handleUpdateTerminalContextMenuItems = async () => {
+    terminalContextMenuItemsLoading.value = true;
+    terminalContextMenuItemsMessage.value = '';
+    terminalContextMenuItemsSuccess.value = false;
+    try {
+      await settingsStore.updateTerminalContextMenuItems(terminalContextMenuItemsLocal.value);
+      terminalContextMenuItemsMessage.value = t('common.saved', '已保存');
+      terminalContextMenuItemsSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新终端右键菜单项配置失败:', error);
+      terminalContextMenuItemsMessage.value = error.message || t('common.saveFailed', '保存失败');
+      terminalContextMenuItemsSuccess.value = false;
+    } finally {
+      terminalContextMenuItemsLoading.value = false;
+    }
+  };
+
   // --- Popup File Manager ---
   const showPopupFileManagerLocal = ref(true);
   const showPopupFileManagerLoading = ref(false);
@@ -421,6 +475,8 @@ export function useWorkspaceSettings() {
   watch(fileManagerShowDeleteConfirmationBoolean, (newValue) => { fileManagerShowDeleteConfirmationLocal.value = newValue; }, { immediate: true });
   watch(fileManagerDoubleClickToOpenBoolean, (newValue) => { fileManagerDoubleClickToOpenLocal.value = newValue; }, { immediate: true });
   watch(terminalEnableRightClickPasteBoolean, (newValue) => { terminalEnableRightClickPasteLocal.value = newValue; }, { immediate: true });
+  watch(terminalRightClickBehaviorString, (newValue) => { terminalRightClickBehaviorLocal.value = newValue; }, { immediate: true });
+  watch(terminalContextMenuItemsObject, (newValue) => { terminalContextMenuItemsLocal.value = { ...newValue }; }, { immediate: true, deep: true });
   watch(terminalNoWrapBoolean, (newValue) => { terminalNoWrapLocal.value = newValue; }, { immediate: true });
   watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
   watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
@@ -494,6 +550,16 @@ export function useWorkspaceSettings() {
     terminalEnableRightClickPasteMessage, 
     terminalEnableRightClickPasteSuccess, 
     handleUpdateTerminalRightClickPasteSetting,
+    terminalRightClickBehaviorLocal,
+    terminalRightClickBehaviorLoading,
+    terminalRightClickBehaviorMessage,
+    terminalRightClickBehaviorSuccess,
+    handleUpdateTerminalRightClickBehavior,
+    terminalContextMenuItemsLocal,
+    terminalContextMenuItemsLoading,
+    terminalContextMenuItemsMessage,
+    terminalContextMenuItemsSuccess,
+    handleUpdateTerminalContextMenuItems,
     terminalNoWrapLocal,
     terminalNoWrapLoading,
     terminalNoWrapMessage,

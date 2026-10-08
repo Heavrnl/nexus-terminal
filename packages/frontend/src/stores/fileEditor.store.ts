@@ -151,7 +151,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
 
     // 打开或切换到文件标签页
     // 修改：添加 instanceId 参数
-    const openFile = async (targetFilePath: string, sessionId: string, instanceId: string) => {
+    const openFile = async (targetFilePath: string, sessionId: string, instanceId: string = 'global') => {
         // 在共享模式下，我们仍然需要 sessionId 来构建唯一的 tabId
         // 并与 SFTP 管理器关联
         const tabId = `${sessionId}:${targetFilePath}`; // Tab ID 仍然基于 sessionId 和 filePath 保持唯一性

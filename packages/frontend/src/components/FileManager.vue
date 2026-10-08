@@ -1006,6 +1006,7 @@ let unregisterSearchFocusAction: (() => void) | null = null;
 let unregisterPathFocusAction: (() => void) | null = null;
 
 let unregisterItemsMovedEvent: (() => void) | null = null;
+let unregisterNavigateToPathEvent: (() => void) | null = null;
 
 onMounted(() => {
   const handleItemsMovedNotification = (payload: { sessionId: string; sourceDir: string; targetDir: string }) => {
@@ -1019,6 +1020,17 @@ onMounted(() => {
   };
   subscribeToWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
   unregisterItemsMovedEvent = () => unsubscribeFromWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
+
+  const handleNavigateToPathNotification = (payload: { path: string; sessionId?: string }) => {
+    if (!payload.sessionId || payload.sessionId === props.sessionId) {
+      if (payload.path && currentSftpManager.value) {
+        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到全局路径跳转通知: ${payload.path}`);
+        currentSftpManager.value.loadDirectory(payload.path);
+      }
+    }
+  };
+  subscribeToWorkspaceEvent('fileManager:navigateToPath', handleNavigateToPathNotification);
+  unregisterNavigateToPathEvent = () => unsubscribeFromWorkspaceEvent('fileManager:navigateToPath', handleNavigateToPathNotification);
 
   const focusSearchActionWrapper = async (): Promise<boolean | undefined> => {
     if (props.sessionId === sessionStore.activeSessionId) {
@@ -1042,6 +1054,10 @@ onBeforeUnmount(() => {
   if (unregisterItemsMovedEvent) {
     unregisterItemsMovedEvent();
     unregisterItemsMovedEvent = null;
+  }
+  if (unregisterNavigateToPathEvent) {
+    unregisterNavigateToPathEvent();
+    unregisterNavigateToPathEvent = null;
   }
   if (unregisterSearchFocusAction) {
     unregisterSearchFocusAction();

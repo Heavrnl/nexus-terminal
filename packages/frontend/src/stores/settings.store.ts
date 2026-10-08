@@ -63,6 +63,8 @@ interface SettingsState {
   fileManagerShowDeleteConfirmation?: string;
   fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
+  terminalRightClickBehavior?: string; // 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none'
+  terminalContextMenuItems?: string; // JSON string of TerminalContextMenuSettings
   terminalNoWrap?: string; // 'true' or 'false' - 终端不换行 (默认 false)
   showStatusMonitorIpAddress?: string; // 'true' or 'false' - 状态监视器显示IP地址
   quickCommandRowSizeMultiplier?: string; // +++ 快捷命令列表行大小乘数 (e.g., '1.0') +++
@@ -74,6 +76,24 @@ interface SettingsState {
   [key: string]: string | undefined;
 }
 
+
+export type TerminalRightClickBehavior = 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none';
+
+export interface TerminalContextMenuSettings {
+  copy: boolean;
+  paste: boolean;
+  openPath: boolean;
+  openFile: boolean;
+  saveQuickCommand: boolean;
+}
+
+export const DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS: TerminalContextMenuSettings = {
+  copy: true,
+  paste: true,
+  openPath: true,
+  openFile: true,
+  saveQuickCommand: true,
+};
 
 export const useSettingsStore = defineStore('settings', () => {
   const authStore = useAuthStore(); // <--- 实例化 authStore
@@ -569,6 +589,8 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
+        'terminalRightClickBehavior',
+        'terminalContextMenuItems',
         'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',
@@ -906,6 +928,45 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.terminalNoWrap === 'true'; // Default to false
   });
 
+  const terminalRightClickBehaviorString = computed<TerminalRightClickBehavior>(() => {
+    const val = settings.value.terminalRightClickBehavior;
+    const validValues: TerminalRightClickBehavior[] = ['contextMenu', 'paste', 'copy', 'openPath', 'openFile', 'saveQuickCommand', 'none'];
+    if (val && validValues.includes(val as TerminalRightClickBehavior)) {
+      return val as TerminalRightClickBehavior;
+    }
+    if (settings.value.terminalEnableRightClickPaste === 'false') {
+      return 'none';
+    }
+    return 'contextMenu';
+  });
+
+  const terminalContextMenuItemsObject = computed<TerminalContextMenuSettings>(() => {
+    const valStr = settings.value.terminalContextMenuItems;
+    if (!valStr) {
+      return { ...DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS };
+    }
+    try {
+      const parsed = JSON.parse(valStr);
+      return {
+        copy: parsed.copy !== false,
+        paste: parsed.paste !== false,
+        openPath: parsed.openPath !== false,
+        openFile: parsed.openFile !== false,
+        saveQuickCommand: parsed.saveQuickCommand !== false,
+      };
+    } catch {
+      return { ...DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS };
+    }
+  });
+
+  const updateTerminalRightClickBehavior = async (behavior: TerminalRightClickBehavior) => {
+    await updateSetting('terminalRightClickBehavior', behavior);
+  };
+
+  const updateTerminalContextMenuItems = async (items: TerminalContextMenuSettings) => {
+    await updateSetting('terminalContextMenuItems', JSON.stringify(items));
+  };
+
   const terminalEnableRightClickPasteBoolean = computed(() => {
       return settings.value.terminalEnableRightClickPaste !== 'false'; // Default to true
   });
@@ -1017,6 +1078,10 @@ export const useSettingsStore = defineStore('settings', () => {
     fileManagerShowDeleteConfirmationBoolean, //  Expose file manager delete confirmation getter
     fileManagerDoubleClickToOpenBoolean, //  Expose file manager double click to open getter
     terminalEnableRightClickPasteBoolean, //  Expose terminal right click paste getter
+    terminalRightClickBehaviorString,
+    terminalContextMenuItemsObject,
+    updateTerminalRightClickBehavior,
+    updateTerminalContextMenuItems,
     terminalNoWrapBoolean, // Expose terminal no wrap getter
     statusMonitorShowIpBoolean, // 暴露状态监视器显示IP getter
   };

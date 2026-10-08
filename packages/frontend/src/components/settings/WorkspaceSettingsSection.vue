@@ -51,27 +51,79 @@
           </div>
         </div>
 
-        <!-- 终端右键粘贴 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.terminalRightClickPasteTitle') }}
+        <!-- 终端右键交互行为与自定义菜单 (Right Click Behavior) -->
+        <div class="px-6 py-4.5 flex flex-col gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="flex-1 pr-2">
+              <label for="terminalRightClickBehaviorSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
+                {{ $t('settings.workspace.terminalRightClickBehaviorTitle', '终端鼠标右键交互') }}
+              </label>
+              <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
+                {{ $t('settings.workspace.terminalRightClickBehaviorDescription', '自定义在终端中点击鼠标右键的操作。未选中文本时直接粘贴剪贴板内容，选中文本时触发所选行为。') }}
+              </p>
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.terminalEnableRightClickPasteDescription') }}
-            </p>
+            <div class="flex items-center gap-3 shrink-0">
+              <select
+                id="terminalRightClickBehaviorSelect"
+                v-model="terminalRightClickBehaviorLocal"
+                @change="handleUpdateTerminalRightClickBehavior"
+                class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer"
+                style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
+              >
+                <option value="contextMenu">{{ $t('settings.workspace.rightClickBehaviorContextMenu', '弹出右键菜单 (默认)') }}</option>
+                <option value="paste">{{ $t('settings.workspace.rightClickBehaviorPaste', '直接粘贴剪贴板内容') }}</option>
+                <option value="copy">{{ $t('settings.workspace.rightClickBehaviorCopy', '复制选中文本') }}</option>
+                <option value="openPath">{{ $t('settings.workspace.rightClickBehaviorOpenPath', '打开路径') }}</option>
+                <option value="openFile">{{ $t('settings.workspace.rightClickBehaviorOpenFile', '打开文件') }}</option>
+                <option value="saveQuickCommand">{{ $t('settings.workspace.rightClickBehaviorSaveQuickCommand', '保存为快捷命令') }}</option>
+                <option value="none">{{ $t('settings.workspace.rightClickBehaviorNone', '无操作') }}</option>
+              </select>
+              <span v-if="!terminalRightClickBehaviorSuccess && terminalRightClickBehaviorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+                <i class="fas fa-exclamation-circle text-xs"></i>
+                {{ terminalRightClickBehaviorMessage }}
+              </span>
+            </div>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!terminalEnableRightClickPasteSuccess && terminalEnableRightClickPasteMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ terminalEnableRightClickPasteMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="terminalEnableRightClickPasteLocal"
-              :loading="terminalEnableRightClickPasteLoading"
-              @change="handleUpdateTerminalRightClickPasteSetting"
-              aria-label="终端右键粘贴"
-            />
+
+          <!-- 自定义右键菜单项 (当选择弹出右键菜单时展示) -->
+          <div
+            v-if="terminalRightClickBehaviorLocal === 'contextMenu'"
+            class="mt-1 pt-3.5 border-t border-border/50 flex flex-col gap-2.5 bg-muted/20 -mx-6 px-6 py-3"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-text-secondary flex items-center gap-1.5 uppercase tracking-wider">
+                <i class="fas fa-list-check text-xs text-primary"></i>
+                <span>{{ $t('settings.workspace.terminalContextMenuItemsTitle', '右键菜单功能项') }}</span>
+              </span>
+              <span v-if="!terminalContextMenuItemsSuccess && terminalContextMenuItemsMessage" class="text-xs text-red-500">
+                {{ terminalContextMenuItemsMessage }}
+              </span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 select-none">
+              <button
+                v-for="item in contextMenuItemDefinitions"
+                :key="item.key"
+                type="button"
+                @click="toggleContextMenuItem(item.key)"
+                class="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-2 transition-all cursor-pointer outline-none"
+                :class="terminalContextMenuItemsLocal[item.key]
+                  ? 'bg-primary/10 border-primary/40 text-primary shadow-2xs font-semibold'
+                  : 'bg-background/80 border-border/70 text-text-secondary hover:text-foreground hover:bg-muted/30'"
+              >
+                <i
+                  :class="[
+                    item.icon,
+                    'text-xs shrink-0',
+                    terminalContextMenuItemsLocal[item.key] ? 'text-primary' : 'text-text-secondary'
+                  ]"
+                ></i>
+                <span class="truncate">{{ item.label }}</span>
+                <i
+                  class="fas text-[11px] ml-auto shrink-0"
+                  :class="terminalContextMenuItemsLocal[item.key] ? 'fa-check text-primary' : 'fa-plus opacity-40'"
+                ></i>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -627,6 +679,16 @@ const {
   terminalEnableRightClickPasteMessage,
   terminalEnableRightClickPasteSuccess,
   handleUpdateTerminalRightClickPasteSetting,
+  terminalRightClickBehaviorLocal,
+  terminalRightClickBehaviorLoading,
+  terminalRightClickBehaviorMessage,
+  terminalRightClickBehaviorSuccess,
+  handleUpdateTerminalRightClickBehavior,
+  terminalContextMenuItemsLocal,
+  terminalContextMenuItemsLoading,
+  terminalContextMenuItemsMessage,
+  terminalContextMenuItemsSuccess,
+  handleUpdateTerminalContextMenuItems,
   terminalNoWrapLocal,
   terminalNoWrapLoading,
   terminalNoWrapMessage,
@@ -668,7 +730,22 @@ const handleSelectMarkdownDefaultViewMode = async (mode: 'preview' | 'split' | '
 const handleSelectMarkdownDefaultViewModeMobile = async (mode: 'preview' | 'split' | 'edit') => {
   if (markdownDefaultViewModeMobileLocal.value === mode) return;
   markdownDefaultViewModeMobileLocal.value = mode;
-  await handleUpdateMarkdownDefaultViewModeMobile();
+};
+
+const contextMenuItemDefinitions = computed(() => [
+  { key: 'copy' as const, label: t('terminal.contextMenu.copy', '复制'), icon: 'fas fa-copy' },
+  { key: 'paste' as const, label: t('terminal.contextMenu.paste', '粘贴'), icon: 'fas fa-paste' },
+  { key: 'openPath' as const, label: t('terminal.contextMenu.openPath', '打开路径'), icon: 'fas fa-folder-open' },
+  { key: 'openFile' as const, label: t('terminal.contextMenu.openFile', '打开文件'), icon: 'fas fa-file-code' },
+  { key: 'saveQuickCommand' as const, label: t('terminal.contextMenu.saveQuickCommand', '保存为快捷命令'), icon: 'fas fa-bolt' },
+]);
+
+const toggleContextMenuItem = async (key: 'copy' | 'paste' | 'openPath' | 'openFile' | 'saveQuickCommand') => {
+  terminalContextMenuItemsLocal.value = {
+    ...terminalContextMenuItemsLocal.value,
+    [key]: !terminalContextMenuItemsLocal.value[key],
+  };
+  await handleUpdateTerminalContextMenuItems();
 };
 
 const {

@@ -12,6 +12,8 @@ import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import 'xterm/css/xterm.css';
 import MobileTerminalScrollbar from './MobileTerminalScrollbar.vue';
+import TerminalContextMenu, { type TerminalMenuAction } from './TerminalContextMenu.vue';
+import { useFileEditorStore, type FileInfo } from '../stores/fileEditor.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 
@@ -74,10 +76,12 @@ const isTerminalDomReady = ref(false);
 // --- Settings Store ---
 const settingsStore = useSettingsStore(); // +++ 实例化设置 store +++
 const sessionStore = useSessionStore(); // +++ 实例化会话 store +++
+const fileEditorStore = useFileEditorStore(); // 实例化文本编辑器 store
 const {
   autoCopyOnSelectBoolean,
   terminalScrollbackLimitNumber, 
   terminalEnableRightClickPasteBoolean,
+  terminalRightClickBehaviorString,
   terminalNoWrapBoolean, 
 } = storeToRefs(settingsStore); 
 
@@ -165,9 +169,12 @@ const getScrollbackValue = (limit: number): number => {
   return Math.max(0, limit); // Ensure non-negative, return the number otherwise
 };
 
-// --- 右键粘贴功能 ---
-const handleContextMenuPaste = async (event: MouseEvent) => {
-  event.preventDefault(); // 阻止默认右键菜单
+// --- 终端右键交互与上下文菜单 ---
+const showContextMenu = ref(false);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+const contextMenuSelectedText = ref('');
+
+const executePaste = async () => {
   try {
     const text = await navigator.clipboard.readText();
     if (text && terminal) {
@@ -175,19 +182,128 @@ const handleContextMenuPaste = async (event: MouseEvent) => {
       terminal.paste(text);
     }
   } catch (err) {
-    console.error('[Terminal] Failed to paste via Right Click:', err);
+    console.error('[Terminal] Failed to paste:', err);
   }
+};
+
+const executeCopy = async (text: string) => {
+  try {
+    if (text) {
+      await navigator.clipboard.writeText(text);
+    }
+  } catch (err) {
+    console.error('[Terminal] Failed to copy:', err);
+  }
+};
+
+const executeOpenPath = (pathText: string) => {
+  const cleanPath = pathText.trim().replace(/^['"]|['"]$/g, '');
+  if (!cleanPath) return;
+  emitWorkspaceEvent('fileManager:navigateToPath', {
+    path: cleanPath,
+    sessionId: props.sessionId,
+  });
+};
+
+const executeOpenFile = (filePathText: string) => {
+  const cleanPath = filePathText.trim().replace(/^['"]|['"]$/g, '');
+  if (!cleanPath) return;
+  const fileName = cleanPath.substring(cleanPath.lastIndexOf('/') + 1) || cleanPath;
+  const fileInfo: FileInfo = { name: fileName, fullPath: cleanPath };
+
+  if (settingsStore.showPopupFileEditorBoolean) {
+    fileEditorStore.triggerPopup(cleanPath, props.sessionId);
+  }
+
+  if (settingsStore.shareFileEditorTabsBoolean) {
+    fileEditorStore.openFile(cleanPath, props.sessionId, 'terminal');
+  } else {
+    sessionStore.openFileInSession(props.sessionId, fileInfo);
+  }
+};
+
+const executeSaveQuickCommand = (cmdText: string) => {
+  const cleanCmd = cmdText.trim();
+  if (!cleanCmd) return;
+  emitWorkspaceEvent('quickCommand:requestAdd', {
+    initialCommand: cleanCmd,
+  });
+};
+
+const handleContextMenu = async (event: MouseEvent) => {
+  const behavior = terminalRightClickBehaviorString.value;
+  if (behavior === 'none') {
+    event.preventDefault();
+    return;
+  }
+
+  event.preventDefault();
+  const selection = terminal?.getSelection()?.trim() || '';
+
+  if (behavior === 'paste') {
+    await executePaste();
+    return;
+  }
+  if (behavior === 'copy') {
+    if (selection) await executeCopy(selection);
+    return;
+  }
+  if (behavior === 'openPath') {
+    if (selection) executeOpenPath(selection);
+    return;
+  }
+  if (behavior === 'openFile') {
+    if (selection) executeOpenFile(selection);
+    return;
+  }
+  if (behavior === 'saveQuickCommand') {
+    if (selection) executeSaveQuickCommand(selection);
+    return;
+  }
+
+  // 默认模式：behavior === 'contextMenu'
+  // 核心铁律：未选中文本直接粘贴；选中文本弹出右键菜单
+  if (!selection) {
+    await executePaste();
+  } else {
+    contextMenuSelectedText.value = selection;
+    contextMenuPosition.value = { x: event.clientX, y: event.clientY };
+    showContextMenu.value = true;
+  }
+};
+
+const handleContextMenuAction = async (action: TerminalMenuAction) => {
+  const selection = contextMenuSelectedText.value || terminal?.getSelection()?.trim() || '';
+  switch (action) {
+    case 'copy':
+      if (selection) await executeCopy(selection);
+      if (terminal) terminal.focus();
+      break;
+    case 'paste':
+      await executePaste();
+      break;
+    case 'openPath':
+      if (selection) executeOpenPath(selection);
+      break;
+    case 'openFile':
+      if (selection) executeOpenFile(selection);
+      break;
+    case 'saveQuickCommand':
+      if (selection) executeSaveQuickCommand(selection);
+      break;
+  }
+  showContextMenu.value = false;
 };
 
 const addContextMenuListener = () => {
   if (terminalRef.value) {
-    terminalRef.value.addEventListener('contextmenu', handleContextMenuPaste);
+    terminalRef.value.addEventListener('contextmenu', handleContextMenu);
   }
 };
 
 const removeContextMenuListener = () => {
   if (terminalRef.value) {
-    terminalRef.value.removeEventListener('contextmenu', handleContextMenuPaste);
+    terminalRef.value.removeEventListener('contextmenu', handleContextMenu);
   }
 };
 
@@ -575,14 +691,15 @@ onMounted(() => {
         });
     }
 
-    // 根据初始设置添加监听器
-    if (terminalEnableRightClickPasteBoolean.value) {
+    // 根据初始设置添加右键交互监听器
+    if (terminalRightClickBehaviorString.value !== 'none') {
       addContextMenuListener();
     }
 
-    // 监听设置变化
-    watch(terminalEnableRightClickPasteBoolean, (newValue) => {
-      if (newValue) {
+    // 监听右键设置变化
+    watch(terminalRightClickBehaviorString, (newValue) => {
+      if (newValue !== 'none') {
+        removeContextMenuListener();
         addContextMenuListener();
       } else {
         removeContextMenuListener();
@@ -887,6 +1004,17 @@ const handleTerminalClick = () => {
       :scroll-progress="scrollProgress"
       :thumb-height-ratio="thumbHeightRatio"
       @scroll-progress="handleScrollProgressChange"
+    />
+
+    <!-- 终端右键菜单 -->
+    <TerminalContextMenu
+      :visible="showContextMenu"
+      :x="contextMenuPosition.x"
+      :y="contextMenuPosition.y"
+      :selected-text="contextMenuSelectedText"
+      :menu-config="settingsStore.terminalContextMenuItemsObject"
+      @select="handleContextMenuAction"
+      @close="showContextMenu = false"
     />
   </div>
 </template>

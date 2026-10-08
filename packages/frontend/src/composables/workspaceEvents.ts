@@ -51,12 +51,14 @@ export type WorkspaceEventPayloads = {
   // 'ui:toggleVirtualKeyboard': void; // 如果决定迁移 CommandInputBar 的这个事件
   'fileManager:openModalRequest': { sessionId: string }; // 请求打开文件管理器模态框
   'fileManager:itemsMoved': { sessionId: string; sourceDir: string; targetDir: string }; // 跨窗格/内部文件移动完成通知
+  'fileManager:navigateToPath': { path: string; sessionId?: string }; // 在布局中所有文件管理器中导航到指定路径
 
   // Suspended SSH Session Events
   'suspendedSession:actionCompleted': void; // Emitted when a resume/remove action is completed
 
   // Quick Command Events
   'quickCommand:executeProcessed': { command: string; sessionId?: string };
+  'quickCommand:requestAdd': { initialCommand?: string }; // 请求打开添加快捷指令表单并填入初始内容
 
   // Command Input Fill Event (供历史记录/快捷指令等填入命令行或多行输入框)
   'commandInput:fill': { command: string };

@@ -20,10 +20,12 @@ interface LocalVariable {
 const props = withDefaults(
   defineProps<{
     commandToEdit?: QuickCommandFE | null;
+    initialCommand?: string;
     visible?: boolean;
   }>(),
   {
     commandToEdit: null,
+    initialCommand: '',
     visible: true,
   }
 );
@@ -41,7 +43,7 @@ const { showConfirmDialog } = useConfirmDialog();
 const { showAlertDialog } = useAlertDialog();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
-const isEditing = computed(() => !!props.commandToEdit);
+const isEditing = computed(() => !!(props.commandToEdit && props.commandToEdit.id > 0));
 const isSubmitting = ref(false);
 const commandError = ref<string | null>(null);
 
@@ -79,6 +81,8 @@ onMounted(() => {
     } else {
       localVariables.value = [];
     }
+  } else if (props.initialCommand) {
+    formData.command = props.initialCommand;
   }
 });
 
