@@ -12,9 +12,6 @@
             <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.terminalGroupTitle', '终端与控制台') }}
             </h3>
-            <p class="text-sm text-text-secondary mt-1">
-              {{ $t('settings.workspace.terminalGroupDesc', '控制终端输出缓冲区、鼠标右键交互、选中文本复制与命令同步') }}
-            </p>
           </div>
         </div>
       </div>
@@ -22,12 +19,12 @@
         <!-- 终端回滚行数 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="terminalScrollbackLimitInput" class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ t('settings.terminalScrollback.title', '终端回滚行数') }}
-            </label>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ t('settings.terminalScrollback.limitHint', '设置终端保留的最大输出行数。0 或留空表示无限制 (使用默认值 5000)。') }}
-            </p>
+            <div class="flex items-center gap-1.5">
+              <label for="terminalScrollbackLimitInput" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                {{ t('settings.terminalScrollback.title', '终端回滚行数') }}
+              </label>
+              <HelpTooltip :text="t('settings.terminalScrollback.limitHint', '设置终端保留的最大输出行数。0 表示无限制 (使用默认值 5000)。此设置将在下次打开终端时生效。')" />
+            </div>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <div class="relative flex items-center">
@@ -55,12 +52,12 @@
         <div class="px-6 py-4.5 flex flex-col gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="flex-1 pr-2">
-              <label for="terminalRightClickBehaviorSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
-                {{ $t('settings.workspace.terminalRightClickBehaviorTitle', '终端鼠标右键交互') }}
-              </label>
-              <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-                {{ $t('settings.workspace.terminalRightClickBehaviorDescription', '自定义在终端中点击鼠标右键的操作。未选中文本时直接粘贴剪贴板内容，选中文本时触发所选行为。') }}
-              </p>
+              <div class="flex items-center gap-1.5">
+                <label for="terminalRightClickBehaviorSelect" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                  {{ $t('settings.workspace.terminalRightClickBehaviorTitle', '终端鼠标右键交互') }}
+                </label>
+                <HelpTooltip :text="$t('settings.workspace.terminalRightClickBehaviorDescription', '自定义在终端中点击鼠标右键的操作。未选中文本时直接粘贴剪贴板内容，选中文本时触发所选行为。')" />
+              </div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <select
@@ -130,12 +127,12 @@
         <!-- 松开鼠标时自动复制选中文本 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.autoCopyOnSelect.title') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.autoCopyOnSelect.title') }}
+              </span>
+              <HelpTooltip :text="$t('settings.autoCopyOnSelect.enableLabel')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.autoCopyOnSelect.enableLabel') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!autoCopySuccess && autoCopyMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -153,12 +150,12 @@
         <!-- 不换行 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.terminalNoWrapTitle', '不换行') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.terminalNoWrapTitle', '不换行') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!terminalNoWrapSuccess && terminalNoWrapMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -177,12 +174,12 @@
         <!-- 命令输入同步目标 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="commandInputSyncTargetSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.commandInputSync.title', '命令输入同步') }}
-            </label>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.commandInputSync.description', '将命令输入框的内容实时同步到所选面板的搜索框。') }}
-            </p>
+            <div class="flex items-center gap-1.5">
+              <label for="commandInputSyncTargetSelect" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                {{ $t('settings.commandInputSync.title', '命令输入同步') }}
+              </label>
+              <HelpTooltip :text="$t('settings.commandInputSync.description', '将命令输入框的内容实时同步到所选面板的搜索框。')" />
+            </div>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <select
@@ -216,9 +213,6 @@
             <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.fileManagerGroupTitle', '文件管理与代码编辑') }}
             </h3>
-            <p class="text-sm text-text-secondary mt-1">
-              {{ $t('settings.workspace.fileManagerGroupDesc', '配置文件编辑器展现形态、弹窗模式、多会话标签共享与防误触确认') }}
-            </p>
           </div>
         </div>
       </div>
@@ -226,12 +220,12 @@
         <!-- 弹窗编辑器 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.popupEditor.title') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.popupEditor.title') }}
+              </span>
+              <HelpTooltip :text="$t('settings.popupEditor.enableLabel')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.popupEditor.enableLabel') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!popupEditorSuccess && popupEditorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -249,12 +243,12 @@
         <!-- 弹窗文件管理器 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ t('settings.popupFileManager.title') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ t('settings.popupFileManager.title') }}
+              </span>
+              <HelpTooltip :text="t('settings.popupFileManager.enableLabel')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ t('settings.popupFileManager.enableLabel') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!showPopupFileManagerSuccess && showPopupFileManagerMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -272,12 +266,12 @@
         <!-- 共享编辑器标签页 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.shareEditorTabs.title') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.shareEditorTabs.title') }}
+              </span>
+              <HelpTooltip :text="$t('settings.shareEditorTabs.description')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.shareEditorTabs.description') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!shareTabsSuccess && shareTabsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -295,12 +289,12 @@
         <!-- 文件管理器删除确认 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!fileManagerShowDeleteConfirmationSuccess && fileManagerShowDeleteConfirmationMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -318,12 +312,12 @@
         <!-- 双击打开文件/文件夹 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.fileManagerDoubleClickToOpenTitle', '双击打开文件/文件夹') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.fileManagerDoubleClickToOpenTitle', '双击打开文件/文件夹') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!fileManagerDoubleClickToOpenSuccess && fileManagerDoubleClickToOpenMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -342,12 +336,12 @@
         <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊，移动端自适应) -->
         <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.markdownDefaultViewModeTitle', 'Markdown 默认视图模式') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.markdownDefaultViewModeTitle', 'Markdown 默认视图模式') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.markdownDefaultViewModeDescription', '分别配置桌面端与移动端打开 Markdown 文件时的默认显示模式')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.markdownDefaultViewModeDescription', '分别配置桌面端与移动端打开 Markdown 文件时的默认显示模式') }}
-            </p>
           </div>
           <div class="w-full sm:w-auto flex flex-col gap-3 shrink-0">
             <!-- 桌面端设置胶囊 -->
@@ -415,9 +409,6 @@
             <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.viewGroupTitle', '工作区与侧边栏视图') }}
             </h3>
-            <p class="text-sm text-text-secondary mt-1">
-              {{ $t('settings.workspace.viewGroupDesc', '定制侧边栏抽屉交互、连接列表标签过滤与快捷指令标签展示') }}
-            </p>
           </div>
         </div>
       </div>
@@ -425,12 +416,12 @@
         <!-- 侧边栏持久化/固定行为 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.sidebarPersistentTitle') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.sidebarPersistentTitle') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.sidebarPersistentDescription')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.sidebarPersistentDescription') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!workspaceSidebarPersistentSuccess && workspaceSidebarPersistentMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -448,12 +439,12 @@
         <!-- 显示连接标签 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!showConnectionTagsSuccess && showConnectionTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -471,12 +462,12 @@
         <!-- 显示快捷指令标签 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!showQuickCommandTagsSuccess && showQuickCommandTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -504,9 +495,6 @@
             <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
               {{ $t('settings.workspace.monitoringGroupTitle', '系统监控与容器服务') }}
             </h3>
-            <p class="text-sm text-text-secondary mt-1">
-              {{ $t('settings.workspace.monitoringGroupDesc', '管理服务器实时性能指标刷新频率、IP 暴露以及 Docker 容器状态监控') }}
-            </p>
           </div>
         </div>
       </div>
@@ -514,12 +502,12 @@
         <!-- 状态监视器 IP 显示 (纯开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}
+              </span>
+              <HelpTooltip :text="$t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址') }}
-            </p>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <span v-if="!statusMonitorShowIpSuccess && statusMonitorShowIpMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
@@ -538,12 +526,12 @@
         <!-- 状态监视器刷新间隔 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="statusMonitorInterval" class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ t('settings.statusMonitor.title') }}
-            </label>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ t('settings.statusMonitor.refreshIntervalHint') }}
-            </p>
+            <div class="flex items-center gap-1.5">
+              <label for="statusMonitorInterval" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                {{ t('settings.statusMonitor.title') }}
+              </label>
+              <HelpTooltip :text="t('settings.statusMonitor.refreshIntervalHint')" />
+            </div>
           </div>
           <div class="flex items-center gap-3 shrink-0">
             <div class="relative flex items-center">
@@ -570,12 +558,12 @@
         <!-- Docker 设置 (刷新间隔 + 开关) -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <div class="text-[15px] sm:text-base font-medium text-foreground">
-              {{ t('settings.docker.title') }}
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ t('settings.docker.title') }}
+              </span>
+              <HelpTooltip :text="t('settings.docker.refreshIntervalHint')" />
             </div>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ t('settings.docker.refreshIntervalHint') }}
-            </p>
           </div>
           <div class="flex flex-wrap items-center gap-4 shrink-0">
             <div class="flex items-center gap-2">
@@ -624,6 +612,7 @@ import { storeToRefs } from 'pinia';
 import { useWorkspaceSettings } from '../../composables/settings/useWorkspaceSettings';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
 import ToggleSwitch from '../common/ToggleSwitch.vue';
+import HelpTooltip from '../common/HelpTooltip.vue';
 
 const settingsStore = useSettingsStore();
 const { settings } = storeToRefs(settingsStore);
