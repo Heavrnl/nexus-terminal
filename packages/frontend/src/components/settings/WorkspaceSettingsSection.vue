@@ -287,63 +287,66 @@
           </div>
         </div>
 
-        <!-- Markdown 默认视图模式 (桌面端) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+        <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊) -->
+        <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
-            <label for="markdownDefaultViewModeSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.markdownDefaultViewModeTitle', 'Markdown 默认视图模式 (桌面端)') }}
-            </label>
+            <div class="text-[15px] sm:text-base font-medium text-foreground block">
+              {{ $t('settings.workspace.markdownDefaultViewModeTitle', 'Markdown 默认视图模式') }}
+            </div>
             <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.markdownDefaultViewModeDescription', '设置在桌面端打开 Markdown 文件时的默认显示模式') }}
+              {{ $t('settings.workspace.markdownDefaultViewModeDescription', '分别配置桌面端与移动端打开 Markdown 文件时的默认显示模式') }}
             </p>
           </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!markdownDefaultViewModeSuccess && markdownDefaultViewModeMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ markdownDefaultViewModeMessage }}
-            </span>
-            <select
-              id="markdownDefaultViewModeSelect"
-              v-model="markdownDefaultViewModeLocal"
-              :disabled="markdownDefaultViewModeLoading"
-              @change="handleUpdateMarkdownDefaultViewMode"
-              class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer disabled:opacity-50"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/\x3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
-            >
-              <option value="preview">{{ $t('settings.workspace.markdownViewModePreview', '预览模式') }}</option>
-              <option value="split">{{ $t('settings.workspace.markdownViewModeSplit', '一半代码一半预览') }}</option>
-              <option value="edit">{{ $t('settings.workspace.markdownViewModeEdit', '代码界面') }}</option>
-            </select>
-          </div>
-        </div>
+          <div class="flex flex-col gap-2.5 shrink-0">
+            <!-- 桌面端设置胶囊 -->
+            <div class="flex items-center gap-2.5">
+              <span class="text-xs font-semibold text-text-secondary w-14 shrink-0 flex items-center gap-1.5">
+                <i class="fas fa-desktop text-xs opacity-75"></i>
+                <span>{{ $t('settings.workspace.deviceDesktop', '桌面端') }}</span>
+              </span>
+              <div class="inline-flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none">
+                <button
+                  v-for="opt in markdownViewModeOptions"
+                  :key="'desktop-' + opt.value"
+                  type="button"
+                  :disabled="markdownDefaultViewModeLoading"
+                  @click="handleSelectMarkdownDefaultViewMode(opt.value)"
+                  class="h-7.5 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50"
+                  :class="markdownDefaultViewModeLocal === opt.value
+                    ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
+                    : 'text-text-secondary hover:text-foreground hover:bg-muted/40'"
+                  :title="opt.label"
+                >
+                  <i :class="[opt.icon, 'text-xs']"></i>
+                  <span>{{ opt.label }}</span>
+                </button>
+              </div>
+            </div>
 
-        <!-- Markdown 默认视图模式 (移动端) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <label for="markdownDefaultViewModeMobileSelect" class="text-[15px] sm:text-base font-medium text-foreground block">
-              {{ $t('settings.workspace.markdownDefaultViewModeMobileTitle', 'Markdown 默认视图模式 (移动端)') }}
-            </label>
-            <p class="text-sm text-text-secondary mt-1.5 leading-relaxed">
-              {{ $t('settings.workspace.markdownDefaultViewModeMobileDescription', '设置在移动设备上打开 Markdown 文件时的默认显示模式') }}
-            </p>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!markdownDefaultViewModeMobileSuccess && markdownDefaultViewModeMobileMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ markdownDefaultViewModeMobileMessage }}
-            </span>
-            <select
-              id="markdownDefaultViewModeMobileSelect"
-              v-model="markdownDefaultViewModeMobileLocal"
-              :disabled="markdownDefaultViewModeMobileLoading"
-              @change="handleUpdateMarkdownDefaultViewModeMobile"
-              class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer disabled:opacity-50"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/\x3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
-            >
-              <option value="preview">{{ $t('settings.workspace.markdownViewModePreview', '预览模式') }}</option>
-              <option value="split">{{ $t('settings.workspace.markdownViewModeSplit', '一半代码一半预览') }}</option>
-              <option value="edit">{{ $t('settings.workspace.markdownViewModeEdit', '代码界面') }}</option>
-            </select>
+            <!-- 移动端设置胶囊 -->
+            <div class="flex items-center gap-2.5">
+              <span class="text-xs font-semibold text-text-secondary w-14 shrink-0 flex items-center gap-1.5">
+                <i class="fas fa-mobile-alt text-xs opacity-75"></i>
+                <span>{{ $t('settings.workspace.deviceMobile', '移动端') }}</span>
+              </span>
+              <div class="inline-flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none">
+                <button
+                  v-for="opt in markdownViewModeOptions"
+                  :key="'mobile-' + opt.value"
+                  type="button"
+                  :disabled="markdownDefaultViewModeMobileLoading"
+                  @click="handleSelectMarkdownDefaultViewModeMobile(opt.value)"
+                  class="h-7.5 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50"
+                  :class="markdownDefaultViewModeMobileLocal === opt.value
+                    ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
+                    : 'text-text-secondary hover:text-foreground hover:bg-muted/40'"
+                  :title="opt.label"
+                >
+                  <i :class="[opt.icon, 'text-xs']"></i>
+                  <span>{{ opt.label }}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -562,6 +565,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useSettingsStore } from '../../stores/settings.store';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
@@ -648,6 +652,24 @@ const {
   markdownDefaultViewModeMobileSuccess,
   handleUpdateMarkdownDefaultViewModeMobile,
 } = workspaceSettings;
+
+const markdownViewModeOptions = computed(() => [
+  { value: 'preview' as const, label: t('settings.workspace.markdownViewModePreview', '预览模式'), icon: 'fas fa-eye' },
+  { value: 'split' as const, label: t('settings.workspace.markdownViewModeSplit', '一半代码一半预览'), icon: 'fas fa-columns' },
+  { value: 'edit' as const, label: t('settings.workspace.markdownViewModeEdit', '代码界面'), icon: 'fas fa-code' },
+]);
+
+const handleSelectMarkdownDefaultViewMode = async (mode: 'preview' | 'split' | 'edit') => {
+  if (markdownDefaultViewModeLocal.value === mode) return;
+  markdownDefaultViewModeLocal.value = mode;
+  await handleUpdateMarkdownDefaultViewMode();
+};
+
+const handleSelectMarkdownDefaultViewModeMobile = async (mode: 'preview' | 'split' | 'edit') => {
+  if (markdownDefaultViewModeMobileLocal.value === mode) return;
+  markdownDefaultViewModeMobileLocal.value = mode;
+  await handleUpdateMarkdownDefaultViewModeMobile();
+};
 
 const {
   statusMonitorIntervalLocal,
