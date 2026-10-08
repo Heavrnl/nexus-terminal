@@ -12,12 +12,14 @@ const props = defineProps<{
   searchQuery: string;
   isSearchActive: boolean;
   isCompactMode?: boolean;
+  showDirectoryTree?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
   (e: 'toggle-compact-mode'): void;
+  (e: 'toggle-directory-tree'): void;
   (e: 'cd-to-terminal'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
@@ -246,6 +248,17 @@ defineExpose({
           :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
         >
           <i class="fas fa-terminal text-xs"></i>
+        </button>
+
+        <!-- 切换目录树显示按钮 -->
+        <button
+          type="button"
+          class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 flex-shrink-0"
+          :class="showDirectoryTree ? 'bg-primary/20 text-primary font-medium' : 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'"
+          @click.stop="emit('toggle-directory-tree')"
+          :title="showDirectoryTree ? t('fileManager.actions.hideDirectoryTree', '隐藏目录树') : t('fileManager.actions.showDirectoryTree', '显示目录树')"
+        >
+          <i class="fas fa-sitemap text-xs"></i>
         </button>
 
         <!-- 分隔微线 -->

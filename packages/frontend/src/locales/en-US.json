@@ -471,8 +471,12 @@
       "openEditor": "Open Editor",
       "copyPath": "Copy Path",
       "reloadRemote": "Reload from Remote",
-      "overwriteRemote": "Overwrite Remote"
+      "overwriteRemote": "Overwrite Remote",
+      "toggleDirectoryTree": "Toggle Directory Tree",
+      "showDirectoryTree": "Show Directory Tree",
+      "hideDirectoryTree": "Hide Directory Tree"
     },
+    "directoryTree": "Directory Tree",
     "conflictWarning": "File has been modified remotely. Local unsaved changes exist.",
     "conflictReloadTooltip": "Discard local changes and load latest remote content",
     "conflictOverwriteTooltip": "Overwrite remote file with local changes",

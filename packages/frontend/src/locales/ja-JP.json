@@ -400,8 +400,12 @@
       "uploadFile": "ファイルをアップロード",
       "copyPath": "パスをコピー",
       "reloadRemote": "リモート内容で再読み込み",
-      "overwriteRemote": "リモートに上書き保存"
+      "overwriteRemote": "リモートに上書き保存",
+      "toggleDirectoryTree": "ディレクトリツリーの切り替え",
+      "showDirectoryTree": "ディレクトリツリーを表示",
+      "hideDirectoryTree": "ディレクトリツリーを非表示"
     },
+    "directoryTree": "ディレクトリツリー",
     "conflictWarning": "ファイルが端末またはリモートで変更されています。未保存の変更があります。",
     "conflictReloadTooltip": "ローカルの変更を破棄して、最新のリモート内容を読み込みます",
     "conflictOverwriteTooltip": "ローカルの変更でリモートファイルを強制的に上書き保存します",

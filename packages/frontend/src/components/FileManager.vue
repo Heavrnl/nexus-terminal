@@ -22,6 +22,7 @@ import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
 import FileManagerHeader from './FileManagerHeader.vue';
 import FileManagerBreadcrumbs from './FileManagerBreadcrumbs.vue';
+import DirectoryTree from './DirectoryTree.vue';
 import MobileFileManagerList from './MobileFileManagerList.vue';
 import MobileFileActionSheet from './MobileFileActionSheet.vue';
 import type { FileListItem } from '../types/sftp.types';
@@ -119,6 +120,63 @@ const {
   fileManagerShowDeleteConfirmationBoolean,
   fileManagerDoubleClickToOpenBoolean,
 } = storeToRefs(settingsStore);
+
+// --- 纯目录树导航窗格状态 ---
+const LS_SHOW_DIRECTORY_TREE_KEY = 'file_manager_show_directory_tree';
+const LS_DIRECTORY_TREE_WIDTH_KEY = 'file_manager_directory_tree_width';
+
+const showDirectoryTree = ref<boolean>(
+  typeof localStorage !== 'undefined'
+    ? localStorage.getItem(LS_SHOW_DIRECTORY_TREE_KEY) === 'true'
+    : false
+);
+
+const directoryTreeWidth = ref<number>(
+  typeof localStorage !== 'undefined'
+    ? parseInt(localStorage.getItem(LS_DIRECTORY_TREE_WIDTH_KEY) || '220', 10) || 220
+    : 220
+);
+
+const isResizingTree = ref(false);
+
+const toggleDirectoryTree = () => {
+  showDirectoryTree.value = !showDirectoryTree.value;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LS_SHOW_DIRECTORY_TREE_KEY, String(showDirectoryTree.value));
+  }
+};
+
+const handleTreeSelectDirectory = (path: string) => {
+  if (currentSftpManager.value) {
+    currentSftpManager.value.loadDirectory(path);
+  }
+};
+
+const startTreeResize = (e: MouseEvent) => {
+  e.preventDefault();
+  isResizingTree.value = true;
+  const startX = e.clientX;
+  const startWidth = directoryTreeWidth.value;
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    if (!isResizingTree.value) return;
+    const delta = moveEvent.clientX - startX;
+    const newWidth = Math.max(140, Math.min(480, startWidth + delta));
+    directoryTreeWidth.value = newWidth;
+  };
+
+  const onMouseUp = () => {
+    isResizingTree.value = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LS_DIRECTORY_TREE_WIDTH_KEY, String(directoryTreeWidth.value));
+    }
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
 
 // --- UI 状态 Refs ---
 const headerRef = ref<InstanceType<typeof FileManagerHeader> | null>(null);
@@ -1076,9 +1134,11 @@ defineExpose({ focusSearchInput, startPathEdit });
       :is-mobile="props.isMobile"
       :is-multi-select-mode="isMultiSelectMode"
       :is-compact-mode="isCompactMode"
+      :show-directory-tree="showDirectoryTree"
       :show-popup-file-editor="showPopupFileEditorBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
+      @toggle-directory-tree="toggleDirectoryTree"
       @cd-to-terminal="sendCdCommandToTerminal"
       @open-popup-editor="openPopupEditor"
       @upload-files="triggerFileUpload"
@@ -1140,18 +1200,39 @@ defineExpose({ focusSearchInput, startPathEdit });
 
       <!-- 桌面端表格视图与拖拽层 -->
       <template v-else>
-      <!-- 跨窗格拖拽到当前目录的放置提示 (不受内部滚动条影响，吸附在视口正中) -->
-      <div
-        v-if="isContainerDropTarget"
-        class="absolute inset-0 z-40 flex items-center justify-center bg-primary/10 pointer-events-none border-2 border-dashed border-primary/60 rounded-md backdrop-blur-[0.5px]"
-      >
-        <div class="px-3.5 py-1.5 rounded-lg bg-header/95 border border-primary/40 text-foreground text-xs font-medium shadow-xl flex items-center gap-2">
-          <i class="fas fa-file-import text-primary animate-bounce"></i>
-          <span>松开移动到当前目录</span>
-        </div>
-      </div>
+        <div class="flex-1 min-h-0 flex relative overflow-hidden">
+          <!-- 左侧纯目录树导航窗格 -->
+          <DirectoryTree
+            v-if="showDirectoryTree"
+            :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+            :is-connected="Boolean(props.wsDeps.isConnected.value)"
+            :sftp-manager="currentSftpManager"
+            :width="directoryTreeWidth"
+            @select-directory="handleTreeSelectDirectory"
+          />
 
-      <!-- File List Container -->
+          <!-- 拖拽调整宽度的竖线分割条 -->
+          <div
+            v-if="showDirectoryTree"
+            class="w-1 bg-border/60 hover:bg-primary transition-colors cursor-col-resize z-20 flex-shrink-0"
+            :class="{ 'bg-primary': isResizingTree }"
+            @mousedown="startTreeResize"
+          ></div>
+
+          <!-- 右侧表格主体区域 -->
+          <div class="flex-1 min-w-0 flex flex-col relative overflow-hidden">
+            <!-- 跨窗格拖拽到当前目录的放置提示 (不受内部滚动条影响，吸附在视口正中) -->
+            <div
+              v-if="isContainerDropTarget"
+              class="absolute inset-0 z-40 flex items-center justify-center bg-primary/10 pointer-events-none border-2 border-dashed border-primary/60 rounded-md backdrop-blur-[0.5px]"
+            >
+              <div class="px-3.5 py-1.5 rounded-lg bg-header/95 border border-primary/40 text-foreground text-xs font-medium shadow-xl flex items-center gap-2">
+                <i class="fas fa-file-import text-primary animate-bounce"></i>
+                <span>松开移动到当前目录</span>
+              </div>
+            </div>
+
+            <!-- File List Container -->
       <div
         ref="fileListContainerRef"
         class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable] transition-colors duration-150"
@@ -1340,7 +1421,9 @@ defineExpose({ focusSearchInput, startPathEdit });
           </tbody>
         </table>
         <!-- Removed separate loading/empty divs -->
-     </div>
+      </div>
+          </div>
+        </div>
       </template>
     </div>
 

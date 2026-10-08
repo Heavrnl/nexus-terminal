@@ -472,8 +472,12 @@
       "openEditor": "打开编辑器",
       "copyPath": "复制路径",
       "reloadRemote": "以远端内容载入",
-      "overwriteRemote": "覆盖保存到远端"
+      "overwriteRemote": "覆盖保存到远端",
+      "toggleDirectoryTree": "切换目录树",
+      "showDirectoryTree": "显示目录树",
+      "hideDirectoryTree": "隐藏目录树"
     },
+    "directoryTree": "目录树",
     "conflictWarning": "文件已在终端或远端被修改，本地有未保存内容。",
     "conflictReloadTooltip": "放弃本地未保存更改，拉取远端最新内容",
     "conflictOverwriteTooltip": "将本地修改强制保存并覆盖远端",
