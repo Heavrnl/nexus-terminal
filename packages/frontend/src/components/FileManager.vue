@@ -284,6 +284,28 @@ const handleSort = (key: keyof FileListItem | 'type' | 'size' | 'mtime') => {
 };
 
 
+// --- 桌面端行级加载与导航反馈状态 ---
+// 正在导航进入的目标条目名称（如 '..' 或具体文件夹名称）
+const navigatingTargetName = ref<string | null>(null);
+
+// 监听路径变动：清空当前条目导航状态
+watch(
+  () => currentSftpManager.value?.currentPath.value,
+  () => {
+    navigatingTargetName.value = null;
+  }
+);
+
+// 监听全局加载状态变动：加载完成后清空导航状态
+watch(
+  () => currentSftpManager.value?.isLoading.value,
+  (loading) => {
+    if (!loading) {
+      navigatingTargetName.value = null;
+    }
+  }
+);
+
 // --- 列表项点击与选择逻辑 (使用 Composable) ---
 // 定义单击时的动作回调 (移到 Selection 实例化之前)
 const handleItemAction = (item: FileListItem) => {
@@ -305,6 +327,7 @@ const handleItemAction = (item: FileListItem) => {
 
 
       if (targetType === 'directory') {
+        navigatingTargetName.value = originalLinkItem.filename;
         currentSftpManager.value.loadDirectory(realPath);
       } else if (targetType === 'file') {
         const targetFilename = realPath.substring(realPath.lastIndexOf('/') + 1) || originalLinkItem.filename; // Get filename from realPath
@@ -399,6 +422,7 @@ const handleItemAction = (item: FileListItem) => {
     if (currentSftpManager.value.isLoading.value) {
       return;
     }
+    navigatingTargetName.value = item.filename;
     const newPath = item.filename === '..'
       ? currentSftpManager.value.currentPath.value.substring(0, currentSftpManager.value.currentPath.value.lastIndexOf('/')) || '/'
       : currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
@@ -1348,24 +1372,32 @@ defineExpose({ focusSearchInput, startPathEdit });
             </tr>
           </thead>
 
-          <!-- Loading State -->
-          <tbody v-if="!currentSftpManager || currentSftpManager.isLoading.value">
+          <!-- 首次冷启动加载状态 (仅在初次加载且列表完全为空时展示，避免闪烁) -->
+          <tbody v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0">
               <tr>
-                  <td :colspan="5" class="px-4 py-6 text-center text-text-secondary italic">
-                    {{ t('fileManager.loading') }}
+                  <td :colspan="5" class="px-4 py-16 text-center">
+                    <div class="inline-flex flex-col items-center justify-center gap-2.5 text-text-secondary">
+                      <i class="fas fa-circle-notch fa-spin text-xl text-primary"></i>
+                      <span class="text-xs font-medium">{{ t('fileManager.loading', '正在加载文件列表...') }}</span>
+                    </div>
                   </td>
               </tr>
           </tbody>
 
-          <!-- File List State -->
-          <tbody v-else>
+          <!-- 正常文件列表渲染 (切换与进入文件夹时保留原有条目，绝不整体消失) -->
+          <tbody
+            v-else
+            :class="{
+              'pointer-events-none': currentSftpManager?.isLoading.value
+            }"
+          >
             <!-- '..' Entry (固定顶部，直观返回：只要当前不是根目录，即便空文件夹也常驻保留) -->
             <tr v-if="hasParentLink"
                 class="transition-colors duration-150 cursor-pointer select-none"
                 :class="{
-                    'bg-primary/10': selectedIndex === 0,
+                    'bg-primary/10': navigatingTargetName === '..' || selectedIndex === 0,
                     'outline-dashed outline-2 outline-offset-[-1px] outline-primary': dragOverTarget === '..',
-                    'hover:bg-header/50': dragOverTarget !== '..'
+                    'hover:bg-header/50': dragOverTarget !== '..' && navigatingTargetName !== '..'
                 }"
                 @click="handleItemClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @dblclick="handleItemDoubleClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
@@ -1376,7 +1408,16 @@ defineExpose({ focusSearchInput, startPathEdit });
                 :data-filename="'..'"
                 >
               <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                <i class="fas fa-level-up-alt text-primary" :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
+                <i
+                  v-if="navigatingTargetName === '..'"
+                  class="fas fa-circle-notch fa-spin text-primary fa-fw"
+                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                ></i>
+                <i
+                  v-else
+                  class="fas fa-level-up-alt text-primary fa-fw"
+                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                ></i>
               </td>
               <td class="border-b border-border align-middle" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">..</td>
               <td class="border-b border-border align-middle"></td>
@@ -1406,8 +1447,11 @@ defineExpose({ focusSearchInput, startPathEdit });
                   class="transition-colors duration-150 select-none"
                   :class="[
                       { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
-                      { 'bg-primary text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) },
-                      { 'hover:bg-header/50': !(selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) },
+                      navigatingTargetName === item.filename
+                        ? 'bg-primary/10 text-foreground'
+                        : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                          ? 'bg-primary text-white'
+                          : 'hover:bg-header/50',
                       { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                   ]"
                  :data-filename="item.filename"
@@ -1416,18 +1460,25 @@ defineExpose({ focusSearchInput, startPathEdit });
                  @dragleave="handleDragLeaveRow(item)"
                  @drop.prevent="handleDropOnRow(item, $event)">
                 <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                  <i :class="[
-                    'transition-colors duration-150',
-                    item.attrs.isDirectory
-                      ? 'fas fa-folder text-primary'
-                      : item.attrs.isSymbolicLink
-                        ? 'fas fa-link text-cyan-500'
-                        : `${getFileIconClass(item.filename)} text-text-secondary`,
-                    {
-                      'text-white': selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)
-                    }
-                  ]"
-                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
+                  <i
+                    v-if="navigatingTargetName === item.filename"
+                    class="fas fa-circle-notch fa-spin text-primary fa-fw"
+                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                  ></i>
+                  <i
+                    v-else
+                    :class="[
+                      'fa-fw transition-colors duration-150',
+                      item.attrs.isDirectory
+                        ? 'fas fa-folder text-primary'
+                        : item.attrs.isSymbolicLink
+                          ? 'fas fa-link text-cyan-500'
+                          : `${getFileIconClass(item.filename)} text-text-secondary`,
+                      {
+                        'text-white': navigatingTargetName !== item.filename && (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                      }
+                    ]"
+                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
                 </td>
                 <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
                 <td class="border-b border-border truncate align-middle" :class="[
