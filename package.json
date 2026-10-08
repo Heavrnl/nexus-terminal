@@ -1,6 +1,6 @@
 {
   "name": "nexus-terminal",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "main": "index.js",
   "private": true,
   "workspaces": [
