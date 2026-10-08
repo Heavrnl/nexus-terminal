@@ -8,6 +8,8 @@ export interface ColumnWidths {
   modified: number;
 }
 
+export type ColumnKey = keyof ColumnWidths;
+
 export function useFileManagerColumnResize(
   initialWidths?: Partial<ColumnWidths>,
   onResizeEnd?: () => void
@@ -23,6 +25,7 @@ export function useFileManagerColumnResize(
 
   const isResizing = ref(false);
   const resizingColumnIndex = ref(-1);
+  const resizingColumnKey = ref<keyof ColumnWidths | null>(null);
   const startX = ref(0);
   const startWidth = ref(0);
 
@@ -32,11 +35,11 @@ export function useFileManagerColumnResize(
   };
 
   const handleResize = (event: MouseEvent) => {
-    if (!isResizing.value || resizingColumnIndex.value < 0) return;
+    if (!isResizing.value) return;
     const currentX = event.clientX;
     const diffX = currentX - startX.value;
     const newWidth = Math.max(30, startWidth.value + diffX);
-    const colKey = getColumnKeyByIndex(resizingColumnIndex.value);
+    const colKey = resizingColumnKey.value ?? getColumnKeyByIndex(resizingColumnIndex.value);
     if (colKey) {
       colWidths.value[colKey] = newWidth;
     }
@@ -46,6 +49,7 @@ export function useFileManagerColumnResize(
     if (isResizing.value) {
       isResizing.value = false;
       resizingColumnIndex.value = -1;
+      resizingColumnKey.value = null;
       document.removeEventListener('mousemove', handleResize);
       document.removeEventListener('mouseup', stopResize);
       document.body.style.cursor = '';
@@ -54,13 +58,21 @@ export function useFileManagerColumnResize(
     }
   };
 
-  const startResize = (event: MouseEvent, index: number) => {
+  const startResize = (event: MouseEvent, target: keyof ColumnWidths | number) => {
     event.stopPropagation();
     event.preventDefault();
     isResizing.value = true;
-    resizingColumnIndex.value = index;
     startX.value = event.clientX;
-    const colKey = getColumnKeyByIndex(index);
+    let colKey: keyof ColumnWidths | null = null;
+    if (typeof target === 'string') {
+      colKey = target;
+      resizingColumnKey.value = target;
+      resizingColumnIndex.value = -1;
+    } else {
+      resizingColumnIndex.value = target;
+      colKey = getColumnKeyByIndex(target);
+      resizingColumnKey.value = colKey;
+    }
     if (colKey) {
       startWidth.value = colWidths.value[colKey];
     } else {
@@ -88,6 +100,7 @@ export function useFileManagerColumnResize(
     colWidths,
     isResizing,
     resizingColumnIndex,
+    resizingColumnKey,
     startResize,
     cleanup,
   };

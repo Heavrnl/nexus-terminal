@@ -118,7 +118,7 @@ export const useComponentStateStore = defineStore('componentState', () => {
    * @param activeInstanceIds 当前存活的 instanceId 集合
    * @param prefixes 需要受检的前缀列表，如 ['qc_view_mode', 'tree_show_files']
    */
-  const cleanupOrphanedStates = async (activeInstanceIds: Set<string>, prefixes: string[] = ['qc_view_mode', 'tree_show_files']) => {
+  const cleanupOrphanedStates = async (activeInstanceIds: Set<string>, prefixes: string[] = ['qc_view_mode', 'tree_show_files', 'fm_view_mode', 'fm_col_order']) => {
     const keysToDelete: string[] = [];
 
     for (const key of Object.keys(states.value)) {

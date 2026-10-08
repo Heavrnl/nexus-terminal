@@ -476,7 +476,11 @@
       "showDirectoryTree": "Show Directory Tree",
       "hideDirectoryTree": "Hide Directory Tree",
       "showFiles": "Show Files",
-      "hideFiles": "Directories Only"
+      "hideFiles": "Directories Only",
+      "switchToTileView": "Switch to tile view",
+      "switchToListView": "Switch to list view",
+      "tileView": "Tile view",
+      "listView": "List view"
     },
     "directoryTree": "Directory Tree",
     "fileTree": "File Tree",

@@ -405,7 +405,11 @@
       "showDirectoryTree": "ディレクトリツリーを表示",
       "hideDirectoryTree": "ディレクトリツリーを非表示",
       "showFiles": "ファイルを表示",
-      "hideFiles": "ディレクトリのみ表示"
+      "hideFiles": "ディレクトリのみ表示",
+      "switchToTileView": "タイル表示に切り替え",
+      "switchToListView": "リスト表示に切り替え",
+      "tileView": "タイル表示",
+      "listView": "リスト表示"
     },
     "directoryTree": "ディレクトリツリー",
     "fileTree": "ファイルツリー",

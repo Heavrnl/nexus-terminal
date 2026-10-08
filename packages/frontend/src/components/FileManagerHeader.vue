@@ -14,6 +14,7 @@ const props = defineProps<{
   isSearchActive: boolean;
   isCompactMode?: boolean;
   showDirectoryTree?: boolean;
+  viewMode?: 'list' | 'tile';
 }>();
 
 const emit = defineEmits<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   (e: 'update:isSearchActive', value: boolean): void;
   (e: 'toggle-compact-mode'): void;
   (e: 'toggle-directory-tree'): void;
+  (e: 'toggle-view-mode'): void;
   (e: 'cd-to-terminal'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
@@ -160,6 +162,17 @@ defineExpose({
           :title="showDirectoryTree ? t('fileManager.actions.hideDirectoryTree', '隐藏目录树') : t('fileManager.actions.showDirectoryTree', '显示目录树')"
         >
           <i class="fas fa-sitemap text-xs"></i>
+        </button>
+
+        <!-- 切换平铺/列表视图按钮 -->
+        <button
+          type="button"
+          class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 flex-shrink-0"
+          :class="viewMode === 'tile' ? 'bg-primary/20 text-primary font-medium' : 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'"
+          @click.stop="emit('toggle-view-mode')"
+          :title="viewMode === 'list' ? t('fileManager.actions.switchToTileView', '切换到平铺视图') : t('fileManager.actions.switchToListView', '切换到列表视图')"
+        >
+          <i :class="viewMode === 'tile' ? 'fas fa-table-cells-large text-xs' : 'fas fa-list text-xs'"></i>
         </button>
 
         <!-- 分隔微线 -->

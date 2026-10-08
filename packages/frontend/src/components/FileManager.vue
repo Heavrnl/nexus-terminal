@@ -30,7 +30,14 @@ import type { WebSocketMessage } from '../types/websocket.types';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
-
+import { useComponentStateStore } from '../stores/componentState.store';
+import { useLayoutStore } from '../stores/layout.store';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import {
+  useFileManagerColumnReorder,
+  COLUMN_CONFIG_MAP,
+  type FileManagerColumnKey,
+} from '../composables/file-manager/useFileManagerColumnReorder';
 
 type SftpManagerInstance = ReturnType<typeof createSftpActionsManager>;
 
@@ -144,6 +151,51 @@ const toggleDirectoryTree = () => {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(LS_SHOW_DIRECTORY_TREE_KEY, String(showDirectoryTree.value));
   }
+};
+
+// --- 平铺与列表视图状态 (跟随唯一组件实例隔离 + 分端 + 后端持久化存储) ---
+const { isMobile: isMobileDevice } = useDeviceDetection();
+const isMobileComputed = computed(() => props.isMobile || isMobileDevice.value || (typeof window !== 'undefined' && window.innerWidth < 768));
+const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? 'mobile' : 'desktop');
+
+const componentStateStore = useComponentStateStore();
+const layoutStore = useLayoutStore();
+
+const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${props.instanceId || 'default'}`);
+
+const viewMode = ref<'list' | 'tile'>(
+  componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, 'list')
+);
+
+watch(viewModeStorageKey, (newKey) => {
+  viewMode.value = componentStateStore.getState<'list' | 'tile'>(newKey, 'list');
+});
+
+watch(() => componentStateStore.isLoaded, () => {
+  viewMode.value = componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, viewMode.value);
+});
+
+const toggleViewMode = () => {
+  const nextMode = viewMode.value === 'list' ? 'tile' : 'list';
+  viewMode.value = nextMode;
+  componentStateStore.setState(viewModeStorageKey.value, nextMode);
+};
+
+// 预定义返回上级目录虚拟项目
+const parentDirectoryItem: FileListItem = {
+  filename: '..',
+  longname: '..',
+  attrs: {
+    isDirectory: true,
+    isFile: false,
+    isSymbolicLink: false,
+    size: 0,
+    uid: 0,
+    gid: 0,
+    mode: 0,
+    atime: 0,
+    mtime: 0,
+  },
 };
 
 const handleTreeSelectDirectory = (path: string) => {
@@ -282,6 +334,23 @@ const handleSort = (key: keyof FileListItem | 'type' | 'size' | 'mtime') => {
         sortDirection.value = 'asc';
     }
 };
+
+// --- 表头列顺序及长按拖拽重排 ---
+const {
+  columnOrder,
+  isDraggingColumn,
+  dragSourceCol,
+  dragOverCol,
+  dropPosition,
+  dragMouseX,
+  dragMouseY,
+  handleHeaderPointerDown,
+} = useFileManagerColumnReorder({
+  instanceId: props.instanceId,
+  componentStateStore,
+  isResizing,
+  onSort: (key) => handleSort(key),
+});
 
 
 // --- 桌面端行级加载与导航反馈状态 ---
@@ -788,14 +857,28 @@ const {
   // 当 Enter 键按下时，模拟鼠标单击
   onEnterPress: (item) => handleItemClick(new MouseEvent('click'), item),
   onScrollToIndex: (index) => {
-    if (hasParentLink.value) {
-      if (index === 0) {
-        if (fileListContainerRef.value) fileListContainerRef.value.scrollTop = 0;
+    if (viewMode.value === 'list') {
+      if (hasParentLink.value) {
+        if (index === 0) {
+          if (fileListContainerRef.value) fileListContainerRef.value.scrollTop = 0;
+        } else {
+          virtualScrollToIndex(index - 1);
+        }
       } else {
-        virtualScrollToIndex(index - 1);
+        virtualScrollToIndex(index);
       }
     } else {
-      virtualScrollToIndex(index);
+      nextTick(() => {
+        const container = fileListContainerRef.value;
+        if (!container) return;
+        const cards = container.querySelectorAll('[data-filename]');
+        if (cards[index]) {
+          (cards[index] as HTMLElement).scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+          });
+        }
+      });
     }
   },
 });
@@ -836,8 +919,7 @@ const saveLayoutSettings = () => {
 
 // --- 生命周期钩子 ---
 onMounted(() => {
-    // --- 移除 onMounted 中的加载逻辑 ---
-    // Initial load logic is handled by watchEffect below and the main sftp loading watchEffect
+  componentStateStore.initialize();
 });
 
 // +++ 使用 watchEffect 响应式地加载和应用布局设置 +++
@@ -1069,6 +1151,21 @@ onBeforeUnmount(() => {
   }
   unregisterPathFocusAction = null;
   sessionStore.removeSftpManager(props.sessionId, props.instanceId);
+
+  // 当检测不到该文件管理器组件存在于布局中时，移除该存储项（独立实例垃圾回收）
+  const instance = props.instanceId;
+  const permanentList = ['modal', 'default', 'sidebar-left', 'sidebar-right'];
+  if (instance && !permanentList.includes(instance)) {
+    try {
+      const activeIds = layoutStore.getAllActivePaneIds ? layoutStore.getAllActivePaneIds() : new Set<string>();
+      if (!activeIds.has(instance)) {
+        void componentStateStore.removeState(`fm_view_mode:desktop:${instance}`);
+        void componentStateStore.removeState(`fm_view_mode:mobile:${instance}`);
+      }
+    } catch (e) {
+      console.warn('[FileManager] 卸载时清理组件状态失败:', e);
+    }
+  }
 });
 
 // +++ 监听蒙版可见性，动态调整高度 +++
@@ -1217,7 +1314,7 @@ defineExpose({ focusSearchInput, startPathEdit });
 </script>
 
 <template>
-  <div class="flex flex-col h-full min-h-0 overflow-hidden bg-background text-foreground text-sm font-sans">
+  <div class="flex flex-col h-full min-h-0 overflow-hidden bg-background text-foreground text-sm">
     <!-- 隐藏文件上传 input（由 Header 或拖拽触发） -->
     <input type="file" ref="fileInputRef" @change="handleFileSelected" multiple class="hidden" />
 
@@ -1231,10 +1328,12 @@ defineExpose({ focusSearchInput, startPathEdit });
       :is-multi-select-mode="isMultiSelectMode"
       :is-compact-mode="isCompactMode"
       :show-directory-tree="showDirectoryTree"
+      :view-mode="viewMode"
       :show-popup-file-editor="showPopupFileEditorBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
       @toggle-directory-tree="toggleDirectoryTree"
+      @toggle-view-mode="toggleViewMode"
       @cd-to-terminal="sendCdCommandToTerminal"
       @open-popup-editor="openPopupEditor"
       @upload-files="triggerFileUpload"
@@ -1271,7 +1370,7 @@ defineExpose({ focusSearchInput, startPathEdit });
           type="text"
           v-model="searchQuery"
           :placeholder="`在 ${currentDirectoryName} 中搜索文件...`"
-          class="w-full h-7 bg-background border border-border/70 rounded-md pl-8 pr-7 text-xs text-foreground placeholder:text-text-secondary/50 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-sans"
+          class="w-full h-7 bg-background border border-border/70 rounded-md pl-8 pr-7 text-xs text-foreground placeholder:text-text-secondary/50 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
           data-focus-id="fileManagerSearch"
           @keyup.esc="closeDesktopSearch"
           @keydown="handleKeydown"
@@ -1412,59 +1511,68 @@ defineExpose({ focusSearchInput, startPathEdit });
           {{ t('fileManager.dropFilesHere', 'Drop files here to upload') }}
         </div>
 
-        <!-- File Table -->
-        <table ref="tableRef" class="w-full border-collapse table-fixed border-border rounded" :class="{'pointer-events-none': showExternalDropOverlay}" @contextmenu.prevent>
+        <!-- File Table (List View) -->
+        <table v-if="viewMode === 'list'" ref="tableRef" class="w-full border-collapse table-fixed border-border rounded" :class="{'pointer-events-none': showExternalDropOverlay}" @contextmenu.prevent>
             <colgroup>
-                 <col :style="{ width: `${colWidths.type}px` }">
-                <col :style="{ width: `${colWidths.name}px` }">
-                <col :style="{ width: `${colWidths.size}px` }">
-                <col :style="{ width: `${colWidths.permissions}px` }">
-                <col :style="{ width: `${colWidths.modified}px` }">
+                <col v-for="colKey in columnOrder" :key="colKey" :style="{ width: `${colWidths[colKey]}px` }">
            </colgroup>
-          <thead class="sticky top-0 z-10 bg-header select-none">
+          <thead class="sticky top-0 z-10 bg-header border-b border-border select-none">
             <tr>
               <th
-                @click="handleSort('type')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
-                :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }"
+                v-for="(colKey, colIndex) in columnOrder"
+                :key="colKey"
+                :data-col-key="colKey"
+                @pointerdown="handleHeaderPointerDown($event, colKey, COLUMN_CONFIG_MAP[colKey].sortKey)"
+                class="group relative text-left text-xs font-medium text-text-secondary select-none whitespace-nowrap bg-header"
+                :class="[
+                  COLUMN_CONFIG_MAP[colKey].sortKey ? 'cursor-pointer' : 'cursor-default',
+                  isDraggingColumn && dragSourceCol === colKey ? 'opacity-40' : ''
+                ]"
+                :style="{
+                  padding: colKey === 'type'
+                    ? `calc(0.4rem * var(--row-size-multiplier)) calc(0.5rem * var(--row-size-multiplier)) calc(0.4rem * var(--row-size-multiplier)) calc(1rem * var(--row-size-multiplier))`
+                    : `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`
+                }"
               >
-                {{ t('fileManager.headers.type') }}
-                <span v-if="sortKey === 'type'" class="ml-1">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
-                <span class="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-primary/20" @mousedown.prevent="startResize($event, 0)" @click.stop></span>
-              </th>
-              <th
-                @click="handleSort('filename')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
-                :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
-              >
-                {{ t('fileManager.headers.name') }}
-                <span v-if="sortKey === 'filename'" class="ml-1">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
-                <span class="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-primary/20" @mousedown.prevent="startResize($event, 1)" @click.stop></span>
-              </th>
-              <th
-                @click="handleSort('size')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
-                :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
-              >
-                {{ t('fileManager.headers.size') }}
-                <span v-if="sortKey === 'size'" class="ml-1">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
-                <span class="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-primary/20" @mousedown.prevent="startResize($event, 2)" @click.stop></span>
-              </th>
-              <th
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider select-none whitespace-nowrap"
-                :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
-              >
-                {{ t('fileManager.headers.permissions') }}
-                <span class="absolute top-0 right-[-3px] w-1.5 h-full cursor-col-resize z-20 hover:bg-primary/20" @mousedown.prevent="startResize($event, 3)" @click.stop></span>
-              </th>
-              <th
-                @click="handleSort('mtime')"
-                class="relative px-2 py-1 border-b-2 border-border text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer select-none hover:bg-black/5 whitespace-nowrap"
-                :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))` }"
-              >
-                {{ t('fileManager.headers.modified') }}
-                <span v-if="sortKey === 'mtime'" class="ml-1">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
-                <!-- No resizer on the last column -->
+                <!-- 拖拽重排插入指示竖线 (根据 dropPosition 显示在左侧或右侧) -->
+                <div
+                  v-if="isDraggingColumn && dragOverCol === colKey && dragSourceCol !== colKey"
+                  class="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
+                  :class="dropPosition === 'before' ? 'left-0' : 'right-0'"
+                ></div>
+
+                <div
+                  class="inline-flex items-center gap-1.5 transition-colors group-hover:text-foreground"
+                  :class="COLUMN_CONFIG_MAP[colKey].sortKey && sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-foreground' : 'text-text-secondary'"
+                >
+                  <span>{{ t(COLUMN_CONFIG_MAP[colKey].labelKey) }}</span>
+                  <span
+                    v-if="COLUMN_CONFIG_MAP[colKey].sortKey"
+                    class="inline-flex items-center text-[10px] transition-all duration-150"
+                    :class="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-primary opacity-100 scale-100' : 'text-text-secondary/40 opacity-0 group-hover:opacity-100 scale-90'"
+                  >
+                    <i
+                      v-if="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey"
+                      class="fas"
+                      :class="sortDirection === 'asc' ? 'fa-arrow-up-long' : 'fa-arrow-down-long'"
+                    ></i>
+                    <i
+                      v-else
+                      class="fas fa-sort"
+                    ></i>
+                  </span>
+                </div>
+
+                <!-- 列宽调整手柄 (不是最后一列时显示) -->
+                <div
+                  v-if="colIndex < columnOrder.length - 1"
+                  class="absolute top-1/2 -translate-y-1/2 right-0 w-2.5 h-full flex items-center justify-center cursor-col-resize z-20 group/resizer"
+                  @mousedown.stop.prevent="startResize($event, colKey)"
+                  @pointerdown.stop
+                  @click.stop
+                >
+                  <div class="w-px h-3 bg-border/40 group-hover/resizer:bg-primary group-hover/resizer:h-full transition-all duration-150"></div>
+                </div>
               </th>
             </tr>
           </thead>
@@ -1472,7 +1580,7 @@ defineExpose({ focusSearchInput, startPathEdit });
           <!-- 首次冷启动加载状态 (仅在初次加载且列表完全为空时展示，避免闪烁) -->
           <tbody v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0">
               <tr>
-                  <td :colspan="5" class="px-4 py-16 text-center">
+                  <td :colspan="columnOrder.length" class="px-4 py-16 text-center">
                     <div class="inline-flex flex-col items-center justify-center gap-2.5 text-text-secondary">
                       <i class="fas fa-circle-notch fa-spin text-xl text-primary"></i>
                       <span class="text-xs font-medium">{{ t('fileManager.loading', '正在加载文件列表...') }}</span>
@@ -1504,27 +1612,27 @@ defineExpose({ focusSearchInput, startPathEdit });
                 @drop.prevent="handleDropOnRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
                 :data-filename="'..'"
                 >
-              <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                <i
-                  v-if="navigatingTargetName === '..'"
-                  class="fas fa-circle-notch fa-spin text-primary fa-fw"
-                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
-                ></i>
-                <i
-                  v-else
-                  class="fas fa-level-up-alt text-primary fa-fw"
-                  :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
-                ></i>
-              </td>
-              <td class="border-b border-border align-middle" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">..</td>
-              <td class="border-b border-border align-middle"></td>
-              <td class="border-b border-border align-middle"></td>
-              <td class="border-b border-border align-middle"></td>
+              <template v-for="colKey in columnOrder" :key="colKey">
+                <td v-if="colKey === 'type'" class="text-center border-b border-border/30 align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
+                  <i
+                    v-if="navigatingTargetName === '..'"
+                    class="fas fa-circle-notch fa-spin text-primary fa-fw"
+                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                  ></i>
+                  <i
+                    v-else
+                    class="fas fa-level-up-alt text-primary fa-fw"
+                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                  ></i>
+                </td>
+                <td v-else-if="colKey === 'name'" class="border-b border-border/30 align-middle" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">..</td>
+                <td v-else class="border-b border-border/30 align-middle"></td>
+              </template>
             </tr>
 
             <!-- Empty Directory / No Search Results Row (空文件夹或搜索无结果时在 .. 之下展示提示) -->
             <tr v-if="filteredFileList.length === 0">
-              <td :colspan="5" class="px-4 py-8 text-center text-text-secondary italic">
+              <td :colspan="columnOrder.length" class="px-4 py-8 text-center text-text-secondary italic">
                 {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}
               </td>
             </tr>
@@ -1533,7 +1641,7 @@ defineExpose({ focusSearchInput, startPathEdit });
             <template v-else>
               <!-- 虚拟滚动顶部垫片行 -->
               <tr v-if="topPadding > 0" :style="{ height: `${topPadding}px` }">
-                <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+                <td :colspan="columnOrder.length" class="p-0 border-0 pointer-events-none"></td>
               </tr>
 
               <tr v-for="({ item, index }) in visibleItems"
@@ -1556,52 +1664,238 @@ defineExpose({ focusSearchInput, startPathEdit });
                  @dragover.prevent="handleDragOverRow(item, $event)"
                  @dragleave="handleDragLeaveRow(item)"
                  @drop.prevent="handleDropOnRow(item, $event)">
-                <td class="text-center border-b border-border align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
-                  <i
-                    v-if="navigatingTargetName === item.filename"
-                    class="fas fa-circle-notch fa-spin text-primary fa-fw"
-                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
-                  ></i>
-                  <i
-                    v-else
-                    :class="[
-                      'fa-fw transition-colors duration-150',
-                      item.attrs.isDirectory
-                        ? 'fas fa-folder text-primary'
-                        : item.attrs.isSymbolicLink
-                          ? 'fas fa-link text-cyan-500'
-                          : `${getFileIconClass(item.filename)} text-text-secondary`,
-                      {
-                        'text-white': navigatingTargetName !== item.filename && (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
-                      }
-                    ]"
-                    :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
-                </td>
-                <td class="border-b border-border truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
-                <td class="border-b border-border truncate align-middle" :class="[
-                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
-                <td class="border-b border-border truncate font-mono align-middle" :class="[
-                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
-                <td class="border-b border-border truncate align-middle" :class="[
-                  selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
-                ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
+                <template v-for="colKey in columnOrder" :key="colKey">
+                  <td v-if="colKey === 'type'" class="text-center border-b border-border/30 align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
+                    <i
+                      v-if="navigatingTargetName === item.filename"
+                      class="fas fa-circle-notch fa-spin text-primary fa-fw"
+                      :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"
+                    ></i>
+                    <i
+                      v-else
+                      :class="[
+                        'fa-fw transition-colors duration-150',
+                        item.attrs.isDirectory
+                          ? 'fas fa-folder text-primary'
+                          : item.attrs.isSymbolicLink
+                            ? 'fas fa-link text-cyan-500'
+                            : `${getFileIconClass(item.filename)} text-text-secondary`,
+                        {
+                          'text-white': navigatingTargetName !== item.filename && (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                        }
+                      ]"
+                      :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
+                  </td>
+                  <td v-else-if="colKey === 'name'" class="border-b border-border/30 truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
+                  <td v-else-if="colKey === 'size'" class="border-b border-border/30 truncate align-middle" :class="[
+                    selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                  ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
+                  <td v-else-if="colKey === 'permissions'" class="border-b border-border/30 truncate font-mono align-middle" :class="[
+                    selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                  ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileMode(item.attrs.mode) }}</td>
+                  <td v-else-if="colKey === 'modified'" class="border-b border-border/30 truncate align-middle" :class="[
+                    selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
+                  ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ formatFileDate(item.attrs.mtime) }}</td> 
+                </template>
               </tr>
 
               <!-- 虚拟滚动底部垫片行 -->
               <tr v-if="bottomPadding > 0" :style="{ height: `${bottomPadding}px` }">
-                <td :colspan="5" class="p-0 border-0 pointer-events-none"></td>
+                <td :colspan="columnOrder.length" class="p-0 border-0 pointer-events-none"></td>
               </tr>
             </template>
           </tbody>
         </table>
+
+        <!-- 平铺视图 (Tile View) -->
+        <div
+          v-else-if="viewMode === 'tile'"
+          class="p-3 min-h-full select-none"
+          :class="{'pointer-events-none': showExternalDropOverlay}"
+          @contextmenu.prevent
+        >
+          <!-- 首次冷启动加载状态 -->
+          <div
+            v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0"
+            class="py-16 text-center"
+          >
+            <div class="inline-flex flex-col items-center justify-center gap-2.5 text-text-secondary">
+              <i class="fas fa-circle-notch fa-spin text-xl text-primary"></i>
+              <span class="text-xs font-medium">{{ t('fileManager.loading', '正在加载文件列表...') }}</span>
+            </div>
+          </div>
+
+          <!-- 平铺网格卡片容器 -->
+          <div
+            v-else
+            class="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2"
+            :class="{
+              'pointer-events-none': currentSftpManager?.isLoading.value
+            }"
+          >
+            <!-- '..' Entry 返回上一级 -->
+            <div
+              v-if="hasParentLink"
+              class="group flex items-center gap-2.5 px-2.5 py-1.5 h-[52px] rounded-lg border transition-all duration-150 cursor-pointer select-none"
+              :class="[
+                navigatingTargetName === '..' || selectedIndex === 0
+                  ? 'bg-primary/10 border-primary/50 text-foreground'
+                  : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
+                { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': dragOverTarget === '..' }
+              ]"
+              @click="handleItemClick($event, parentDirectoryItem)"
+              @dblclick="handleItemDoubleClick($event, parentDirectoryItem)"
+              @contextmenu.prevent.stop="showContextMenu($event, parentDirectoryItem)"
+              @dragover.prevent="handleDragOverRow(parentDirectoryItem, $event)"
+              @dragleave="handleDragLeaveRow(parentDirectoryItem)"
+              @drop.prevent="handleDropOnRow(parentDirectoryItem, $event)"
+              :data-filename="'..'"
+            >
+              <div class="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary">
+                <i
+                  v-if="navigatingTargetName === '..'"
+                  class="fas fa-circle-notch fa-spin text-base"
+                ></i>
+                <i
+                  v-else
+                  class="fas fa-level-up-alt text-base"
+                ></i>
+              </div>
+              <div class="flex-1 min-w-0 flex flex-col justify-center">
+                <div class="text-xs font-medium leading-snug truncate">..</div>
+                <div class="text-[11px] text-text-secondary/75 leading-tight truncate">
+                  {{ t('fileManager.actions.parentDirectory', '上一级') }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 空文件夹或无搜索结果提示 -->
+            <div
+              v-if="filteredFileList.length === 0"
+              class="col-span-full py-12 text-center text-text-secondary italic text-xs"
+            >
+              {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}
+            </div>
+
+            <!-- 正常文件与文件夹卡片 -->
+            <template v-else>
+              <div
+                v-for="(item, index) in filteredFileList"
+                :key="item.filename"
+                :draggable="item.filename !== '..'"
+                @dragstart="handleDragStart(item, $event)"
+                @dragend="handleDragEnd"
+                @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
+                @dblclick="handleItemDoubleClick($event, item)"
+                @contextmenu.prevent.stop="showContextMenu($event, item)"
+                @dragover.prevent="handleDragOverRow(item, $event)"
+                @dragleave="handleDragLeaveRow(item)"
+                @drop.prevent="handleDropOnRow(item, $event)"
+                class="group flex items-center gap-2.5 px-2.5 py-1.5 h-[52px] rounded-lg border transition-all duration-150 select-none"
+                :class="[
+                  { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
+                  navigatingTargetName === item.filename
+                    ? 'bg-primary/10 border-primary/50 text-foreground'
+                    : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                      ? 'bg-primary text-white border-primary shadow-sm ring-1 ring-primary/40'
+                      : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
+                  { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
+                ]"
+                :data-filename="item.filename"
+                :title="item.filename"
+              >
+                <!-- 左侧大图标容器 -->
+                <div
+                  class="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors duration-150"
+                  :class="[
+                    (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
+                      ? 'bg-white/20 text-white'
+                      : item.attrs.isDirectory
+                        ? 'bg-amber-500/15 text-amber-500'
+                        : item.attrs.isSymbolicLink
+                          ? 'bg-cyan-500/15 text-cyan-500'
+                          : 'bg-black/5 dark:bg-white/5'
+                  ]"
+                >
+                  <i
+                    v-if="navigatingTargetName === item.filename"
+                    class="fas fa-circle-notch fa-spin text-base text-primary"
+                  ></i>
+                  <i
+                    v-else
+                    class="text-base"
+                    :class="[
+                      item.attrs.isDirectory
+                        ? 'fas fa-folder text-amber-500'
+                        : item.attrs.isSymbolicLink
+                          ? 'fas fa-link text-cyan-500'
+                          : `${getFileIconClass(item.filename)} text-text-secondary`,
+                      (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
+                        ? '!text-white'
+                        : ''
+                    ]"
+                  ></i>
+                </div>
+
+                <!-- 右侧双行信息 -->
+                <div class="flex-1 min-w-0 flex flex-col justify-center">
+                  <!-- 文件名 -->
+                  <div
+                    class="text-xs leading-snug truncate"
+                    :class="[
+                      item.attrs.isDirectory ? 'font-medium' : 'font-normal',
+                      (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
+                        ? 'text-white'
+                        : 'text-foreground'
+                    ]"
+                  >
+                    {{ item.filename }}
+                  </div>
+
+                  <!-- 文件属性/大小与修改时间 -->
+                  <div
+                    class="text-[11px] leading-tight truncate mt-0.5 flex items-center gap-1.5"
+                    :class="[
+                      (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
+                        ? 'text-white/80'
+                        : 'text-text-secondary'
+                    ]"
+                  >
+                    <span v-if="item.attrs.isDirectory">
+                      {{ t('fileManager.headers.directory', '文件夹') }}
+                    </span>
+                    <span v-else-if="item.attrs.isFile">
+                      {{ formatFileSize(item.attrs.size) }}
+                    </span>
+                    <span v-else-if="item.attrs.isSymbolicLink">
+                      {{ t('fileManager.headers.symbolicLink', '快捷方式') }}
+                    </span>
+                    <span class="opacity-40 text-[9px]">·</span>
+                    <span class="opacity-75 text-[10px]">{{ formatFileDate(item.attrs.mtime) }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
         <!-- Removed separate loading/empty divs -->
       </div>
           </div>
         </div>
       </template>
     </div>
+
+    <!-- 表头列拖拽浮动徽章跟随鼠标 -->
+    <Teleport to="body">
+      <div
+        v-if="isDraggingColumn && dragSourceCol"
+        class="fixed pointer-events-none z-[9999] px-2.5 py-1 rounded bg-primary text-white text-xs font-medium shadow-xl flex items-center gap-1.5 opacity-90 -translate-x-1/2 -translate-y-1/2 select-none"
+        :style="{ left: `${dragMouseX}px`, top: `${dragMouseY}px` }"
+      >
+        <i class="fas fa-arrows-alt-h text-[10px] opacity-75"></i>
+        <span>{{ t(COLUMN_CONFIG_MAP[dragSourceCol].labelKey) }}</span>
+      </div>
+    </Teleport>
 
      <!-- 使用 FileUploadPopup 组件 -->
      <FileUploadPopup :uploads="uploads" @cancel-upload="cancelUpload" />
