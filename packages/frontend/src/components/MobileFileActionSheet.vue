@@ -5,6 +5,7 @@ import type { FileListItem } from '../types/sftp.types';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -97,52 +98,44 @@ const triggerCdTerminal = () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="isVisible && item"
-        class="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="emit('close')"
-      >
-        <!-- 移动端文件专属 Action Sheet 抽屉 -->
-        <div class="w-full bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
-          <!-- 顶部拖拽手柄指示条 -->
-          <div
-            class="pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="emit('close')"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
+  <MobileBottomSheet
+    :visible="isVisible && !!item"
+    height="h-auto"
+    max-height="max-h-[85vh]"
+    :z-index="60"
+    :show-close-button="false"
+    @close="emit('close')"
+  >
+    <!-- 顶部文件概览卡片 -->
+    <template #sub-header>
+      <div v-if="item" class="px-4 py-3 border-b border-border/40 bg-header/20 flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center shrink-0 shadow-2xs">
+          <i
+            :class="[
+              isDirectory ? 'fas fa-folder text-amber-400 text-2xl' :
+              isSymlink ? 'fas fa-link text-cyan-400 text-2xl' :
+              `${getFileIconClass(item.filename)} text-2xl`
+            ]"
+          ></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h4 class="text-sm font-bold text-foreground break-all line-clamp-1 tracking-tight">
+            {{ item.filename }}
+          </h4>
+          <div class="flex items-center gap-2 text-[11px] text-text-secondary mt-0.5 flex-wrap">
+            <span v-if="isFile" class="font-mono">{{ formatFileSize(item.attrs.size) }}</span>
+            <span v-else class="text-primary font-medium">文件夹</span>
+            <span>•</span>
+            <span class="font-mono">{{ formatFileDate(item.attrs.mtime) }}</span>
+            <span>•</span>
+            <span class="font-mono font-medium">{{ formatFileMode(item.attrs.mode) }}</span>
           </div>
+        </div>
+      </div>
+    </template>
 
-          <!-- 顶部文件概览卡片 -->
-          <div class="px-4 py-3 border-b border-border/40 bg-header/20 flex items-center gap-3">
-            <div class="w-12 h-12 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center shrink-0 shadow-2xs">
-              <i
-                :class="[
-                  isDirectory ? 'fas fa-folder text-amber-400 text-2xl' :
-                  isSymlink ? 'fas fa-link text-cyan-400 text-2xl' :
-                  `${getFileIconClass(item.filename)} text-2xl`
-                ]"
-              ></i>
-            </div>
-            <div class="min-w-0 flex-1">
-              <h4 class="text-sm font-bold text-foreground break-all line-clamp-1 tracking-tight">
-                {{ item.filename }}
-              </h4>
-              <div class="flex items-center gap-2 text-[11px] text-text-secondary mt-0.5 flex-wrap">
-                <span v-if="isFile" class="font-mono">{{ formatFileSize(item.attrs.size) }}</span>
-                <span v-else class="text-primary font-medium">文件夹</span>
-                <span>•</span>
-                <span class="font-mono">{{ formatFileDate(item.attrs.mtime) }}</span>
-                <span>•</span>
-                <span class="font-mono font-medium">{{ formatFileMode(item.attrs.mode) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 操作选项网格 (大拇指友好大触控热区) -->
-          <div class="p-4 overflow-y-auto space-y-1.5 max-h-[60vh] overscroll-contain">
+    <!-- 操作选项网格 (大拇指友好大触控热区) -->
+    <div v-if="item" class="p-4 overflow-y-auto space-y-1.5 max-h-[60vh] overscroll-contain">
             <!-- 1. 打开编辑 (仅常规文件) -->
             <button
               v-if="isFile"
@@ -310,24 +303,10 @@ const triggerCdTerminal = () => {
             </button>
             <div class="sheet-safe-bottom"></div>
           </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-  transform: translateY(100%);
-}
-
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
 }

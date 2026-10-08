@@ -6,13 +6,17 @@ import { useAddConnectionForm } from '../composables/useAddConnectionForm';
 import MobileConnectionFormBasicInfo from './connection/mobile/MobileConnectionFormBasicInfo.vue';
 import MobileConnectionFormAuth from './connection/mobile/MobileConnectionFormAuth.vue';
 import MobileConnectionFormAdvanced from './connection/mobile/MobileConnectionFormAdvanced.vue';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 import { getTranslation } from '../utils/languageUtils';
 
 // 定义 Props 与 Emits
 interface Props {
   connectionToEdit: ConnectionInfo | null;
+  visible?: boolean;
 }
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  visible: true,
+});
 const emit = defineEmits(['close', 'connection-added', 'connection-updated', 'connection-deleted']);
 
 const { t, locale } = useI18n();
@@ -53,65 +57,49 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-    @click.self="emit('close')"
+  <MobileBottomSheet
+    :visible="props.visible"
+    height="h-[92vh]"
+    max-height="max-h-[92vh]"
+    @close="emit('close')"
   >
-    <div
-      class="mobile-form-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text"
-    >
-      <!-- 1. 顶部手柄条与导航栏 -->
-      <div class="shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
-        <!-- 顶部拖拽手柄条 -->
-        <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
-
-        <div class="flex items-center justify-between">
-          <!-- 左侧收起按钮 (统一采用快捷指令面板移动端收起样式) -->
-          <button
-            type="button"
-            @click="emit('close')"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-            :title="t('common.close', '收起')"
-            :aria-label="t('common.close', '收起')"
-          >
-            <i class="fas fa-chevron-down text-sm"></i>
-          </button>
-
-          <!-- 居中标题与协议徽章 -->
-          <div class="flex items-center gap-1.5 min-w-0 px-1">
-            <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[140px]">
-              {{ formTitle }}
-            </span>
-            <span
-              class="px-1.5 py-0.5 rounded text-[10px] uppercase font-mono font-bold tracking-wider shrink-0"
-              :class="formData.type === 'RDP'
-                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                : formData.type === 'VNC'
-                  ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
-                  : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'"
-            >
-              {{ formData.type }}
-            </span>
-          </div>
-
-          <!-- 右侧快捷保存按钮 -->
-          <button
-            type="button"
-            @click="handleSubmit"
-            :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span>{{ isEditMode ? t('common.save', '保存') : t('common.add', '添加') }}</span>
-          </button>
-        </div>
+    <!-- 顶栏左侧标题与协议徽章 -->
+    <template #header-left>
+      <div class="flex items-center gap-1.5 min-w-0">
+        <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[150px]">
+          {{ formTitle }}
+        </span>
+        <span
+          class="px-1.5 py-0.5 rounded text-[10px] uppercase font-mono font-bold tracking-wider shrink-0"
+          :class="formData.type === 'RDP'
+            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+            : formData.type === 'VNC'
+              ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+              : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'"
+        >
+          {{ formData.type }}
+        </span>
       </div>
+    </template>
 
-      <!-- 2. 表单滚动主体 (移动端卡片化深度适配) -->
-      <div class="flex-grow overflow-y-auto px-3.5 py-3.5 space-y-3.5 overscroll-contain">
+    <!-- 顶栏右侧快捷保存按钮 -->
+    <template #header-actions>
+      <button
+        type="button"
+        @click="handleSubmit"
+        :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+        class="px-3 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+      >
+        <svg v-if="isLoading" class="animate-spin h-3.5 w-3.5 text-current shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>{{ isEditMode ? t('common.save', '保存') : t('common.add', '添加') }}</span>
+      </button>
+    </template>
+
+    <!-- 2. 表单滚动主体 (移动端卡片化深度适配) -->
+    <div class="flex-grow overflow-y-auto px-3.5 py-3.5 space-y-3.5 overscroll-contain select-text">
         <template v-if="!isScriptModeActive">
           <!-- 基本信息卡片 -->
           <MobileConnectionFormBasicInfo :form-data="formData" />
@@ -235,6 +223,5 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
         <!-- 底部安全留白垫高 -->
         <div class="h-6 shrink-0"></div>
       </div>
-    </div>
-  </div>
+  </MobileBottomSheet>
 </template>

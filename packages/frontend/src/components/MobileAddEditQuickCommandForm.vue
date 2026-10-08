@@ -9,6 +9,7 @@ import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useAlertDialog } from '../composables/useAlertDialog';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 interface LocalVariable {
   id: string;
@@ -16,9 +17,16 @@ interface LocalVariable {
   value: string;
 }
 
-const props = defineProps<{
-  commandToEdit?: QuickCommandFE | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    commandToEdit?: QuickCommandFE | null;
+    visible?: boolean;
+  }>(),
+  {
+    commandToEdit: null,
+    visible: true,
+  }
+);
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -190,61 +198,38 @@ const handleExecute = () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        class="bottom-sheet-overlay fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="closeForm"
+  <MobileBottomSheet
+    :visible="props.visible"
+    height="h-[85vh]"
+    max-height="max-h-[92vh]"
+    @close="closeForm"
+  >
+    <!-- 顶栏左侧标题与图标 -->
+    <template #header-left>
+      <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+        <i :class="isEditing ? 'fas fa-edit' : 'fas fa-plus'" class="text-sm"></i>
+      </div>
+      <h3 class="text-base font-semibold text-foreground tracking-tight">
+        {{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}
+      </h3>
+    </template>
+
+    <!-- 顶栏右侧快捷保存按钮 -->
+    <template #header-actions>
+      <button
+        type="button"
+        @click="handleSubmit"
+        :disabled="isSubmitting || !!commandError"
+        class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1 cursor-pointer"
+        :title="isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')"
       >
-        <div
-          class="mobile-form-sheet w-full h-[85vh] max-h-[92vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-        >
-          <!-- 顶部拖拽手柄与点击快速收起指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="closeForm"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
+        <i class="fas fa-check text-[11px]"></i>
+        <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
+      </button>
+    </template>
 
-          <!-- 顶栏标题与关闭按钮 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <i :class="isEditing ? 'fas fa-edit' : 'fas fa-plus'" class="text-sm"></i>
-              </div>
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}
-              </h3>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <!-- 快捷保存按钮 -->
-              <button
-                type="button"
-                @click="handleSubmit"
-                :disabled="isSubmitting || !!commandError"
-                class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1 cursor-pointer"
-                :title="isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')"
-              >
-                <i class="fas fa-check text-[11px]"></i>
-                <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
-              </button>
-
-              <!-- 收起按钮 -->
-              <button
-                @click="closeForm"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-                :title="t('close', '收起')"
-              >
-                <i class="fas fa-chevron-down text-sm"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- 移动端表单可滚动内容区 -->
-          <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
+    <!-- 移动端表单可滚动内容区 -->
+    <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
             <!-- 1. 指令内容 (核心必填) -->
             <div>
               <label for="m-qc-command" class="block mb-1.5 text-xs font-semibold text-text-secondary">
@@ -379,38 +364,10 @@ const handleExecute = () => {
               <div class="sheet-safe-bottom"></div>
             </div>
           </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-/* 遮罩淡入淡出动效 */
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-/* 抽屉底部弹性滑入滑出动效 */
-.bottom-sheet-enter-active .mobile-form-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-form-sheet {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-form-sheet,
-.bottom-sheet-leave-to .mobile-form-sheet {
-  transform: translateY(100%);
-}
-
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
 }

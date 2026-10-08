@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 interface TransferSubTask {
   subTaskId: string;
@@ -51,55 +52,37 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="props.visible"
-        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="handleClose"
+  <MobileBottomSheet
+    :visible="props.visible"
+    height="h-[85vh]"
+    max-height="max-h-[85vh]"
+    @close="handleClose"
+  >
+    <template #header-left>
+      <!-- 左侧手动刷新按钮 -->
+      <button
+        type="button"
+        @click="emit('refresh')"
+        :disabled="props.isLoading"
+        class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 disabled:opacity-50 transition-colors -ml-1 cursor-pointer"
+        :title="t('common.refresh', '刷新')"
       >
-        <div class="mobile-transfer-sheet w-full max-h-[85vh] h-[85vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text">
-          <!-- 1. 顶部手柄条与导航栏 -->
-          <div class="flex-shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
-            <!-- 拖拽手柄条 -->
-            <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="handleClose"></div>
+        <i :class="['fas fa-sync-alt text-xs', { 'fa-spin': props.isLoading }]"></i>
+      </button>
 
-            <div class="flex items-center justify-between">
-              <!-- 左侧手动刷新按钮 -->
-              <button
-                type="button"
-                @click="emit('refresh')"
-                :disabled="props.isLoading"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 disabled:opacity-50 transition-colors -ml-1 cursor-pointer"
-                :title="t('common.refresh', '刷新')"
-              >
-                <i :class="['fas fa-sync-alt text-xs', { 'fa-spin': props.isLoading }]"></i>
-              </button>
-
-              <!-- 居中标题与活动任务徽标 -->
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="text-sm font-semibold text-foreground tracking-tight">
-                  {{ t('transferProgressModal.title', '文件传输进度') }}
-                </span>
-                <span
-                  v-if="props.activeTasksCount > 0"
-                  class="px-1.5 py-0.2 rounded-full text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse"
-                >
-                  {{ props.activeTasksCount }} {{ t('transferProgressModal.runningTasks', '进行中') }}
-                </span>
-              </div>
-
-              <!-- 右侧收起按钮 -->
-              <button
-                type="button"
-                @click="handleClose"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground active:bg-border/30 transition-colors -mr-1 cursor-pointer"
-                :title="t('common.close', '收起')"
-              >
-                <i class="fas fa-chevron-down text-sm"></i>
-              </button>
-            </div>
-          </div>
+      <!-- 居中标题与活动任务徽标 -->
+      <div class="flex items-center gap-1.5 min-w-0">
+        <span class="text-sm font-semibold text-foreground tracking-tight">
+          {{ t('transferProgressModal.title', '文件传输进度') }}
+        </span>
+        <span
+          v-if="props.activeTasksCount > 0"
+          class="px-1.5 py-0.2 rounded-full text-[10px] font-medium bg-blue-500/15 text-blue-400 border border-blue-500/30 animate-pulse"
+        >
+          {{ props.activeTasksCount }} {{ t('transferProgressModal.runningTasks', '进行中') }}
+        </span>
+      </div>
+    </template>
 
           <!-- 2. 移动端任务列表区 -->
           <div class="flex-grow overflow-y-auto p-3 space-y-3 overscroll-contain">
@@ -233,40 +216,6 @@ const handleClose = () => {
                 </details>
               </div>
             </div>
-
-            <div class="sheet-safe-bottom shrink-0"></div>
           </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
-
-<style scoped>
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-.bottom-sheet-enter-active .mobile-transfer-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-transfer-sheet {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-transfer-sheet,
-.bottom-sheet-leave-to .mobile-transfer-sheet {
-  transform: translateY(100%);
-}
-
-.sheet-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-}
-</style>

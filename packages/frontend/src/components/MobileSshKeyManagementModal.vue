@@ -4,6 +4,16 @@ import { useI18n } from 'vue-i18n';
 import { useSshKeysStore, type SshKeyBasicInfo, type SshKeyInput } from '../stores/sshKeys.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
+
+const props = withDefaults(
+  defineProps<{
+    visible?: boolean;
+  }>(),
+  {
+    visible: true,
+  }
+);
 
 const emit = defineEmits(['close']);
 
@@ -141,77 +151,58 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-    @click.self="emit('close')"
+  <MobileBottomSheet
+    :visible="props.visible"
+    height="h-[92vh]"
+    max-height="max-h-[92vh]"
+    @close="emit('close')"
   >
-    <div
-      class="mobile-ssh-key-sheet w-full max-h-[92vh] h-[92vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text"
-    >
-      <!-- 1. 吸顶顶栏 -->
-      <div class="shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
-        <!-- 拖拽手柄条 -->
-        <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
-
-        <div class="flex items-center justify-between">
-          <!-- 表单模式：返回列表按钮；列表模式：收起抽屉按钮 (统一快捷指令面板样式) -->
-          <button
-            v-if="isAddEditFormVisible"
-            type="button"
-            @click="cancelForm"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-            :title="t('common.back', '返回列表')"
-            :aria-label="t('common.back', '返回列表')"
-          >
-            <i class="fas fa-chevron-left text-sm"></i>
-          </button>
-          <button
-            v-else
-            type="button"
-            @click="emit('close')"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-            :title="t('common.close', '收起')"
-            :aria-label="t('common.close', '收起')"
-          >
-            <i class="fas fa-chevron-down text-sm"></i>
-          </button>
-
-          <!-- 居中标题 -->
-          <div class="flex items-center gap-1.5 min-w-0 px-2">
-            <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[150px]">
-              {{ isAddEditFormVisible
-                ? (keyToEdit ? t('sshKeys.modal.editTitle', '编辑 SSH 密钥') : t('sshKeys.modal.addTitle', '添加 SSH 密钥'))
-                : t('sshKeys.modal.title', 'SSH 密钥管理') }}
-            </span>
-          </div>
-
-          <!-- 右侧动作按钮：表单模式下为保存；列表模式下为新建 -->
-          <button
-            v-if="isAddEditFormVisible"
-            type="button"
-            @click="handleSubmit"
-            :disabled="isLoading"
-            class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1.5 -mr-1 cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <i v-if="isLoading" class="fas fa-spinner fa-spin text-xs shrink-0"></i>
-            <span>{{ keyToEdit ? t('common.save', '保存') : t('common.add', '添加') }}</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            @click="showAddForm"
-            :disabled="isLoading"
-            class="w-8 h-8 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center justify-center -mr-1 cursor-pointer shrink-0"
-            :title="t('sshKeys.modal.addKey', '新建密钥')"
-            :aria-label="t('sshKeys.modal.addKey', '新建密钥')"
-          >
-            <i class="fas fa-plus text-xs"></i>
-          </button>
-        </div>
+    <!-- 顶栏左侧：如果是编辑模式带返回按钮，否则纯标题 -->
+    <template #header-left>
+      <div class="flex items-center gap-1.5 min-w-0">
+        <button
+          v-if="isAddEditFormVisible"
+          type="button"
+          @click="cancelForm"
+          class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer mr-0.5"
+          :title="t('common.back', '返回列表')"
+        >
+          <i class="fas fa-chevron-left text-sm"></i>
+        </button>
+        <span class="text-sm font-semibold text-foreground tracking-tight truncate max-w-[170px]">
+          {{ isAddEditFormVisible
+            ? (keyToEdit ? t('sshKeys.modal.editTitle', '编辑 SSH 密钥') : t('sshKeys.modal.addTitle', '添加 SSH 密钥'))
+            : t('sshKeys.modal.title', 'SSH 密钥管理') }}
+        </span>
       </div>
+    </template>
 
-      <!-- 2. 内容主体 -->
-      <div class="flex-grow overflow-y-auto px-4 py-3.5 overscroll-contain">
+    <!-- 顶栏右侧动作按钮：表单模式下为保存；列表模式下为新建 -->
+    <template #header-actions>
+      <button
+        v-if="isAddEditFormVisible"
+        type="button"
+        @click="handleSubmit"
+        :disabled="isLoading"
+        class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+      >
+        <i v-if="isLoading" class="fas fa-spinner fa-spin text-xs shrink-0"></i>
+        <span>{{ keyToEdit ? t('common.save', '保存') : t('common.add', '添加') }}</span>
+      </button>
+      <button
+        v-else
+        type="button"
+        @click="showAddForm"
+        :disabled="isLoading"
+        class="w-7 h-7 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all shadow-xs flex items-center justify-center cursor-pointer shrink-0"
+        :title="t('sshKeys.modal.addKey', '新建密钥')"
+      >
+        <i class="fas fa-plus text-xs"></i>
+      </button>
+    </template>
+
+    <!-- 2. 内容主体 -->
+    <div class="flex-grow overflow-y-auto px-4 py-3.5 overscroll-contain select-text">
         <!-- ==================== 视图 A：密钥列表卡片流 ==================== -->
         <div v-if="!isAddEditFormVisible" class="space-y-3 pb-8">
           <div v-if="isLoading && keys.length === 0" class="py-16 text-center text-xs text-text-secondary">
@@ -388,6 +379,5 @@ const handleDelete = async (key: SshKeyBasicInfo) => {
         <!-- 底部手势安全垫高 -->
         <div class="h-6 shrink-0"></div>
       </div>
-    </div>
-  </div>
+  </MobileBottomSheet>
 </template>

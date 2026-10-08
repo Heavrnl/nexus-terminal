@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -132,113 +133,92 @@ const parsePairValues = (rawStr?: string) => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="isVisible"
-        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="handleClose"
+  <MobileBottomSheet
+    :visible="isVisible"
+    height="h-[85vh]"
+    max-height="max-h-[90vh]"
+    @close="handleClose"
+  >
+    <!-- 顶栏左侧标题与计数徽标 -->
+    <template #header-left>
+      <div class="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center shrink-0">
+        <i class="fab fa-docker text-base"></i>
+      </div>
+      <h3 class="text-base font-semibold text-foreground tracking-tight">
+        {{ t('dockerManager.title', 'Docker 管理器') }}
+      </h3>
+      <span
+        v-if="containers.length > 0"
+        class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
       >
-        <!-- 移动端底部滑出面板 (Bottom Sheet) -->
-        <div class="mobile-docker-sheet w-full h-[85vh] max-h-[90vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden">
-          <!-- 顶部拖拽手柄指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="handleClose"
-            title="点击收起"
+        {{ containers.length }}
+      </span>
+    </template>
+
+    <!-- 顶栏右侧自定义操作：手动刷新按钮 -->
+    <template #header-actions>
+      <button
+        @click="refreshContainers"
+        :disabled="isLoading"
+        class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
+        :title="t('common.refresh', '刷新')"
+      >
+        <i :class="['fas fa-sync-alt text-xs', isLoading ? 'fa-spin text-primary' : '']"></i>
+      </button>
+    </template>
+
+    <!-- 辅助顶栏：搜索与状态筛选 -->
+    <template #sub-header>
+      <div class="px-3.5 py-2.5 bg-header/20 border-b border-border/40 shrink-0 space-y-2">
+        <!-- 搜索框 -->
+        <div class="relative flex items-center w-full">
+          <i class="fas fa-search absolute left-3 text-xs text-text-secondary/60 pointer-events-none"></i>
+          <input
+            type="text"
+            v-model="searchQuery"
+            :placeholder="t('dockerManager.searchPlaceholder', '搜索容器名称、镜像或 ID...')"
+            class="w-full pl-8 pr-8 py-1.5 text-xs bg-background border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-mono shadow-2xs"
+          />
+          <button
+            v-if="searchQuery"
+            @click="clearSearch"
+            class="absolute right-2.5 text-text-secondary/60 hover:text-foreground p-0.5 cursor-pointer"
           >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
+            <i class="fas fa-times-circle text-xs"></i>
+          </button>
+        </div>
 
-          <!-- 顶栏标题与操作 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2.5 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center">
-                <i class="fab fa-docker text-base"></i>
-              </div>
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ t('dockerManager.title', 'Docker 管理器') }}
-              </h3>
-              <span
-                v-if="containers.length > 0"
-                class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
-              >
-                {{ containers.length }}
-              </span>
-            </div>
+        <!-- 状态快速筛选药丸组 -->
+        <div class="flex items-center gap-1.5 text-xs">
+          <button
+            @click="statusFilter = 'all'"
+            class="px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer"
+            :class="statusFilter === 'all' ? 'bg-primary text-primary-foreground shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
+          >
+            全部 ({{ containers.length }})
+          </button>
+          <button
+            @click="statusFilter = 'running'"
+            class="px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+            :class="statusFilter === 'running' ? 'bg-emerald-500 text-white shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>运行中 ({{ containers.filter(c => c.State === 'running').length }})</span>
+          </button>
+          <button
+            @click="statusFilter = 'exited'"
+            class="px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+            :class="statusFilter === 'exited' ? 'bg-rose-500 text-white shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+            <span>已停止 ({{ containers.filter(c => c.State !== 'running').length }})</span>
+          </button>
+        </div>
+      </div>
+    </template>
 
-            <div class="flex items-center gap-2">
-              <!-- 手动刷新按钮 -->
-              <button
-                @click="refreshContainers"
-                :disabled="isLoading"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
-                :title="t('common.refresh', '刷新')"
-              >
-                <i :class="['fas fa-sync-alt text-xs', isLoading ? 'fa-spin text-primary' : '']"></i>
-              </button>
-
-              <!-- 收起按钮 -->
-              <button
-                @click="handleClose"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-                :title="t('common.close', '收起')"
-              >
-                <i class="fas fa-chevron-down text-sm"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- 移动端搜索与状态过滤栏 -->
-          <div class="px-3.5 py-2.5 bg-header/20 border-b border-border/40 shrink-0 space-y-2">
-            <!-- 搜索框 -->
-            <div class="relative flex items-center w-full">
-              <i class="fas fa-search absolute left-3 text-xs text-text-secondary/60 pointer-events-none"></i>
-              <input
-                type="text"
-                v-model="searchQuery"
-                :placeholder="t('dockerManager.searchPlaceholder', '搜索容器名称、镜像或 ID...')"
-                class="w-full pl-8 pr-8 py-1.5 text-xs bg-background border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-mono shadow-2xs"
-              />
-              <button
-                v-if="searchQuery"
-                @click="clearSearch"
-                class="absolute right-2.5 text-text-secondary/60 hover:text-foreground p-0.5 cursor-pointer"
-              >
-                <i class="fas fa-times-circle text-xs"></i>
-              </button>
-            </div>
-
-            <!-- 状态快速筛选药丸组 -->
-            <div class="flex items-center gap-1.5 text-xs">
-              <button
-                @click="statusFilter = 'all'"
-                class="px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer"
-                :class="statusFilter === 'all' ? 'bg-primary text-primary-foreground shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
-              >
-                全部 ({{ containers.length }})
-              </button>
-              <button
-                @click="statusFilter = 'running'"
-                class="px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
-                :class="statusFilter === 'running' ? 'bg-emerald-500 text-white shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span>运行中 ({{ containers.filter(c => c.State === 'running').length }})</span>
-              </button>
-              <button
-                @click="statusFilter = 'exited'"
-                class="px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer"
-                :class="statusFilter === 'exited' ? 'bg-rose-500 text-white shadow-2xs' : 'bg-background border border-border/50 text-text-secondary'"
-              >
-                <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                <span>已停止 ({{ containers.filter(c => c.State !== 'running').length }})</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 内容主体可滚动区域 -->
-          <div class="sheet-body flex-grow overflow-y-auto px-3.5 py-3 space-y-3 overscroll-contain">
+    <!-- 内容主体可滚动区域 -->
+    <div class="sheet-body flex-grow overflow-y-auto px-3.5 py-3 space-y-3 overscroll-contain">
             <!-- 异常状态处理 -->
             <!-- 1. 无活动 SSH 会话 -->
             <div
@@ -545,24 +525,10 @@ const parsePairValues = (rawStr?: string) => {
             <!-- 底部安全区垫高 -->
             <div class="sheet-safe-bottom"></div>
           </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-  transform: translateY(100%);
-}
-
 .sheet-safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
 }

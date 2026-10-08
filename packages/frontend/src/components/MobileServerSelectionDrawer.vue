@@ -7,6 +7,7 @@ import { useTagsStore } from '../stores/tags.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { hexToRgba } from '../utils/colorUtils';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 interface Props {
   visible: boolean;
@@ -193,50 +194,28 @@ const handleActionDelete = async () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="props.visible"
-        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs"
-        @click.self="emit('close')"
+  <MobileBottomSheet
+    :visible="props.visible"
+    :title="t('terminalTabBar.selectServerTitle')"
+    height="h-[85vh]"
+    max-height="max-h-[85vh]"
+    @close="emit('close')"
+  >
+    <template #header-actions>
+      <!-- + 新建连接按钮 -->
+      <button
+        class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-1 -mr-1 cursor-pointer"
+        @click="handleRequestAdd"
+        :title="t('connections.addConnection', '添加连接')"
       >
-        <!-- 底部滑出抽屉容器 -->
-        <div class="mobile-server-sheet w-full max-h-[85vh] h-[85vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden">
-          
-          <!-- 1. 顶部拖拽指示条与标题栏 -->
-          <div class="flex-shrink-0 pt-2.5 pb-2 px-4 border-b border-border/40 bg-header/40">
-            <!-- 拖拽手柄条 -->
-            <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="emit('close')"></div>
+        <i class="fas fa-plus text-xs"></i>
+        <span>{{ t('common.add', '新建') }}</span>
+      </button>
+    </template>
 
-            <div class="flex items-center justify-between">
-              <!-- 收起按钮 -->
-              <button
-                class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-border/30 transition-colors -ml-1.5"
-                @click="emit('close')"
-                :title="t('common.close', '关闭')"
-              >
-                <i class="fas fa-chevron-down text-base"></i>
-              </button>
-
-              <!-- 标题 -->
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ t('terminalTabBar.selectServerTitle') }}
-              </h3>
-
-              <!-- + 新建连接按钮 -->
-              <button
-                class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-1 -mr-1"
-                @click="handleRequestAdd"
-                :title="t('connections.addConnection', '添加连接')"
-              >
-                <i class="fas fa-plus text-xs"></i>
-                <span>{{ t('common.add', '新建') }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. 搜索栏 -->
-          <div class="p-3 pb-2 flex-shrink-0 border-b border-border/20 bg-background">
+    <template #sub-header>
+      <!-- 2. 搜索栏 -->
+      <div class="p-3 pb-2 flex-shrink-0 border-b border-border/20 bg-background">
             <div class="relative flex items-center w-full">
               <i class="fas fa-search absolute left-3 text-text-secondary text-xs pointer-events-none"></i>
               <input
@@ -296,9 +275,10 @@ const handleActionDelete = async () => {
               {{ t('workspaceConnectionList.untagged', '未标记') }}
             </button>
           </div>
+        </template>
 
-          <!-- 4. 服务器卡片列表区 -->
-          <div class="flex-grow overflow-y-auto p-3 space-y-2">
+        <!-- 4. 服务器卡片列表区 -->
+        <div class="flex-grow overflow-y-auto p-3 space-y-2">
             <!-- 加载中状态 -->
             <div
               v-if="connectionsLoading && connections.length === 0"
@@ -410,119 +390,70 @@ const handleActionDelete = async () => {
               </div>
             </div>
           </div>
+  </MobileBottomSheet>
 
-          <!-- 底部安全区垫片 -->
-          <div class="sheet-safe-bottom shrink-0 bg-background"></div>
-        </div>
-
-        <!-- 5. 动作面板 (ActionSheet) -->
-        <Transition name="fade">
-          <div
-            v-if="actionSheetTarget"
-            class="fixed inset-0 z-60 flex flex-col justify-end bg-black/60 backdrop-blur-xs"
-            @click.self="closeActionSheet"
-          >
-            <div class="w-full bg-background border-t border-border rounded-t-2xl p-4 space-y-2 shadow-2xl">
-              <div class="text-center pb-2 border-b border-border/30">
-                <p class="font-semibold text-sm text-foreground truncate">{{ actionSheetTarget.name || actionSheetTarget.host }}</p>
-                <p class="text-xs text-text-secondary truncate">{{ actionSheetTarget.host }}</p>
-              </div>
-
-              <div class="space-y-1.5 pt-1">
-                <!-- 立即连接 -->
-                <button
-                  @click="handleSelect(actionSheetTarget.id)"
-                  class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 active:scale-98 transition-all"
-                >
-                  <i class="fas fa-play text-xs w-4 text-center"></i>
-                  <span>{{ t('workspaceConnectionList.connect', '立即连接') }}</span>
-                </button>
-
-                <!-- 编辑配置 -->
-                <button
-                  @click="handleActionEdit"
-                  class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-foreground hover:bg-border/30 active:scale-98 transition-all"
-                >
-                  <i class="fas fa-edit text-xs w-4 text-center text-text-secondary"></i>
-                  <span>{{ t('connections.actions.edit', '编辑配置') }}</span>
-                </button>
-
-                <!-- 复制/克隆 -->
-                <button
-                  @click="handleActionClone"
-                  class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-foreground hover:bg-border/30 active:scale-98 transition-all"
-                >
-                  <i class="fas fa-clone text-xs w-4 text-center text-text-secondary"></i>
-                  <span>{{ t('connections.actions.clone', '克隆副本') }}</span>
-                </button>
-
-                <!-- 删除 -->
-                <button
-                  @click="handleActionDelete"
-                  class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-error hover:bg-error/10 active:scale-98 transition-all"
-                >
-                  <i class="fas fa-trash-alt text-xs w-4 text-center"></i>
-                  <span>{{ t('connections.actions.delete', '删除服务器') }}</span>
-                </button>
-              </div>
-
-              <!-- 取消按钮 -->
-              <div class="pt-2">
-                <button
-                  @click="closeActionSheet"
-                  class="w-full py-2.5 rounded-xl text-sm font-medium text-text-secondary hover:text-foreground bg-input/60 hover:bg-input transition-colors"
-                >
-                  {{ t('common.cancel', '取消') }}
-                </button>
-              </div>
-
-              <div class="sheet-safe-bottom shrink-0"></div>
-            </div>
-          </div>
-        </Transition>
-
+  <!-- 5. 动作面板 (ActionSheet 也采用统一抽屉) -->
+  <MobileBottomSheet
+    :visible="!!actionSheetTarget"
+    :z-index="60"
+    height="auto"
+    max-height="max-h-[70vh]"
+    :show-close-button="false"
+    @close="closeActionSheet"
+  >
+    <div v-if="actionSheetTarget" class="p-4 space-y-2">
+      <div class="text-center pb-2 border-b border-border/30">
+        <p class="font-semibold text-sm text-foreground truncate">{{ actionSheetTarget.name || actionSheetTarget.host }}</p>
+        <p class="text-xs text-text-secondary truncate">{{ actionSheetTarget.host }}</p>
       </div>
-    </Transition>
-  </Teleport>
+
+      <div class="space-y-1.5 pt-1">
+        <!-- 立即连接 -->
+        <button
+          @click="handleSelect(actionSheetTarget.id)"
+          class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 active:scale-98 transition-all cursor-pointer"
+        >
+          <i class="fas fa-play text-xs w-4 text-center"></i>
+          <span>{{ t('workspaceConnectionList.connect', '立即连接') }}</span>
+        </button>
+
+        <!-- 编辑配置 -->
+        <button
+          @click="handleActionEdit"
+          class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-foreground hover:bg-border/30 active:scale-98 transition-all cursor-pointer"
+        >
+          <i class="fas fa-edit text-xs w-4 text-center text-text-secondary"></i>
+          <span>{{ t('connections.actions.edit', '编辑配置') }}</span>
+        </button>
+
+        <!-- 复制/克隆 -->
+        <button
+          @click="handleActionClone"
+          class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-foreground hover:bg-border/30 active:scale-98 transition-all cursor-pointer"
+        >
+          <i class="fas fa-clone text-xs w-4 text-center text-text-secondary"></i>
+          <span>{{ t('connections.actions.clone', '克隆副本') }}</span>
+        </button>
+
+        <!-- 删除 -->
+        <button
+          @click="handleActionDelete"
+          class="w-full py-2.5 px-4 rounded-xl flex items-center gap-3 text-sm font-medium text-error hover:bg-error/10 active:scale-98 transition-all cursor-pointer"
+        >
+          <i class="fas fa-trash-alt text-xs w-4 text-center"></i>
+          <span>{{ t('connections.actions.delete', '删除服务器') }}</span>
+        </button>
+      </div>
+
+      <!-- 取消按钮 -->
+      <div class="pt-2">
+        <button
+          @click="closeActionSheet"
+          class="w-full py-2.5 rounded-xl text-sm font-medium text-text-secondary hover:text-foreground bg-input/60 hover:bg-input transition-colors cursor-pointer"
+        >
+          {{ t('common.cancel', '取消') }}
+        </button>
+      </div>
+    </div>
+  </MobileBottomSheet>
 </template>
-
-<style scoped>
-/* 遮罩淡入淡出动效 */
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-/* 抽屉底部弹性滑入滑出动效 */
-.bottom-sheet-enter-active .mobile-server-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-server-sheet {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-server-sheet,
-.bottom-sheet-leave-to .mobile-server-sheet {
-  transform: translateY(100%);
-}
-
-.sheet-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

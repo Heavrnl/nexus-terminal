@@ -7,6 +7,7 @@ import { useSessionStore } from '../stores/session.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -177,65 +178,40 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="isVisible"
-        class="bottom-sheet-overlay fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="closeModal"
+  <MobileBottomSheet
+    :visible="isVisible"
+    height="h-[72vh]"
+    max-height="max-h-[80vh]"
+    @close="closeModal"
+  >
+    <template #header-left>
+      <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+        <i class="fas fa-history text-sm"></i>
+      </div>
+      <h3 class="text-base font-semibold text-foreground tracking-tight">
+        {{ t('commandHistory.modalTitle', '命令历史') }}
+      </h3>
+      <span
+        v-if="filteredHistory.length > 0"
+        class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
       >
-        <!-- 移动端底部滑出面板 (Bottom Sheet) -->
-        <div
-          class="mobile-history-sheet w-full h-[72vh] max-h-[80vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-        >
-          <!-- 顶部拖拽手柄与点击快速收起指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="closeModal"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
+        {{ filteredHistory.length }}
+      </span>
+    </template>
 
-          <!-- 顶栏标题与操作区 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <i class="fas fa-history text-sm"></i>
-              </div>
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ t('commandHistory.modalTitle', '命令历史') }}
-              </h3>
-              <span
-                v-if="filteredHistory.length > 0"
-                class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
-              >
-                {{ filteredHistory.length }}
-              </span>
-            </div>
+    <template #header-actions>
+      <button
+        v-if="filteredHistory.length > 0"
+        @click="confirmClearAll"
+        class="flex items-center gap-1 px-2.5 py-1 text-xs text-text-secondary hover:text-error hover:bg-error/10 active:scale-95 rounded-lg transition-all cursor-pointer"
+        :title="t('commandHistory.clear', '清空历史')"
+      >
+        <i class="fas fa-trash-alt text-xs"></i>
+        <span>{{ t('commandHistory.clear', '清空') }}</span>
+      </button>
+    </template>
 
-            <div class="flex items-center gap-1.5">
-              <!-- 一键清空 -->
-              <button
-                v-if="filteredHistory.length > 0"
-                @click="confirmClearAll"
-                class="flex items-center gap-1 px-2.5 py-1 text-xs text-text-secondary hover:text-error hover:bg-error/10 active:scale-95 rounded-lg transition-all cursor-pointer"
-                :title="t('commandHistory.clear', '清空历史')"
-              >
-                <i class="fas fa-trash-alt text-xs"></i>
-                <span>{{ t('commandHistory.clear', '清空') }}</span>
-              </button>
-
-              <!-- 收起按钮 -->
-              <button
-                @click="closeModal"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-                :title="t('close', '收起')"
-              >
-                <i class="fas fa-chevron-down text-sm"></i>
-              </button>
-            </div>
-          </div>
+    <template #sub-header>
 
           <!-- 移动端搜索栏 -->
           <div class="sheet-search px-3.5 py-2 bg-background-secondary/20 border-b border-border/40 shrink-0">
@@ -258,8 +234,9 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+        </template>
 
-          <!-- 历史命令列表区域 -->
+        <!-- 历史命令列表区域 -->
           <div
             ref="listContainerRef"
             class="sheet-body flex-grow overflow-y-auto p-3 space-y-2 overscroll-contain"
@@ -355,46 +332,11 @@ onUnmounted(() => {
                 </div>
               </div>
             </template>
-          </div>
-
-          <!-- 底部安全区垫片 -->
-          <div class="sheet-safe-bottom shrink-0"></div>
         </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-/* 遮罩淡入淡出动效 */
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-/* 抽屉底部弹性滑入滑出动效 */
-.bottom-sheet-enter-active .mobile-history-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-history-sheet {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-history-sheet,
-.bottom-sheet-leave-to .mobile-history-sheet {
-  transform: translateY(100%);
-}
-
-.sheet-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-}
-
 .history-card {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }

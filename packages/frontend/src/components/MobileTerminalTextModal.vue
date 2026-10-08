@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useSettingsStore } from '../stores/settings.store';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -291,58 +292,27 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <!-- 1. 独立全屏遮罩 (纯透明度淡入淡出，绝对独立，绝无包含块与位移冲突) -->
-    <Transition name="sheet-mask-fade">
-      <div
-        v-if="isVisible"
-        class="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs select-none"
-        @click="closeModal"
-      />
-    </Transition>
-
-    <!-- 2. 独立底部滑出抽屉 (自身负责滑动，直接定位，Vue原生侦测动画生命周期) -->
-    <Transition name="sheet-panel-slide">
-      <div
-        v-if="isVisible"
-        class="fixed bottom-0 left-0 right-0 z-50 mobile-text-sheet w-full h-[82dvh] max-h-[88vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
+  <MobileBottomSheet
+    :visible="isVisible"
+    height="h-[82dvh]"
+    max-height="max-h-[88vh]"
+    :safe-area-bottom="false"
+    @close="closeModal"
+  >
+    <template #header-left>
+      <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+        <i class="fas fa-copy text-sm"></i>
+      </div>
+      <h3 class="text-base font-semibold text-foreground tracking-tight">
+        {{ t('terminal.bufferText.title', '终端复制') }}
+      </h3>
+      <span
+        v-if="lineCount > 0"
+        class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
       >
-        <!-- 顶部拖拽手柄与点击快速收起指示条 -->
-        <div
-          class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-          @click="closeModal"
-          title="点击收起"
-        >
-          <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-        </div>
-
-        <!-- 顶栏标题与关闭操作 -->
-        <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
-          <div class="flex items-center gap-2">
-            <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-              <i class="fas fa-copy text-sm"></i>
-            </div>
-            <h3 class="text-base font-semibold text-foreground tracking-tight">
-              {{ t('terminal.bufferText.title', '终端复制') }}
-            </h3>
-            <span
-              v-if="lineCount > 0"
-              class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-border/40 text-text-secondary"
-            >
-              {{ lineCount }} {{ t('terminal.bufferText.lines', '行') }}
-            </span>
-          </div>
-
-          <!-- 收起关闭按钮 -->
-          <button
-            type="button"
-            @click="closeModal"
-            class="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-            :title="t('close', '收起')"
-          >
-            <i class="fas fa-times text-base"></i>
-          </button>
-        </div>
+        {{ lineCount }} {{ t('terminal.bufferText.lines', '行') }}
+      </span>
+    </template>
 
         <!-- 原生 HTML 文本内容区域（原生支持长按水滴选择、全选、复制手势） -->
         <div
@@ -458,9 +428,7 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-        </div>
-      </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
@@ -472,32 +440,5 @@ pre, code, mark {
 
 mark {
   transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-/* 1. 遮罩层纯透明度淡入淡出动效 (绝无位移与重排，避免背景闪烁) */
-.sheet-mask-fade-enter-active,
-.sheet-mask-fade-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.sheet-mask-fade-enter-from,
-.sheet-mask-fade-leave-to {
-  opacity: 0;
-}
-
-/* 2. 抽屉面板平滑滑动动效 (直接由抽屉自身承载transform，Vue原生侦测事件结束) */
-.sheet-panel-slide-enter-active {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
-}
-
-.sheet-panel-slide-leave-active {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-  will-change: transform;
-}
-
-.sheet-panel-slide-enter-from,
-.sheet-panel-slide-leave-to {
-  transform: translateY(100%);
 }
 </style>

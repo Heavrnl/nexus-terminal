@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useTerminalHighlightStore } from '../../../stores/terminal-highlight.store';
 import { useUiNotificationsStore } from '../../../stores/uiNotifications.store';
 import MobileSelectDrawer, { type MobileSelectOption } from '../../common/MobileSelectDrawer.vue';
+import MobileBottomSheet from '../../common/MobileBottomSheet.vue';
 import type {
   TerminalHighlightGroup,
   HighlightPriority,
@@ -313,55 +314,45 @@ const handleSave = () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="isVisible"
-        class="fixed inset-0 z-[1050] flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="emit('close')"
+  <MobileBottomSheet
+    :visible="isVisible"
+    height="h-[90vh]"
+    max-height="max-h-[92vh]"
+    :z-index="1050"
+    :show-close-button="false"
+    @close="emit('close')"
+  >
+    <!-- 顶栏左侧返回按钮与标题 -->
+    <template #header-left>
+      <div class="flex items-center gap-1.5 min-w-0">
+        <button
+          type="button"
+          @click="emit('close')"
+          class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer mr-0.5"
+          title="返回"
+        >
+          <i class="fas fa-chevron-left text-sm"></i>
+        </button>
+
+        <h3 class="text-sm font-semibold text-foreground tracking-tight">
+          {{ isEditing ? '编辑高亮规则' : '添加高亮规则' }}
+        </h3>
+      </div>
+    </template>
+
+    <!-- 顶栏右侧保存按钮 -->
+    <template #header-actions>
+      <button
+        type="button"
+        @click="handleSave"
+        class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
       >
-        <!-- 抽屉容器 -->
-        <div class="w-full h-[90vh] max-h-[92vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden select-text text-foreground">
-          <!-- 1. 顶部手柄条与标题栏 -->
-          <div class="sheet-top shrink-0 select-none border-b border-border/40 bg-header/40">
-            <!-- 拖拽指示条 -->
-            <div
-              class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-              @click="emit('close')"
-              title="点击收起"
-            >
-              <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-            </div>
+        保存
+      </button>
+    </template>
 
-            <!-- 顶栏标题与操作 -->
-            <div class="flex items-center justify-between px-4 py-2">
-              <!-- 左侧返回按钮 (统一快捷指令面板幽灵按钮规范) -->
-              <button
-                type="button"
-                @click="emit('close')"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-                title="返回"
-              >
-                <i class="fas fa-chevron-left text-sm"></i>
-              </button>
-
-              <h3 class="text-sm font-semibold text-foreground tracking-tight">
-                {{ isEditing ? '编辑高亮规则' : '添加高亮规则' }}
-              </h3>
-
-              <!-- 右侧保存按钮 -->
-              <button
-                type="button"
-                @click="handleSave"
-                class="px-3.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. 主体可滚动表单区 -->
-          <div class="flex-grow overflow-y-auto px-4 py-3.5 space-y-3.5 overscroll-contain">
+    <!-- 2. 主体可滚动表单区 -->
+    <div class="flex-grow overflow-y-auto px-4 py-3.5 space-y-3.5 overscroll-contain select-text text-foreground">
             <!-- 卡片 A：基本信息 -->
             <div class="bg-header/30 border border-border/50 rounded-2xl p-3.5 space-y-3 shadow-2xs">
               <div class="text-xs font-semibold text-text-secondary">基本信息</div>
@@ -621,30 +612,5 @@ const handleSave = () => {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
-
-<style scoped>
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.25s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-.bottom-sheet-enter-active > div,
-.bottom-sheet-leave-active > div {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-enter-from > div,
-.bottom-sheet-leave-to > div {
-  transform: translateY(100%);
-}
-</style>

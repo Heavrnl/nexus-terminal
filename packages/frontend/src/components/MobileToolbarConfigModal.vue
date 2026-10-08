@@ -2,6 +2,7 @@
 import { ref, computed, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMobileToolbarConfig, type ToolbarItemDefinition } from '../composables/useMobileToolbarConfig';
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -230,67 +231,45 @@ const handleClose = () => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="bottom-sheet">
-      <div
-        v-if="isVisible"
-        class="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="handleClose"
+  <MobileBottomSheet
+    :visible="isVisible"
+    :title="t('mobileToolbar.title', '自定义工具栏')"
+    icon="fas fa-sliders-h"
+    height="h-[85vh]"
+    max-height="max-h-[90vh]"
+    :show-close-button="false"
+    :panel-class="isDragging ? 'touch-none select-none' : ''"
+    @close="handleClose"
+  >
+    <template #header-actions>
+      <!-- 恢复默认 -->
+      <button
+        type="button"
+        @click="resetToDefault"
+        class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground bg-header/60 hover:bg-border/40 border border-border/60 rounded-lg active:scale-95 transition-all cursor-pointer"
+        :title="t('common.resetDefault', '恢复默认')"
       >
-        <div
-          class="mobile-toolbar-sheet w-full h-[85vh] max-h-[90vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-          :class="{ 'touch-none select-none': isDragging }"
-        >
-          <!-- 顶部拖拽手柄指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="handleClose"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
+        <i class="fas fa-undo text-[10px] mr-1"></i>
+        <span>{{ t('common.reset', '重置') }}</span>
+      </button>
 
-          <!-- 顶栏标题与快捷操作 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2.5 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <i class="fas fa-sliders-h text-sm"></i>
-              </div>
-              <div>
-                <h3 class="text-sm font-semibold text-foreground tracking-tight">
-                  {{ t('mobileToolbar.title', '自定义工具栏') }}
-                </h3>
-              </div>
-            </div>
+      <!-- 完成按钮 -->
+      <button
+        type="button"
+        @click="handleClose"
+        class="px-3 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
+      >
+        {{ t('common.done', '完成') }}
+      </button>
+    </template>
 
-            <div class="flex items-center gap-2">
-              <!-- 恢复默认 -->
-              <button
-                type="button"
-                @click="resetToDefault"
-                class="px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-foreground bg-header/60 hover:bg-border/40 border border-border/60 rounded-lg active:scale-95 transition-all cursor-pointer"
-                :title="t('common.resetDefault', '恢复默认')"
-              >
-                <i class="fas fa-undo text-[10px] mr-1"></i>
-                <span>{{ t('common.reset', '重置') }}</span>
-              </button>
-
-              <!-- 完成按钮 -->
-              <button
-                type="button"
-                @click="handleClose"
-                class="px-3 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
-              >
-                {{ t('common.done', '完成') }}
-              </button>
-            </div>
-          </div>
-
-          <!-- 帮助提示胶囊条 -->
-          <div class="px-4 py-2 bg-header/30 border-b border-border/30 flex items-center gap-2 text-[11px] text-text-secondary shrink-0">
-            <i class="fas fa-hand-pointer text-primary text-xs shrink-0"></i>
-            <span>{{ isDragging ? '正在拖动中，移动到目标槽位松手落位' : '长按上方卡片可悬浮拖拽排序，点击右上角 +/- 快速增删' }}</span>
-          </div>
+    <template #sub-header>
+      <!-- 帮助提示胶囊条 -->
+      <div class="px-4 py-2 bg-header/30 border-b border-border/30 flex items-center gap-2 text-[11px] text-text-secondary shrink-0">
+        <i class="fas fa-hand-pointer text-primary text-xs shrink-0"></i>
+        <span>{{ isDragging ? '正在拖动中，移动到目标槽位松手落位' : '长按上方卡片可悬浮拖拽排序，点击右上角 +/- 快速增删' }}</span>
+      </div>
+    </template>
 
           <!-- 可滚动内容区：分上下两层 -->
           <div
@@ -439,7 +418,6 @@ const handleClose = () => {
             <!-- 底部全面屏安全区留白 -->
             <div class="sheet-safe-bottom"></div>
           </div>
-        </div>
 
         <!-- ==================== 仿手机桌面悬浮跟随卡片镜像 (Floating Ghost) ==================== -->
         <div
@@ -462,42 +440,10 @@ const handleClose = () => {
           </span>
           <div class="w-5 h-1 bg-primary/40 rounded-full mt-1"></div>
         </div>
-
-      </div>
-    </Transition>
-  </Teleport>
+  </MobileBottomSheet>
 </template>
 
 <style scoped>
-/* 遮罩淡入淡出 */
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.22s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-/* 抽屉平滑滑入滑出 */
-.bottom-sheet-enter-active .mobile-toolbar-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-toolbar-sheet {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-toolbar-sheet,
-.bottom-sheet-leave-to .mobile-toolbar-sheet {
-  transform: translateY(100%);
-}
-
-.sheet-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
-}
-
 /* 彻底禁用拖拽时移动端的文本选中与呼出系统菜单 */
 .mobile-toolbar-sheet {
   -webkit-touch-callout: none;

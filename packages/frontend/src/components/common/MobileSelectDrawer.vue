@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import MobileBottomSheet from './MobileBottomSheet.vue';
 
 export interface MobileSelectOption {
   value: any;
@@ -109,125 +110,82 @@ const handleClear = () => {
     </button>
 
     <!-- 2. 底部选择抽屉 (Bottom Sheet) -->
-    <Teleport to="body">
-      <Transition name="mobile-select-fade">
-        <div
-          v-if="isOpen"
-          class="fixed inset-0 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-          :style="{ zIndex: props.zIndex }"
-          @click.self="closeDrawer"
+    <MobileBottomSheet
+      :visible="isOpen"
+      :title="props.title"
+      height="h-auto"
+      max-height="max-h-[75vh]"
+      :z-index="props.zIndex"
+      @close="closeDrawer"
+    >
+      <template #header-actions>
+        <button
+          v-if="props.allowClear && props.modelValue !== null"
+          type="button"
+          @click="handleClear"
+          class="text-xs text-text-secondary hover:text-red-400 px-2 py-0.5 cursor-pointer"
         >
-          <div
-            class="mobile-select-sheet w-full max-h-[75vh] flex flex-col bg-background border-t border-border/50 rounded-t-2xl shadow-2xl overflow-hidden select-text"
-          >
-            <!-- 抽屉吸顶顶栏 -->
-            <div class="shrink-0 pt-2.5 pb-2.5 px-4 border-b border-border/40 bg-header/40 select-none">
-              <!-- 顶部手柄条 -->
-              <div class="w-10 h-1 bg-border/80 rounded-full mx-auto mb-2 cursor-pointer" @click="closeDrawer"></div>
+          清空选择
+        </button>
+      </template>
 
-              <div class="flex items-center justify-between">
-                <span class="text-sm font-semibold text-foreground tracking-tight">
-                  {{ props.title }}
-                </span>
-                <div class="flex items-center gap-2">
-                  <button
-                    v-if="props.allowClear && props.modelValue !== null"
-                    type="button"
-                    @click="handleClear"
-                    class="text-xs text-text-secondary hover:text-red-400 px-2 py-0.5 cursor-pointer"
-                  >
-                    清空选择
-                  </button>
-                  <button
-                    type="button"
-                    @click="closeDrawer"
-                    class="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-border/30 cursor-pointer text-xs"
-                  >
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 搜索框 (选项 > 5 时启用) -->
-            <div v-if="props.options.length > 5" class="p-3 border-b border-border/30 bg-header/10 shrink-0">
-              <div class="relative">
-                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary/60"></i>
-                <input
-                  type="text"
-                  v-model="searchQuery"
-                  placeholder="搜索选项..."
-                  class="w-full h-8.5 pl-8 pr-3 text-xs bg-header/30 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            </div>
-
-            <!-- 选项卡片滚动列表 -->
-            <div class="flex-grow overflow-y-auto p-3 space-y-1.5 overscroll-contain pb-[env(safe-area-inset-bottom,20px)]">
-              <div v-if="filteredOptions.length === 0" class="py-10 text-center text-xs text-text-secondary/70">
-                无匹配选项
-              </div>
-
-              <button
-                v-for="opt in filteredOptions"
-                :key="String(opt.value)"
-                type="button"
-                @click="handleSelect(opt)"
-                class="w-full p-3 rounded-xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-99"
-                :class="opt.value === props.modelValue
-                  ? 'bg-primary/10 border-primary/50 text-foreground shadow-2xs'
-                  : 'bg-background/80 border-border/50 text-foreground hover:bg-header/40'"
-              >
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <i v-if="opt.icon" :class="[opt.icon, 'text-xs text-primary']"></i>
-                    <span class="text-xs font-semibold truncate">{{ opt.label }}</span>
-                    <span
-                      v-if="opt.badge"
-                      class="px-1.5 py-0.2 rounded text-[10px] uppercase font-mono font-bold bg-header border border-border/60 text-text-secondary"
-                    >
-                      {{ opt.badge }}
-                    </span>
-                  </div>
-                  <div v-if="opt.sublabel" class="text-[11px] text-text-secondary/80 mt-0.5 truncate">
-                    {{ opt.sublabel }}
-                  </div>
-                </div>
-
-                <div class="shrink-0">
-                  <div
-                    class="w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors"
-                    :class="opt.value === props.modelValue ? 'bg-primary text-primary-foreground' : 'border border-border/60 text-transparent'"
-                  >
-                    <i class="fas fa-check text-[10px]"></i>
-                  </div>
-                </div>
-              </button>
-            </div>
+      <!-- 搜索框 (选项 > 5 时启用) -->
+      <template #sub-header>
+        <div v-if="props.options.length > 5" class="p-3 border-b border-border/30 bg-header/10 shrink-0">
+          <div class="relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary/60"></i>
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="搜索选项..."
+              class="w-full h-8.5 pl-8 pr-3 text-xs bg-header/30 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
         </div>
-      </Transition>
-    </Teleport>
+      </template>
+
+      <!-- 选项卡片滚动列表 -->
+      <div class="flex-grow overflow-y-auto p-3 space-y-1.5 overscroll-contain">
+        <div v-if="filteredOptions.length === 0" class="py-10 text-center text-xs text-text-secondary/70">
+          无匹配选项
+        </div>
+
+        <button
+          v-for="opt in filteredOptions"
+          :key="String(opt.value)"
+          type="button"
+          @click="handleSelect(opt)"
+          class="w-full p-3 rounded-xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-99"
+          :class="opt.value === props.modelValue
+            ? 'bg-primary/10 border-primary/50 text-foreground shadow-2xs'
+            : 'bg-background/80 border-border/50 text-foreground hover:bg-header/40'"
+        >
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <i v-if="opt.icon" :class="[opt.icon, 'text-xs text-primary']"></i>
+              <span class="text-xs font-semibold truncate">{{ opt.label }}</span>
+              <span
+                v-if="opt.badge"
+                class="px-1.5 py-0.2 rounded text-[10px] uppercase font-mono font-bold bg-header border border-border/60 text-text-secondary"
+              >
+                {{ opt.badge }}
+              </span>
+            </div>
+            <div v-if="opt.sublabel" class="text-[11px] text-text-secondary/80 mt-0.5 truncate">
+              {{ opt.sublabel }}
+            </div>
+          </div>
+
+          <div class="shrink-0">
+            <div
+              class="w-5 h-5 rounded-full flex items-center justify-center text-xs transition-colors"
+              :class="opt.value === props.modelValue ? 'bg-primary text-primary-foreground' : 'border border-border/60 text-transparent'"
+            >
+              <i class="fas fa-check text-[10px]"></i>
+            </div>
+          </div>
+        </button>
+      </div>
+    </MobileBottomSheet>
   </div>
 </template>
-
-<style scoped>
-.mobile-select-fade-enter-active,
-.mobile-select-fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.mobile-select-fade-enter-from,
-.mobile-select-fade-leave-to {
-  opacity: 0;
-}
-.mobile-select-fade-enter-active .mobile-select-sheet {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.mobile-select-fade-leave-active .mobile-select-sheet {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 1, 1);
-}
-.mobile-select-fade-enter-from .mobile-select-sheet,
-.mobile-select-fade-leave-to .mobile-select-sheet {
-  transform: translateY(100%);
-}
-</style>
