@@ -1,5 +1,5 @@
 # Use a lightweight Node.js image
-FROM node:20-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:20-alpine AS builder
 
 # Set the working directory
 WORKDIR /app

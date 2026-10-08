@@ -1,4 +1,4 @@
-FROM node:20 AS builder
+FROM --platform=$BUILDPLATFORM node:20 AS builder
 
 WORKDIR /app
 
