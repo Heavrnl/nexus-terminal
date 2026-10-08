@@ -474,6 +474,8 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
         'terminalEnableRightClickPaste',
+        'terminalRightClickBehavior',
+        'terminalContextMenuItems',
         'terminalNoWrap',
         'showStatusMonitorIpAddress',
         'quickCommandRowSizeMultiplier',

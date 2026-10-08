@@ -94,6 +94,8 @@ export const settingsController = {
           'terminalScrollbackLimit', // 终端回滚行数键
           'fileManagerShowDeleteConfirmation', // 文件管理器删除确认键
           'terminalEnableRightClickPaste', // 终端右键粘贴键
+          'terminalRightClickBehavior', // 终端右键行为交互键
+          'terminalContextMenuItems', // 终端右键菜单项配置键
           'showStatusMonitorIpAddress',
           'fileManagerDoubleClickToOpen',
           'fileEditorModalWidth', // 文本编辑器弹窗宽度键
