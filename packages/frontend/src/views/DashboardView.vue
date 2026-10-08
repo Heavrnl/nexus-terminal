@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue'; 
 import MobileDashboard from '../components/MobileDashboard.vue';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { hexToRgba } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useAuditLogStore } from '../stores/audit.store';
 import { useSessionStore } from '../stores/session.store';
@@ -40,6 +41,17 @@ const { logs: auditLogs, isLoading: isLoadingLogs, totalLogs } = storeToRefs(aud
 const { tags, isLoading: isLoadingTags } = storeToRefs(tagsStore); 
 
 
+
+const getConnectionCardStyle = (backgroundColor?: string | null) => {
+  if (!backgroundColor) return {};
+  return {
+    '--conn-card-bg': hexToRgba(backgroundColor, 0.14),
+    '--conn-card-hover-bg': hexToRgba(backgroundColor, 0.22),
+    '--conn-card-border': hexToRgba(backgroundColor, 0.32),
+    backgroundColor: 'var(--conn-card-bg)',
+    borderColor: 'var(--conn-card-border)',
+  };
+};
 
 const LS_SORT_BY_KEY = 'dashboard_connections_sort_by';
 const LS_SORT_ORDER_KEY = 'dashboard_connections_sort_order';
@@ -371,10 +383,24 @@ const handleConnectionModified = async () => {
           <div v-if="isLoadingConnections && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary">{{ t('common.loading') }}</div>
           <ul v-else-if="filteredAndSortedConnections.length > 0" class="space-y-3">
             <!-- Iterate over filteredAndSortedConnections -->
-            <li v-for="conn in filteredAndSortedConnections" :key="conn.id" class="flex items-center justify-between p-3 bg-header/50 border border-border/50 rounded transition duration-150 ease-in-out">
+            <li
+              v-for="conn in filteredAndSortedConnections"
+              :key="conn.id"
+              class="flex items-center justify-between p-3 rounded transition duration-150 ease-in-out border"
+              :class="conn.background_color ? 'connection-colored-card shadow-xs' : 'bg-header/50 border-border/50 hover:bg-header/70'"
+              :style="getConnectionCardStyle(conn.background_color)"
+            >
               <div class="flex-grow mr-4 overflow-hidden">
                 <span class="font-medium block truncate flex items-center" :title="conn.name || ''">
-                  <i :class="['fas', conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-server'), 'mr-2 w-4 text-center text-text-secondary']"></i>
+                  <i
+                    :class="[
+                      'fas',
+                      conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-server'),
+                      'mr-2 w-4 text-center',
+                      conn.background_color ? '' : 'text-text-secondary'
+                    ]"
+                    :style="conn.background_color ? { color: conn.background_color } : {}"
+                  ></i>
                   <span>{{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}</span>
                 </span>
                 <span class="text-sm text-text-secondary block truncate" :title="`${conn.username}@${conn.host}:${conn.port}`">
@@ -448,3 +474,9 @@ const handleConnectionModified = async () => {
     />
   </div>
 </template>
+<style scoped>
+.connection-colored-card:hover {
+  background-color: var(--conn-card-hover-bg, var(--conn-card-bg)) !important;
+  border-color: var(--conn-card-border) !important;
+}
+</style>

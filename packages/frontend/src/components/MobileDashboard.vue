@@ -14,6 +14,7 @@ import { useTagsStore, type TagInfo } from '../stores/tags.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddConnectionForm from './AddConnectionForm.vue';
+import { hexToRgba } from '../utils/colorUtils';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -28,6 +29,17 @@ const { showConfirmDialog } = useConfirmDialog();
 const { connections, isLoading: isLoadingConnections } = storeToRefs(connectionsStore);
 const { logs: auditLogs, isLoading: isLoadingLogs } = storeToRefs(auditLogStore);
 const { tags, isLoading: isLoadingTags } = storeToRefs(tagsStore);
+
+const getConnectionCardStyle = (backgroundColor?: string | null) => {
+  if (!backgroundColor) return {};
+  return {
+    '--conn-card-bg': hexToRgba(backgroundColor, 0.14),
+    '--conn-card-hover-bg': hexToRgba(backgroundColor, 0.22),
+    '--conn-card-border': hexToRgba(backgroundColor, 0.32),
+    backgroundColor: 'var(--conn-card-bg)',
+    borderColor: 'var(--conn-card-border)',
+  };
+};
 
 // 本地存储状态 Key
 const LS_SORT_BY_KEY = 'dashboard_mobile_sort_by';
@@ -565,7 +577,9 @@ onMounted(async () => {
           <div
             v-for="conn in filteredAndSortedConnections"
             :key="conn.id"
-            class="server-touch-card p-3 rounded-xl bg-card border border-border/80 shadow-sm transition hover:border-primary/40 relative overflow-hidden"
+            class="server-touch-card p-3 rounded-xl border shadow-sm transition relative overflow-hidden"
+            :class="conn.background_color ? 'connection-colored-card' : 'bg-card border-border/80 hover:border-primary/40'"
+            :style="getConnectionCardStyle(conn.background_color)"
           >
             <!-- 顶部行：图标、名称与操作按钮 -->
             <div class="flex items-start justify-between gap-2">
@@ -574,12 +588,19 @@ onMounted(async () => {
                 <div 
                   :class="[
                     'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm border',
-                    conn.type === 'VNC' 
-                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-400' 
-                      : (conn.type === 'RDP' 
-                        ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' 
-                        : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400')
+                    !conn.background_color ? (
+                      conn.type === 'VNC' 
+                        ? 'bg-purple-500/15 border-purple-500/30 text-purple-400' 
+                        : (conn.type === 'RDP' 
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' 
+                          : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400')
+                    ) : ''
                   ]"
+                  :style="conn.background_color ? {
+                    backgroundColor: hexToRgba(conn.background_color, 0.22),
+                    borderColor: hexToRgba(conn.background_color, 0.38),
+                    color: conn.background_color
+                  } : {}"
                 >
                   <i :class="['fas text-sm', conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-terminal')]"></i>
                 </div>
@@ -651,7 +672,13 @@ onMounted(async () => {
             <div class="mt-2.5">
               <button
                 @click="handleConnect(conn)"
-                class="w-full py-2 px-3 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-[0.98] transition shadow-xs"
+                class="w-full py-2 px-3 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-[0.98] transition shadow-xs border"
+                :class="!conn.background_color ? 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/25' : ''"
+                :style="conn.background_color ? {
+                  backgroundColor: hexToRgba(conn.background_color, 0.2),
+                  borderColor: hexToRgba(conn.background_color, 0.35),
+                  color: conn.background_color
+                } : {}"
               >
                 <i class="fas fa-bolt text-xs"></i>
                 <span>立即连接</span>
@@ -925,6 +952,13 @@ onMounted(async () => {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 自定义颜色卡片交互态 */
+.connection-colored-card:hover,
+.connection-colored-card:active {
+  background-color: var(--conn-card-hover-bg, var(--conn-card-bg)) !important;
+  border-color: var(--conn-card-border) !important;
 }
 
 /* 根除触摸高亮与白色聚焦框闪烁 */
