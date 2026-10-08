@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue';
 import BatchEditConnectionForm from '../components/BatchEditConnectionForm.vue';
+import { hexToRgba } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useSessionStore } from '../stores/session.store';
 import { useTagsStore } from '../stores/tags.store';
@@ -49,6 +50,17 @@ const isBatchEditMode = ref(false);
 const selectedConnectionIdsForBatch = ref<Set<number>>(new Set());
 const showBatchEditForm = ref(false);
 const isDeletingSelectedConnections = ref(false);
+
+const getConnectionCardStyle = (backgroundColor?: string | null) => {
+  if (!backgroundColor) return {};
+  return {
+    '--conn-card-bg': hexToRgba(backgroundColor, 0.14),
+    '--conn-card-hover-bg': hexToRgba(backgroundColor, 0.22),
+    '--conn-card-border': hexToRgba(backgroundColor, 0.32),
+    backgroundColor: 'var(--conn-card-bg)',
+    borderColor: 'var(--conn-card-border)',
+  };
+};
 
 const sortOptions: { value: SortField; labelKey: string }[] = [
   { value: 'last_connected_at', labelKey: 'dashboard.sortOptions.lastConnected' },
@@ -630,16 +642,27 @@ const handleConnectAllFilteredConnections = async () => {
             v-for="conn in filteredAndSortedConnections"
             :key="conn.id"
             @click="handleConnectionClick(conn.id)"
+            class="flex items-center p-3 rounded transition duration-150 ease-in-out border"
             :class="[
-              'flex items-center p-3 bg-header/50 border border-border/50 rounded transition duration-150 ease-in-out', // Changed: items-center, removed justify-between
+              conn.background_color
+                ? 'connection-colored-card shadow-xs'
+                : ['bg-header/50 border-border/50', isBatchEditMode ? 'hover:bg-border/70' : 'hover:bg-border/30'],
               { 'ring-2 ring-primary ring-offset-1 ring-offset-background': isBatchEditMode && isConnectionSelectedForBatch(conn.id) },
-              { 'cursor-pointer hover:bg-border/70': isBatchEditMode },
-              { 'hover:bg-border/30': !isBatchEditMode }
+              { 'cursor-pointer': isBatchEditMode }
             ]"
+            :style="getConnectionCardStyle(conn.background_color)"
           >
             <div class="flex-1 min-w-0 mr-3"> <!-- Changed: flex-1 min-w-0 mr-3 -->
               <span class="font-medium block truncate flex items-center" :title="conn.name || ''">
-                <i :class="['fas', conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-server'), 'mr-2 w-4 text-center text-text-secondary']"></i>
+                <i
+                  :class="[
+                    'fas',
+                    conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-server'),
+                    'mr-2 w-4 text-center',
+                    conn.background_color ? '' : 'text-text-secondary'
+                  ]"
+                  :style="conn.background_color ? { color: conn.background_color } : {}"
+                ></i>
                 <span>{{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}</span>
               </span>
               <span class="text-sm text-text-secondary block truncate" :title="`${conn.username}@${conn.host}:${conn.port}`">
@@ -747,3 +770,10 @@ const handleConnectAllFilteredConnections = async () => {
     />
   </div>
 </template>
+
+<style scoped>
+.connection-colored-card:hover {
+  background-color: var(--conn-card-hover-bg, var(--conn-card-bg)) !important;
+  border-color: var(--conn-card-border) !important;
+}
+</style>
