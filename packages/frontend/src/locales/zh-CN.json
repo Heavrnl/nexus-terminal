@@ -1387,6 +1387,12 @@
     "empty": "没有快捷指令。点击“+”按钮创建一个吧！",
     "addFirst": "添加第一个快捷指令",
     "confirmDelete": "确定要删除快捷指令 \"{name}\" 吗？",
+    "viewMode": {
+      "grid": "网格卡片",
+      "list": "标准列表",
+      "pills": "极简药丸",
+      "toggle": "切换视图 (当前: {mode})"
+    },
     "form": {
       "titleAdd": "添加快捷指令",
       "titleEdit": "编辑快捷指令",

@@ -19,11 +19,12 @@
         <button @click="toggleSortBy" class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center" :title="sortButtonTitle">
           <i :class="[sortButtonIcon, 'text-base']"></i>
         </button>
-        <!-- Compact Mode Toggle Button -->
-        <button @click="toggleCompactMode"
-                class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center"
-                :class="{ 'bg-primary/20 text-primary': isCompactMode }">
-          <i :class="['fas', isCompactMode ? 'fa-compress-alt' : 'fa-expand-alt', 'text-base']"></i>
+        <!-- View Mode Toggle Button (Grid / List / Pills) -->
+        <button @click="cycleViewMode"
+                class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center cursor-pointer"
+                :class="{ 'bg-primary/20 text-primary border-primary/40': currentViewMode !== 'list' }"
+                :title="viewModeTitle">
+          <i :class="['fas', viewModeIcon, 'text-base']"></i>
         </button>
         <!-- Add Button -->
         <button @click="openAddForm" class="w-8 h-8 bg-primary text-white border-none rounded-lg text-sm font-semibold cursor-pointer shadow-md transition-colors duration-200 ease-in-out hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary flex-shrink-0 flex items-center justify-center" :title="$t('quickCommands.add', '添加快捷指令')">
@@ -106,96 +107,233 @@
                         <!-- <span v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="ml-auto text-xs text-text-secondary pl-2">({{ groupData.commands.length }})</span> -->
                     </div>
                     <!-- Command Items List (only show if expanded) -->
-                    <ul v-show="quickCommandsStore.expandedGroups[groupData.groupName]" class="list-none p-0 m-0 pl-3">
-                        <li
-                            v-for="(cmd) in groupData.commands"
-                            :key="cmd.id"
-                            :data-command-id="cmd.id"
-                            class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
-                            :style="{ padding: isCompactMode ? `calc(0.1rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` : `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
-                            :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
-                            @click="executeCommand(cmd)"
-                            @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
-                        >
-                            <!-- Command Info -->
-                            <div class="flex flex-col overflow-hidden mr-2 flex-grow">
-                                <span v-if="cmd.name"
-                                      class="font-medium truncate text-foreground"
-                                      :class="{'mb-0.5': !isCompactMode, 'leading-tight': isCompactMode}"
-                                      :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.name }}</span>
-                                <span v-if="!isCompactMode && cmd.command"
-                                      class="truncate font-mono"
-                                      :class="{ 'text-sm': !cmd.name, 'text-text-secondary': true }"
-                                      :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.command }}</span>
-                                <span v-else-if="isCompactMode && !cmd.name && cmd.command"
-                                      class="truncate font-mono text-xs text-text-secondary/70 leading-tight"
-                                      :style="{ fontSize: `calc(0.65em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">{{ cmd.command }}</span>
+                    <!-- Command Items List (only show if expanded) -->
+                    <div v-show="quickCommandsStore.expandedGroups[groupData.groupName]" class="mt-1">
+                        <!-- 1. 网格卡片模式 (Grid) -->
+                        <div v-if="currentViewMode === 'grid'" class="qc-grid-container pl-3 pr-1 mb-2">
+                            <div
+                                v-for="(cmd) in groupData.commands"
+                                :key="cmd.id"
+                                :data-command-id="cmd.id"
+                                class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
+                                :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
+                                 :style="{ padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` }"
+                                @click="handleCommandItemClick(cmd)"
+                                @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                                @touchstart="handleItemTouchStart($event, cmd)"
+                                @touchmove="handleItemTouchMove"
+                                @touchend="handleItemTouchEnd"
+                                @touchcancel="handleItemTouchEnd"
+                                :title="getCommandTooltip(cmd)"
+                            >
+                                <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5 mr-1.5">
+                                    <div class="flex items-center text-foreground truncate"
+                                         :style="{ fontSize: `calc(0.82em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                                        <i class="fas fa-terminal text-primary text-[10px] mr-1.5 flex-shrink-0"></i>
+                                        <span class="font-medium truncate">{{ cmd.name || cmd.command }}</span>
+                                    </div>
+                                    <div v-if="cmd.name && cmd.command"
+                                         class="truncate font-mono text-text-secondary"
+                                         :style="{ fontSize: `calc(0.7em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                                        {{ cmd.command }}
+                                    </div>
+                                </div>
+                                <div class="flex items-center flex-shrink-0">
+                                    <button
+                                        type="button"
+                                        @click.stop="executeCommand(cmd)"
+                                        class="rounded-md flex items-center justify-center text-primary bg-primary/15 border border-primary/25 group-hover:bg-primary group-hover:text-white transition-all duration-150"
+                                        :style="{
+                                            width: `calc(1.35rem * var(--qc-row-size-multiplier))`,
+                                            height: `calc(1.35rem * var(--qc-row-size-multiplier))`
+                                        }"
+                                        :title="t('quickCommands.form.execute', '执行')"
+                                    >
+                                        <i class="fas fa-play text-[9px]"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <!-- Actions -->
-                            <div class="flex items-center flex-shrink-0 transition-opacity duration-150"
-                                 :class="{
-                                    'opacity-0 group-hover:opacity-100 focus-within:opacity-100': isCompactMode,
-                                    'opacity-100': !isCompactMode
-                                 }">
-                                <button @click.stop="copyCommand(cmd.command)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('commandHistory.copy', '复制')">
-                                    <i class="fas fa-copy" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                                </button>
-                                <button @click.stop="openEditForm(cmd)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('common.edit', '编辑')">
-                                    <i class="fas fa-edit" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                                </button>
-                                <button @click.stop="confirmDelete(cmd)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-error" :title="$t('common.delete', '删除')">
-                                    <i class="fas fa-times" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                                </button>
+                        </div>
+
+                        <!-- 2. 药丸流式模式 (Pills) -->
+                        <div v-else-if="currentViewMode === 'pills'" class="qc-pill-container pl-3 pr-1 mb-2">
+                            <div
+                                v-for="(cmd) in groupData.commands"
+                                :key="cmd.id"
+                                :data-command-id="cmd.id"
+                                class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
+                                :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
+                                :style="{
+                                    padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
+                                    fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
+                                }"
+                                @click="handleCommandItemClick(cmd)"
+                                @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                                @touchstart="handleItemTouchStart($event, cmd)"
+                                @touchmove="handleItemTouchMove"
+                                @touchend="handleItemTouchEnd"
+                                @touchcancel="handleItemTouchEnd"
+                                :title="getCommandTooltip(cmd)"
+                            >
+                                <i class="fas fa-bolt text-amber-500 text-[10px] mr-1.5 flex-shrink-0"></i>
+                                <span class="truncate max-w-[220px]">{{ cmd.name || cmd.command }}</span>
                             </div>
-                        </li>
-                    </ul>
+                        </div>
+
+                        <!-- 3. 标准列表模式 (List) -->
+                        <ul v-else class="list-none p-0 m-0 pl-3">
+                            <li
+                                v-for="(cmd) in groupData.commands"
+                                :key="cmd.id"
+                                :data-command-id="cmd.id"
+                                class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
+                                :style="{ padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
+                                :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
+                                @click="handleCommandItemClick(cmd)"
+                                @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                                @touchstart="handleItemTouchStart($event, cmd)"
+                                @touchmove="handleItemTouchMove"
+                                @touchend="handleItemTouchEnd"
+                                @touchcancel="handleItemTouchEnd"
+                            >
+                                <div class="flex flex-col overflow-hidden mr-2 flex-grow">
+                                    <span v-if="cmd.name"
+                                          class="font-medium truncate text-foreground mb-0.5"
+                                          :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.name }}</span>
+                                    <span v-if="cmd.command"
+                                          class="truncate font-mono"
+                                          :class="{ 'text-sm': !cmd.name, 'text-text-secondary': true }"
+                                          :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.command }}</span>
+                                </div>
+                                <div class="flex items-center flex-shrink-0 opacity-100">
+                                    <button @click.stop="copyCommand(cmd.command)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('commandHistory.copy', '复制')">
+                                        <i class="fas fa-copy" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                                    </button>
+                                    <button @click.stop="openEditForm(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('common.edit', '编辑')">
+                                        <i class="fas fa-edit" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                                    </button>
+                                    <button @click.stop="confirmDelete(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-error" :title="$t('common.delete', '删除')">
+                                        <i class="fas fa-times" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                                    </button>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
                 </div>
             </div>
-            <!-- Flat View -->
-            <ul v-else class="list-none p-0 m-0">
-                <li
-                    v-for="(cmd) in flatFilteredCommands"
-                    :key="cmd.id"
-                    :data-command-id="cmd.id"
-                    class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
-                    :style="{ padding: isCompactMode ? `calc(0.1rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` : `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
-                    :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
-                    @click="executeCommand(cmd)"
-                    @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
-                >
-                    <!-- Command Info -->
-                    <div class="flex flex-col overflow-hidden mr-2 flex-grow">
-                        <span v-if="cmd.name"
-                              class="font-medium truncate text-foreground"
-                              :class="{'mb-0.5': !isCompactMode, 'leading-tight': isCompactMode}"
-                              :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.name }}</span>
-                        <span v-if="!isCompactMode && cmd.command"
-                              class="truncate font-mono"
-                              :class="{ 'text-sm': !cmd.name, 'text-text-secondary': true }"
-                              :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.command }}</span>
-                        <span v-else-if="isCompactMode && !cmd.name && cmd.command"
-                              class="truncate font-mono text-xs text-text-secondary/70 leading-tight"
-                              :style="{ fontSize: `calc(0.65em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">{{ cmd.command }}</span>
+            <!-- Flat View (无标签扁平视图) -->
+            <div v-else>
+                <!-- 1. 网格卡片模式 (Grid) -->
+                <div v-if="currentViewMode === 'grid'" class="qc-grid-container pl-1 pr-1">
+                    <div
+                        v-for="(cmd) in flatFilteredCommands"
+                        :key="cmd.id"
+                        :data-command-id="cmd.id"
+                        class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
+                        :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
+                        :style="{ padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` }"
+                        @click="handleCommandItemClick(cmd)"
+                        @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                        @touchstart="handleItemTouchStart($event, cmd)"
+                        @touchmove="handleItemTouchMove"
+                        @touchend="handleItemTouchEnd"
+                        @touchcancel="handleItemTouchEnd"
+                        :title="getCommandTooltip(cmd)"
+                    >
+                        <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5 mr-1.5">
+                            <div class="flex items-center text-foreground truncate"
+                                 :style="{ fontSize: `calc(0.82em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                                <i class="fas fa-terminal text-primary text-[10px] mr-1.5 flex-shrink-0"></i>
+                                <span class="font-medium truncate">{{ cmd.name || cmd.command }}</span>
+                            </div>
+                            <div v-if="cmd.name && cmd.command"
+                                 class="truncate font-mono text-text-secondary"
+                                 :style="{ fontSize: `calc(0.7em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                                {{ cmd.command }}
+                            </div>
+                        </div>
+                        <div class="flex items-center flex-shrink-0">
+                            <button
+                                type="button"
+                                @click.stop="executeCommand(cmd)"
+                                class="rounded-md flex items-center justify-center text-primary bg-primary/15 border border-primary/25 group-hover:bg-primary group-hover:text-white transition-all duration-150"
+                                :style="{
+                                    width: `calc(1.35rem * var(--qc-row-size-multiplier))`,
+                                    height: `calc(1.35rem * var(--qc-row-size-multiplier))`
+                                }"
+                                :title="t('quickCommands.form.execute', '执行')"
+                            >
+                                <i class="fas fa-play text-[9px]"></i>
+                            </button>
+                        </div>
                     </div>
-                    <!-- Actions -->
-                    <div class="flex items-center flex-shrink-0 transition-opacity duration-150"
-                         :class="{
-                            'opacity-0 group-hover:opacity-100 focus-within:opacity-100': isCompactMode,
-                            'opacity-100': !isCompactMode
-                         }">
-                        <button @click.stop="copyCommand(cmd.command)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('commandHistory.copy', '复制')">
-                            <i class="fas fa-copy" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                        </button>
-                        <button @click.stop="openEditForm(cmd)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('common.edit', '编辑')">
-                            <i class="fas fa-edit" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                        </button>
-                        <button @click.stop="confirmDelete(cmd)" :class="isCompactMode ? 'p-1' : 'p-1.5'" class="rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-error" :title="$t('common.delete', '删除')">
-                            <i class="fas fa-times" :style="{ fontSize: isCompactMode ? `calc(0.8em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` : `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
-                        </button>
+                </div>
+
+                <!-- 2. 药丸流式模式 (Pills) -->
+                <div v-else-if="currentViewMode === 'pills'" class="qc-pill-container pl-1 pr-1">
+                    <div
+                        v-for="(cmd) in flatFilteredCommands"
+                        :key="cmd.id"
+                        :data-command-id="cmd.id"
+                        class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
+                        :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
+                        :style="{
+                            padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
+                            fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
+                        }"
+                        @click="handleCommandItemClick(cmd)"
+                        @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                        @touchstart="handleItemTouchStart($event, cmd)"
+                        @touchmove="handleItemTouchMove"
+                        @touchend="handleItemTouchEnd"
+                        @touchcancel="handleItemTouchEnd"
+                        :title="getCommandTooltip(cmd)"
+                    >
+                        <i class="fas fa-bolt text-amber-500 text-[10px] mr-1.5 flex-shrink-0"></i>
+                        <span class="truncate max-w-[220px]">{{ cmd.name || cmd.command }}</span>
                     </div>
-                </li>
-            </ul>
-       </div>
+                </div>
+
+                <!-- 3. 标准列表模式 (List) -->
+                <ul v-else class="list-none p-0 m-0">
+                    <li
+                        v-for="(cmd) in flatFilteredCommands"
+                        :key="cmd.id"
+                        :data-command-id="cmd.id"
+                        class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
+                        :style="{ padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
+                        :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
+                        @click="handleCommandItemClick(cmd)"
+                        @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                        @touchstart="handleItemTouchStart($event, cmd)"
+                        @touchmove="handleItemTouchMove"
+                        @touchend="handleItemTouchEnd"
+                        @touchcancel="handleItemTouchEnd"
+                    >
+                        <div class="flex flex-col overflow-hidden mr-2 flex-grow">
+                            <span v-if="cmd.name"
+                                  class="font-medium truncate text-foreground mb-0.5"
+                                  :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.name }}</span>
+                            <span v-if="cmd.command"
+                                  class="truncate font-mono"
+                                  :class="{ 'text-sm': !cmd.name, 'text-text-secondary': true }"
+                                  :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.command }}</span>
+                        </div>
+                        <div class="flex items-center flex-shrink-0 opacity-100">
+                            <button @click.stop="copyCommand(cmd.command)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('commandHistory.copy', '复制')">
+                                <i class="fas fa-copy" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                            </button>
+                            <button @click.stop="openEditForm(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('common.edit', '编辑')">
+                                <i class="fas fa-edit" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                            </button>
+                            <button @click.stop="confirmDelete(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-error" :title="$t('common.delete', '删除')">
+                                <i class="fas fa-times" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                            </button>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
       </div>
     </div>
 
@@ -209,17 +347,60 @@
     <!-- Context Menu for Quick Commands -->
     <div
       v-if="quickCommandContextMenuVisible"
-      class="fixed bg-background border border-border/50 shadow-xl rounded-lg py-1.5 z-50 min-w-[180px] quick-command-context-menu"
+      class="fixed bg-background border border-border/60 shadow-xl rounded-lg py-1.5 z-50 min-w-[190px] quick-command-context-menu backdrop-blur-md"
       :style="{ top: `${quickCommandContextMenuPosition.y}px`, left: `${quickCommandContextMenuPosition.x}px` }"
       @click.stop
     >
-      <ul class="list-none p-0 m-0">
+      <div v-if="quickCommandContextTargetCommand" class="px-3 py-1 text-xs text-text-secondary border-b border-border/40 font-mono truncate max-w-[220px]">
+        {{ quickCommandContextTargetCommand.name || quickCommandContextTargetCommand.command }}
+      </div>
+      <ul v-if="quickCommandContextTargetCommand" class="list-none p-0 m-0 mt-1">
+        <!-- 1. 执行 -->
         <li
-          v-if="quickCommandContextTargetCommand"
-          class="group px-4 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleQuickCommandMenuAction('execute', quickCommandContextTargetCommand!)"
+        >
+          <i class="fas fa-play text-xs text-primary w-4 text-center"></i>
+          <span>{{ t('quickCommands.form.execute', '执行') }}</span>
+        </li>
+
+        <!-- 2. 编辑 (打开编辑模态框) -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleQuickCommandMenuAction('edit', quickCommandContextTargetCommand!)"
+        >
+          <i class="fas fa-edit text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
+          <span>{{ t('common.edit', '编辑') }}</span>
+        </li>
+
+        <!-- 3. 复制命令 -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleQuickCommandMenuAction('copy', quickCommandContextTargetCommand!)"
+        >
+          <i class="fas fa-copy text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
+          <span>{{ t('commandHistory.copy', '复制') }}</span>
+        </li>
+
+        <!-- 4. 发送到全部会话 -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
           @click="handleQuickCommandMenuAction('sendToAllSessions', quickCommandContextTargetCommand!)"
         >
+          <i class="fas fa-paper-plane text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
           <span>{{ t('quickCommands.actions.sendToAllSessions', '发送到全部会话') }}</span>
+        </li>
+
+        <!-- 分割线 -->
+        <div class="h-px bg-border/40 my-1 mx-1"></div>
+
+        <!-- 5. 删除 -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleQuickCommandMenuAction('delete', quickCommandContextTargetCommand!)"
+        >
+          <i class="fas fa-trash-alt text-xs text-error w-4 text-center"></i>
+          <span>{{ t('common.delete', '删除') }}</span>
         </li>
       </ul>
     </div>
@@ -331,13 +512,51 @@ const flatFilteredCommands = computed(() => {
     return quickCommandsStore.flatVisibleCommands;
 });
 
-// --- Compact Mode ---
-const isCompactMode = computed(() => quickCommandsCompactModeBoolean.value);
+// --- 三视图模式定义与持久化 ---
+export type QuickCommandsViewMode = 'grid' | 'list' | 'pills';
 
-const toggleCompactMode = () => {
-  const currentMode = quickCommandsCompactModeBoolean.value;
-  settingsStore.updateSetting('quickCommandsCompactMode', String(!currentMode));
+const LS_VIEW_MODE_KEY = 'quick_commands_view_mode';
+
+const currentViewMode = ref<QuickCommandsViewMode>(
+  (() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(LS_VIEW_MODE_KEY) as QuickCommandsViewMode;
+      if (saved === 'grid' || saved === 'list' || saved === 'pills') {
+        return saved;
+      }
+    }
+    if (quickCommandsCompactModeBoolean.value) {
+      return 'pills';
+    }
+    return 'grid'; // 默认推荐使用高空间利用率的网格卡片
+  })()
+);
+
+const isCompactMode = computed(() => currentViewMode.value === 'pills');
+
+const cycleViewMode = () => {
+  const modes: QuickCommandsViewMode[] = ['grid', 'list', 'pills'];
+  const nextIndex = (modes.indexOf(currentViewMode.value) + 1) % modes.length;
+  currentViewMode.value = modes[nextIndex];
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LS_VIEW_MODE_KEY, currentViewMode.value);
+  }
 };
+
+const viewModeIcon = computed(() => {
+  switch (currentViewMode.value) {
+    case 'grid': return 'fa-table-cells-large';
+    case 'list': return 'fa-list';
+    case 'pills': return 'fa-tags';
+    default: return 'fa-table-cells-large';
+  }
+});
+
+const viewModeTitle = computed(() => {
+  const modeKey = currentViewMode.value;
+  const modeName = t(`quickCommands.viewMode.${modeKey}`, modeKey);
+  return t('quickCommands.viewMode.toggle', { mode: modeName }, `切换视图 (当前: ${modeName})`);
+});
 
 // --- Helper function for selection check ---
 const isCommandSelected = (commandId: number): boolean => {
@@ -346,6 +565,14 @@ const isCommandSelected = (commandId: number): boolean => {
         return false;
     }
     return flatVisibleCommands.value[storeSelectedIndex.value].id === commandId;
+};
+
+// 安全获取指令 Tooltip 描述
+const getCommandTooltip = (cmd: QuickCommandFE): string => {
+  if (cmd.command) {
+    return cmd.name ? `${cmd.name}: ${cmd.command}` : cmd.command;
+  }
+  return cmd.name || '';
 };
 
 
@@ -367,6 +594,11 @@ onBeforeUnmount(() => {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
   }
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  document.removeEventListener('click', closeQuickCommandContextMenu);
   // +++ 调用保存的注销函数 +++
   if (unregisterFocus) {
     unregisterFocus();
@@ -418,8 +650,8 @@ const scrollToSelected = async (index: number) => {
     const selectedCommandId = flatVisibleCommands.value[index].id;
     const listContainer = commandListContainerRef.value;
 
-    // Find the element using the data attribute (works for both views)
-    const selectedElement = listContainer.querySelector(`li[data-command-id="${selectedCommandId}"]`) as HTMLLIElement;
+    // Find the element using the data attribute (works for grid, list, and pills)
+    const selectedElement = listContainer.querySelector(`[data-command-id="${selectedCommandId}"]`) as HTMLElement;
 
     if (selectedElement) {
         selectedElement.scrollIntoView({
@@ -737,45 +969,105 @@ const cancelEditingTag = () => {
   editingTagId.value = null;
 };
 
-// +++ 右键菜单方法 +++
-const showQuickCommandContextMenu = (event: MouseEvent, command: QuickCommandFE) => {
-event.preventDefault();
-quickCommandContextTargetCommand.value = command;
-quickCommandContextMenuPosition.value = { x: event.clientX, y: event.clientY };
-quickCommandContextMenuVisible.value = true;
-document.addEventListener('click', closeQuickCommandContextMenu, { once: true });
+// --- 长按检测 (Touch Long Press) 与右键菜单统一控制 ---
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+const isLongPressActive = ref(false);
 
-// 使用 nextTick 获取菜单尺寸并调整位置以防止超出屏幕
-nextTick(() => {
-  const menuElement = document.querySelector('.quick-command-context-menu') as HTMLElement;
-  if (menuElement) {
-    const menuRect = menuElement.getBoundingClientRect();
-    let finalX = quickCommandContextMenuPosition.value.x;
-    let finalY = quickCommandContextMenuPosition.value.y;
-    const menuWidth = menuRect.width;
-    const menuHeight = menuRect.height;
+const openContextMenuAt = (x: number, y: number, command: QuickCommandFE) => {
+  quickCommandContextTargetCommand.value = command;
+  quickCommandContextMenuPosition.value = { x, y };
+  quickCommandContextMenuVisible.value = true;
+  document.addEventListener('click', closeQuickCommandContextMenu, { once: true });
 
-    // 调整水平位置
-    if (finalX + menuWidth > window.innerWidth) {
-      finalX = window.innerWidth - menuWidth - 5;
-    }
+  // 使用 nextTick 获取菜单尺寸并调整位置以防止超出屏幕
+  nextTick(() => {
+    const menuElement = document.querySelector('.quick-command-context-menu') as HTMLElement;
+    if (menuElement) {
+      const menuRect = menuElement.getBoundingClientRect();
+      let finalX = quickCommandContextMenuPosition.value.x;
+      let finalY = quickCommandContextMenuPosition.value.y;
+      const menuWidth = menuRect.width;
+      const menuHeight = menuRect.height;
 
-    // 调整垂直位置
-    if (finalY + menuHeight > window.innerHeight) {
-      finalY = window.innerHeight - menuHeight - 5;
-    }
+      // 调整水平位置
+      if (finalX + menuWidth > window.innerWidth) {
+        finalX = window.innerWidth - menuWidth - 8;
+      }
 
-    // 确保菜单不超出屏幕左上角
-    finalX = Math.max(5, finalX);
-    finalY = Math.max(5, finalY);
+      // 调整垂直位置
+      if (finalY + menuHeight > window.innerHeight) {
+        finalY = window.innerHeight - menuHeight - 8;
+      }
 
-    // 更新位置
-    if (finalX !== quickCommandContextMenuPosition.value.x || finalY !== quickCommandContextMenuPosition.value.y) {
-      console.log(`[QuickCmdView] Adjusting quick command context menu position: (${quickCommandContextMenuPosition.value.x}, ${quickCommandContextMenuPosition.value.y}) -> (${finalX}, ${finalY})`);
+      // 确保菜单不超出屏幕左上角
+      finalX = Math.max(8, finalX);
+      finalY = Math.max(8, finalY);
+
       quickCommandContextMenuPosition.value = { x: finalX, y: finalY };
     }
+  });
+};
+
+// 触屏长按处理 (移动端/触摸屏)
+const handleItemTouchStart = (event: TouchEvent, command: QuickCommandFE) => {
+  if (event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  isLongPressActive.value = false;
+
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
   }
-});
+  longPressTimer = setTimeout(() => {
+    isLongPressActive.value = true;
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate?.(40);
+    }
+    openContextMenuAt(touch.clientX, touch.clientY, command);
+  }, 450);
+};
+
+const handleItemTouchMove = (event: TouchEvent) => {
+  if (!longPressTimer) return;
+  const touch = event.touches[0];
+  const deltaX = Math.abs(touch.clientX - touchStartX);
+  const deltaY = Math.abs(touch.clientY - touchStartY);
+  // 滑移超过 10px 视为滚动页面，取消长按定时器
+  if (deltaX > 10 || deltaY > 10) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+};
+
+const handleItemTouchEnd = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  if (isLongPressActive.value) {
+    // 延迟 150ms 重置标志位，以阻断随后的原生 click 事件触发执行
+    setTimeout(() => {
+      isLongPressActive.value = false;
+    }, 150);
+  }
+};
+
+// 拦截长按触发后的误触点击
+const handleCommandItemClick = (cmd: QuickCommandFE) => {
+  if (isLongPressActive.value) {
+    isLongPressActive.value = false;
+    return;
+  }
+  executeCommand(cmd);
+};
+
+// 右键点击处理
+const showQuickCommandContextMenu = (event: MouseEvent, command: QuickCommandFE) => {
+  event.preventDefault();
+  openContextMenuAt(event.clientX, event.clientY, command);
 };
 
 const closeQuickCommandContextMenu = () => {
@@ -784,32 +1076,65 @@ const closeQuickCommandContextMenu = () => {
   document.removeEventListener('click', closeQuickCommandContextMenu);
 };
 
-const handleQuickCommandMenuAction = (action: 'sendToAllSessions', command: QuickCommandFE) => {
-  closeQuickCommandContextMenu();
-  if (action === 'sendToAllSessions') {
-    const activeSshSessions = Array.from(sessionStore.sessions.values()).filter(
-      (s: SessionState) => {
-        if (s.wsManager.connectionStatus.value !== 'connected') return false;
-        const connInfo = connectionsStore.connections.find(c => c.id === Number(s.connectionId));
-        return connInfo?.type === 'SSH';
-      }
-    );
+// 右键/长按菜单动作处理
+type QuickCommandMenuAction = 'execute' | 'edit' | 'copy' | 'sendToAllSessions' | 'delete';
 
-    if (activeSshSessions.length > 0) {
-      activeSshSessions.forEach((session: SessionState) => {
-        emitWorkspaceEvent('terminal:sendCommand', { sessionId: session.sessionId, command: command.command });
-      });
-      uiNotificationsStore.addNotification({
-        message: t('quickCommands.notifications.sentToAllSessions', { count: activeSshSessions.length }),
-        type: 'success',
-      });
-    } else {
-      uiNotificationsStore.addNotification({
-        message: t('quickCommands.notifications.noActiveSshSessions'),
-        type: 'info',
-      });
+const handleQuickCommandMenuAction = (action: QuickCommandMenuAction, command: QuickCommandFE) => {
+  closeQuickCommandContextMenu();
+  switch (action) {
+    case 'execute':
+      executeCommand(command);
+      break;
+    case 'edit':
+      openEditForm(command);
+      break;
+    case 'copy':
+      copyCommand(command.command);
+      break;
+    case 'sendToAllSessions': {
+      const activeSshSessions = Array.from(sessionStore.sessions.values()).filter(
+        (s: SessionState) => {
+          if (s.wsManager.connectionStatus.value !== 'connected') return false;
+          const connInfo = connectionsStore.connections.find(c => c.id === Number(s.connectionId));
+          return connInfo?.type === 'SSH';
+        }
+      );
+
+      if (activeSshSessions.length > 0) {
+        activeSshSessions.forEach((session: SessionState) => {
+          emitWorkspaceEvent('terminal:sendCommand', { sessionId: session.sessionId, command: command.command });
+        });
+        uiNotificationsStore.addNotification({
+          message: t('quickCommands.notifications.sentToAllSessions', { count: activeSshSessions.length }),
+          type: 'success',
+        });
+      } else {
+        uiNotificationsStore.addNotification({
+          message: t('quickCommands.notifications.noActiveSshSessions'),
+          type: 'info',
+        });
+      }
+      break;
     }
+    case 'delete':
+      confirmDelete(command);
+      break;
   }
 };
-
 </script>
+
+<style scoped>
+/* 自适应网格卡片容器 (纯布局响应式，色彩全面继承主题类) */
+.qc-grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(170px * var(--qc-row-size-multiplier, 1)), 1fr));
+  gap: calc(0.45rem * var(--qc-row-size-multiplier, 1));
+}
+
+/* 药丸胶囊流容器 (纯布局响应式) */
+.qc-pill-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.35rem * var(--qc-row-size-multiplier, 1));
+}
+</style>

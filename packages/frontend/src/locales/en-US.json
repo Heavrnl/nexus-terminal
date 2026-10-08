@@ -1383,6 +1383,12 @@
     "empty": "No quick commands. Click '+' to create one!",
     "addFirst": "Add your first quick command",
     "confirmDelete": "Are you sure you want to delete the quick command \"{name}\"?",
+    "viewMode": {
+      "grid": "Grid Cards",
+      "list": "Standard List",
+      "pills": "Pill Flow",
+      "toggle": "Switch View (Current: {mode})"
+    },
     "form": {
       "titleAdd": "Add Quick Command",
       "titleEdit": "Edit Quick Command",
