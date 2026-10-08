@@ -1257,7 +1257,7 @@
   "statusMonitor": {
     "bytesPerSecond": "B/秒",
     "cpuLabel": "CPU:",
-    "cpuModelLabel": "CPU モデル:",
+    "cpuModelLabel": "CPU:",
     "diskLabel": "ディスク:",
     "errorPrefix": "エラー:",
     "gigaBytes": "GB",

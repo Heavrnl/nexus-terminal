@@ -626,7 +626,7 @@
     "title": "服务器状态",
     "errorPrefix": "错误:",
     "loading": "等待数据...",
-    "cpuModelLabel": "CPU 型号:",
+    "cpuModelLabel": "CPU:",
     "osLabel": "系统:",
     "cpuLabel": "CPU:",
     "memoryLabel": "内存:",

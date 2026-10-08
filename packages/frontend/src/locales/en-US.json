@@ -625,7 +625,7 @@
     "title": "Server Status",
     "errorPrefix": "Error:",
     "loading": "Waiting for data...",
-    "cpuModelLabel": "CPU Model:",
+    "cpuModelLabel": "CPU:",
     "osLabel": "OS:",
     "cpuLabel": "CPU:",
     "memoryLabel": "Memory:",

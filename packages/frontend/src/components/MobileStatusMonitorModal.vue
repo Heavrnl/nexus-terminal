@@ -250,7 +250,7 @@ const handleClose = () => {
                   <div class="flex items-start gap-1.5 leading-snug">
                     <span class="shrink-0 text-text-secondary/70 flex items-center gap-1 min-w-[44px]">
                       <i class="fas fa-microchip text-[11px] text-sky-400"></i>
-                      <span>CPU:</span>
+                      <span>{{ t('statusMonitor.cpuModelLabel', 'CPU:') }}</span>
                     </span>
                     <span class="font-medium text-foreground break-words flex-1 font-mono text-[11px]">
                       {{ displayCpuModel }}
