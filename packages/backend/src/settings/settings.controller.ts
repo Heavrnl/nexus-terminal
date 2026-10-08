@@ -100,7 +100,8 @@ export const settingsController = {
           'fileEditorModalHeight', // 文本编辑器弹窗高度键
           'terminalNoWrap', // 终端不换行设置键
           'markdownDefaultViewMode',
-          'markdownDefaultViewModeMobile'
+          'markdownDefaultViewModeMobile',
+          'componentInstanceStates' // 组件实例状态设置键
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {
@@ -592,6 +593,53 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
          res.status(500).json({ message: i18next.t('error.exportFailedGeneric'), error: error.message });
      }
    }
- } // <-- No comma after the last method if it's truly the last one
+ },
+/**
+   * 获取所有组件实例状态
+   */
+  async getComponentInstanceStates(req: Request, res: Response): Promise<void> {
+    try {
+      const states = await settingsService.getComponentInstanceStates();
+      res.json(states);
+    } catch (error: any) {
+      console.error('[控制器] 获取组件实例状态失败:', error);
+      res.status(500).json({ message: '获取组件状态失败', error: error.message });
+    }
+  },
 
+  /**
+   * 局部更新或保存组件实例状态
+   */
+  async updateComponentInstanceStates(req: Request, res: Response): Promise<void> {
+    try {
+      const updates = req.body;
+      if (!updates || typeof updates !== 'object') {
+        res.status(400).json({ message: '无效的更新数据，应为对象' });
+        return;
+      }
+      const result = await settingsService.updateComponentInstanceStates(updates);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[控制器] 更新组件实例状态失败:', error);
+      res.status(500).json({ message: '更新组件状态失败', error: error.message });
+    }
+  },
+
+  /**
+   * 清理指定的不存在/孤立组件实例存储项
+   */
+  async cleanupComponentInstanceStates(req: Request, res: Response): Promise<void> {
+    try {
+      const { keysToDelete } = req.body;
+      if (!Array.isArray(keysToDelete)) {
+        res.status(400).json({ message: 'keysToDelete 应为数组' });
+        return;
+      }
+      const result = await settingsService.removeComponentInstanceStates(keysToDelete);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[控制器] 清理组件实例状态失败:', error);
+      res.status(500).json({ message: '清理组件状态失败', error: error.message });
+    }
+  }
 };

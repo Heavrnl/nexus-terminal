@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
 
           <!-- 嵌入快捷指令视图主体 -->
           <div class="flex-grow overflow-hidden flex flex-col bg-background">
-            <QuickCommandsView @execute-command="handleCommandExecute" />
+            <QuickCommandsView :instance-id="'modal'" @execute-command="handleCommandExecute" />
           </div>
 
           <!-- 底部安全区垫片 -->

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, computed } from 'vue';
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { SftpManagerInstance } from '../composables/useSftpActions';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { useComponentStateStore } from '../stores/componentState.store';
+import { useLayoutStore } from '../stores/layout.store';
 
 const props = withDefaults(
   defineProps<{
+    instanceId?: string;
     currentPath: string;
     isConnected: boolean;
     isSftpReady?: boolean;
@@ -13,6 +17,7 @@ const props = withDefaults(
     showFiles?: boolean;
   }>(),
   {
+    instanceId: 'default',
     width: 220,
     isSftpReady: false,
     showFiles: undefined,
@@ -38,18 +43,34 @@ interface TreeNode {
   hasChildren: boolean;
 }
 
-// 本地持久化配置 Key
-const LS_SHOW_FILES_KEY = 'file_manager_tree_show_files';
+// 设备检测与组件实例存储 Key
+const { isMobile: isMobileDevice } = useDeviceDetection();
+const isMobile = computed(() => isMobileDevice.value || (typeof window !== 'undefined' && window.innerWidth < 768));
+const platform = computed<'mobile' | 'desktop'>(() => isMobile.value ? 'mobile' : 'desktop');
+
+const componentStateStore = useComponentStateStore();
+const layoutStore = useLayoutStore();
+
+// 独立实例与分端存储的 Key
+const storageKey = computed(() => `tree_show_files:${platform.value}:${props.instanceId || 'default'}`);
 
 // 响应式版本号，确保 Map 内节点对象变更能被 computed 追踪
 const treeVersion = ref(0);
 
-// 内部维护显示文件状态（支持 props 受控或本地独立维护）
+// 内部维护显示文件状态（跟随组件实例与分端后端存储）
 const internalShowFiles = ref<boolean>(
-  typeof localStorage !== 'undefined'
-    ? localStorage.getItem(LS_SHOW_FILES_KEY) === 'true'
-    : false
+  componentStateStore.getState<boolean>(storageKey.value, false)
 );
+
+// 监听 storageKey 变动（如分端切换或实例切换）自动同步
+watch(storageKey, (newKey) => {
+  internalShowFiles.value = componentStateStore.getState<boolean>(newKey, false);
+});
+
+// 后端异步拉取完成时，更新至最新持久化设置
+watch(() => componentStateStore.isLoaded, () => {
+  internalShowFiles.value = componentStateStore.getState<boolean>(storageKey.value, internalShowFiles.value);
+});
 
 const isShowingFiles = computed<boolean>(() => {
   return props.showFiles !== undefined ? props.showFiles : internalShowFiles.value;
@@ -276,13 +297,11 @@ const refreshTree = async () => {
   await expandAncestors(props.currentPath);
 };
 
-// 切换显示文件模式
+// 切换显示文件模式 (组件实例独立 + 分端 + 后端持久化)
 const toggleShowFiles = async () => {
   const nextValue = !isShowingFiles.value;
   internalShowFiles.value = nextValue;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(LS_SHOW_FILES_KEY, String(nextValue));
-  }
+  componentStateStore.setState(storageKey.value, nextValue);
   emit('update:showFiles', nextValue);
   await refreshTree();
 };
@@ -320,9 +339,27 @@ watch(
 );
 
 onMounted(() => {
+  componentStateStore.initialize();
   ensureNode('/', '/', 0, true);
   if (props.isSftpReady) {
     refreshTree();
+  }
+});
+
+onBeforeUnmount(() => {
+  // 当检测不到该组件存在于布局中时，移除该存储项（独立实例垃圾回收）
+  const instance = props.instanceId;
+  const permanentList = ['modal', 'default', 'sidebar-left', 'sidebar-right'];
+  if (instance && !permanentList.includes(instance)) {
+    try {
+      const activeIds = layoutStore.getAllActivePaneIds ? layoutStore.getAllActivePaneIds() : new Set<string>();
+      if (!activeIds.has(instance)) {
+        void componentStateStore.removeState(`tree_show_files:desktop:${instance}`);
+        void componentStateStore.removeState(`tree_show_files:mobile:${instance}`);
+      }
+    } catch (e) {
+      console.warn('[DirectoryTree] 卸载时清理组件状态失败:', e);
+    }
   }
 });
 

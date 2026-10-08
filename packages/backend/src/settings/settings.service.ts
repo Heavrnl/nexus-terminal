@@ -36,6 +36,7 @@ const IP_BLACKLIST_ENABLED_KEY = 'ipBlacklistEnabled'; // IP 黑名单启用设�
 const SHOW_CONNECTION_TAGS_KEY = 'showConnectionTags'; // 连接标签显示设置键
 const SHOW_QUICK_COMMAND_TAGS_KEY = 'showQuickCommandTags'; // 快捷指令标签显示设置键
 const SHOW_STATUS_MONITOR_IP_ADDRESS_KEY = 'showStatusMonitorIpAddress'; // 状态监视器IP显示设置键
+const COMPONENT_INSTANCE_STATES_KEY = 'componentInstanceStates'; // 组件实例级状态设置键 (各组件独立/分端持久化)
  
 export const settingsService = {
   /**
@@ -585,6 +586,56 @@ export const settingsService = {
      console.error(`[Service] Error calling settingsRepository.setSetting for key ${SHOW_STATUS_MONITOR_IP_ADDRESS_KEY}:`, error);
      throw new Error('Failed to save show status monitor IP address setting.');
    }
- }
+ },
+
+  /**
+   * 获取所有组件实例状态字典
+   */
+  async getComponentInstanceStates(): Promise<Record<string, any>> {
+    try {
+      const raw = await settingsRepository.getSetting(COMPONENT_INSTANCE_STATES_KEY);
+      if (!raw) return {};
+      return JSON.parse(raw);
+    } catch (error) {
+      console.error('[Service] Error parsing componentInstanceStates:', error);
+      return {};
+    }
+  },
+
+  /**
+   * 局部更新或保存组件实例状态
+   * @param updates 需要更新的键值对，若值为 null 或 undefined 则删除该项
+   */
+  async updateComponentInstanceStates(updates: Record<string, any>): Promise<Record<string, any>> {
+    const current = await this.getComponentInstanceStates();
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === undefined) {
+        delete current[key];
+      } else {
+        current[key] = value;
+      }
+    }
+    await settingsRepository.setSetting(COMPONENT_INSTANCE_STATES_KEY, JSON.stringify(current));
+    return current;
+  },
+
+  /**
+   * 清理指定组件实例的存储项
+   * @param keysToDelete 要删除的键名数组
+   */
+  async removeComponentInstanceStates(keysToDelete: string[]): Promise<Record<string, any>> {
+    const current = await this.getComponentInstanceStates();
+    let changed = false;
+    for (const key of keysToDelete) {
+      if (key in current) {
+        delete current[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await settingsRepository.setSetting(COMPONENT_INSTANCE_STATES_KEY, JSON.stringify(current));
+    }
+    return current;
+  }
 
 }; // <-- End of settingsService object definition

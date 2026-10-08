@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch, type Ref, type ComputedRef } from 'vue';
 import apiClient from '../utils/apiClient';
+import { useComponentStateStore } from './componentState.store';
 
 // 定义所有可用面板的名称
 export type PaneName = 'connections' | 'terminal' | 'commandBar' | 'fileManager' | 'editor' | 'statusMonitor' | 'commandHistory' | 'quickCommands' | 'dockerManager' | 'suspendedSshSessions' | 'multiLineCommandInput';
@@ -132,6 +133,24 @@ function getAllUsedPaneNames(mainNode: LayoutNode | null, sidebars: { left: Pane
   sidebars.left.forEach(pane => usedNames.add(pane));
   sidebars.right.forEach(pane => usedNames.add(pane));
   return usedNames;
+}
+
+// 收集布局树中所有激活的实例 ID (Pane ID)
+export function getAllActivePaneIds(node: LayoutNode | null): Set<string> {
+  const ids = new Set<string>();
+  if (!node) return ids;
+
+  function traverse(currentNode: LayoutNode) {
+    if (currentNode.id) {
+      ids.add(currentNode.id);
+    }
+    if (currentNode.type === 'container' && currentNode.children) {
+      currentNode.children.forEach(traverse);
+    }
+  }
+
+  traverse(node);
+  return ids;
 }
 
 
@@ -367,6 +386,18 @@ function ensureNodeIds(node: LayoutNode | null): LayoutNode | null {
      }
 
     console.log('[Layout Store] initializeLayout finished.');
+    // 异步触发孤立组件状态检查与清理
+    try {
+      const componentStateStore = useComponentStateStore();
+      const activePaneIds = getAllActivePaneIds(layoutTree.value);
+      activePaneIds.add('modal');
+      activePaneIds.add('default');
+      activePaneIds.add('sidebar-left');
+      activePaneIds.add('sidebar-right');
+      void componentStateStore.cleanupOrphanedStates(activePaneIds);
+    } catch (e) {
+      console.warn('[Layout Store] 孤立组件状态检查跳过或失败:', e);
+    }
     // --- 移除最终状态的详细日志，避免冗余 ---
     // console.log('[Layout Store] Final layoutTree.value:', JSON.stringify(layoutTree.value, null, 2));
     // console.log('[Layout Store] Final sidebarPanes.value:', JSON.stringify(sidebarPanes.value, null, 2));
@@ -551,6 +582,18 @@ function ensureNodeIds(node: LayoutNode | null): LayoutNode | null {
    } catch (error) {
      console.error('[Layout Store] 保存主布局到 localStorage 失败:', error);
    }
+    // 布局保存后，检查并清理不存在的组件实例对应的持久化设置
+    try {
+      const componentStateStore = useComponentStateStore();
+      const activePaneIds = getAllActivePaneIds(layoutTree.value);
+      activePaneIds.add('modal');
+      activePaneIds.add('default');
+      activePaneIds.add('sidebar-left');
+      activePaneIds.add('sidebar-right');
+      void componentStateStore.cleanupOrphanedStates(activePaneIds);
+    } catch (e) {
+      console.warn('[Layout Store] 孤立组件状态检查跳过或失败:', e);
+    }
  }
 
  // 将当前侧栏配置持久化到后端和 localStorage
@@ -601,6 +644,7 @@ function ensureNodeIds(node: LayoutNode | null): LayoutNode | null {
    initializeLayout,
    updateNodeSizes,
    generateId,
+    getAllActivePaneIds: () => getAllActivePaneIds(layoutTree.value),
    toggleLayoutVisibility,
    loadHeaderVisibility,
    toggleHeaderVisibility,

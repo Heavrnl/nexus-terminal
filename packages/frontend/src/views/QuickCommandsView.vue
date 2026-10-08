@@ -422,6 +422,9 @@ import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import { useSessionStore } from '../stores/session.store';
 import type { SessionState } from '../stores/session/types'; 
 import { useConnectionsStore } from '../stores/connections.store';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { useComponentStateStore } from '../stores/componentState.store';
+import { useLayoutStore } from '../stores/layout.store';
 
 const quickCommandsStore = useQuickCommandsStore();
 const quickCommandTagsStore = useQuickCommandTagsStore(); 
@@ -432,7 +435,30 @@ const focusSwitcherStore = useFocusSwitcherStore();
 const settingsStore = useSettingsStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 const sessionStore = useSessionStore(); 
-const connectionsStore = useConnectionsStore(); 
+const connectionsStore = useConnectionsStore();
+
+const props = withDefaults(
+  defineProps<{
+    instanceId?: string;
+  }>(),
+  {
+    instanceId: 'default',
+  }
+);
+
+const emit = defineEmits<{
+  (e: 'execute-command', command: string): void;
+}>();
+
+const { isMobile: isMobileDevice } = useDeviceDetection();
+const isMobile = computed(() => isMobileDevice.value || (typeof window !== 'undefined' && window.innerWidth < 768));
+const platform = computed<'mobile' | 'desktop'>(() => isMobile.value ? 'mobile' : 'desktop');
+
+const componentStateStore = useComponentStateStore();
+const layoutStore = useLayoutStore();
+
+// 独立实例与分端存储的 Key
+const storageKey = computed(() => `qc_view_mode:${platform.value}:${props.instanceId || 'default'}`); 
 
 const hoveredItemId = ref<number | null>(null);
 const isFormVisible = ref(false);
@@ -512,35 +538,44 @@ const flatFilteredCommands = computed(() => {
     return quickCommandsStore.flatVisibleCommands;
 });
 
-// --- 三视图模式定义与持久化 ---
+// --- 三视图模式定义与持久化 (组件实例隔离 + 移动/桌面分端 + 后端持久化) ---
 export type QuickCommandsViewMode = 'grid' | 'list' | 'pills';
 
-const LS_VIEW_MODE_KEY = 'quick_commands_view_mode';
+const getDefaultViewMode = (): QuickCommandsViewMode => {
+  if (quickCommandsCompactModeBoolean.value) {
+    return 'pills';
+  }
+  return 'grid'; // 默认推荐使用高空间利用率的网格卡片
+};
 
 const currentViewMode = ref<QuickCommandsViewMode>(
-  (() => {
-    if (typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem(LS_VIEW_MODE_KEY) as QuickCommandsViewMode;
-      if (saved === 'grid' || saved === 'list' || saved === 'pills') {
-        return saved;
-      }
-    }
-    if (quickCommandsCompactModeBoolean.value) {
-      return 'pills';
-    }
-    return 'grid'; // 默认推荐使用高空间利用率的网格卡片
-  })()
+  componentStateStore.getState<QuickCommandsViewMode>(storageKey.value, getDefaultViewMode())
 );
+
+// 监听 storageKey 变动（如分端切换或实例切换）自动同步
+watch(storageKey, (newKey) => {
+  const saved = componentStateStore.getState<QuickCommandsViewMode>(newKey, getDefaultViewMode());
+  if (saved && ['grid', 'list', 'pills'].includes(saved)) {
+    currentViewMode.value = saved;
+  }
+});
+
+// 后端异步拉取完成时，更新至最新持久化设置
+watch(() => componentStateStore.isLoaded, () => {
+  const saved = componentStateStore.getState<QuickCommandsViewMode>(storageKey.value, currentViewMode.value);
+  if (saved && ['grid', 'list', 'pills'].includes(saved)) {
+    currentViewMode.value = saved;
+  }
+});
 
 const isCompactMode = computed(() => currentViewMode.value === 'pills');
 
 const cycleViewMode = () => {
   const modes: QuickCommandsViewMode[] = ['grid', 'list', 'pills'];
   const nextIndex = (modes.indexOf(currentViewMode.value) + 1) % modes.length;
-  currentViewMode.value = modes[nextIndex];
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(LS_VIEW_MODE_KEY, currentViewMode.value);
-  }
+  const nextMode = modes[nextIndex];
+  currentViewMode.value = nextMode;
+  componentStateStore.setState(storageKey.value, nextMode);
 };
 
 const viewModeIcon = computed(() => {
@@ -579,6 +614,8 @@ const getCommandTooltip = (cmd: QuickCommandFE): string => {
 
 // --- 生命周期钩子 ---
 onMounted(async () => { // Make onMounted async
+    // 初始化组件实例后端状态仓库
+    componentStateStore.initialize();
     // Load expanded groups state first
     quickCommandsStore.loadExpandedGroups();
     // Then fetch commands (which might initialize expandedGroups for new groups)
@@ -590,6 +627,20 @@ onMounted(async () => { // Make onMounted async
 });
 
 onBeforeUnmount(() => {
+  // 当检测不到该组件存在于布局中时，移除该存储项（独立实例垃圾回收）
+  const instance = props.instanceId;
+  const permanentList = ['modal', 'default', 'sidebar-left', 'sidebar-right'];
+  if (instance && !permanentList.includes(instance)) {
+    try {
+      const activeIds = layoutStore.getAllActivePaneIds ? layoutStore.getAllActivePaneIds() : new Set<string>();
+      if (!activeIds.has(instance)) {
+        void componentStateStore.removeState(`qc_view_mode:desktop:${instance}`);
+        void componentStateStore.removeState(`qc_view_mode:mobile:${instance}`);
+      }
+    } catch (e) {
+      console.warn('[QuickCommandsView] 卸载时清理组件状态失败:', e);
+    }
+  }
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
@@ -845,6 +896,7 @@ const executeCommand = (cmd: QuickCommandFE) => {
     command: processedCommand,
     sessionId: activeSessionId
   });
+  emit('execute-command', processedCommand);
 };
 
 // +++ 聚焦搜索框的方法 +++

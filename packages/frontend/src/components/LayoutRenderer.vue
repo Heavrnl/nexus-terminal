@@ -199,10 +199,13 @@ const componentProps = computed(() => {
          // --- 移除事件转发 ---
        };
      case 'commandHistory':
+       return {
+         class: 'flex flex-col flex-grow h-full overflow-auto',
+       };
     case 'quickCommands':
        return {
-         class: 'flex flex-col flex-grow h-full overflow-auto', // 移除 pane-content，保留填充类
-         // --- 移除事件转发 ---
+         instanceId: props.layoutNode.id || 'quick-commands-main',
+         class: 'flex flex-col flex-grow h-full overflow-auto',
        };
    case 'dockerManager':
      // DockerManager 可能不需要 session 信息
@@ -274,6 +277,11 @@ const sidebarProps = computed(() => (paneName: PaneName | null, side: 'left' | '
     // Add cases for other components if they need specific props or event forwarding in the sidebar
     // case 'commandHistory': return { ...baseProps, onExecuteCommand: (cmd: string) => emit('sendCommand', cmd) };
     // case 'quickCommands': return { ...baseProps, onExecuteCommand: (cmd: string) => emit('sendCommand', cmd) };
+    case 'quickCommands':
+      return {
+        ...baseProps,
+        instanceId: side === 'left' ? 'sidebar-left' : 'sidebar-right',
+      };
     default:
       return baseProps; // Return only base props for other components
   }

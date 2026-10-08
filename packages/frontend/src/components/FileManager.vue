@@ -1229,6 +1229,7 @@ defineExpose({ focusSearchInput, startPathEdit });
           <!-- 左侧纯目录树导航窗格 -->
           <DirectoryTree
             v-if="showDirectoryTree"
+            :instance-id="props.instanceId"
             :current-path="currentSftpManager?.currentPath?.value ?? '/'"
             :is-connected="Boolean(props.wsDeps.isConnected.value)"
             :is-sftp-ready="Boolean(props.wsDeps.isSftpReady.value)"

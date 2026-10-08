@@ -80,12 +80,15 @@ router.get('/show-status-monitor-ip-address', settingsController.getShowStatusMo
 // PUT /api/v1/settings/show-status-monitor-ip-address - 更新设置
 router.put('/show-status-monitor-ip-address', settingsController.setShowStatusMonitorIpAddress);
  
-export default router;
+// +++ 组件实例级状态路由 (各面板分别存储/分端持久化/孤立项清理) +++
+// GET /api/v1/settings/component-instance-states - 获取所有组件实例状态
+router.get('/component-instance-states', settingsController.getComponentInstanceStates);
+// PUT /api/v1/settings/component-instance-states - 局部更新/保存组件实例状态
+router.put('/component-instance-states', settingsController.updateComponentInstanceStates);
+// POST /api/v1/settings/component-instance-states/cleanup - 清理移除不存在组件的存储项
+router.post('/component-instance-states/cleanup', settingsController.cleanupComponentInstanceStates);
 
 // +++ CAPTCHA 配置路由 (需要认证更新) +++
-// PUT /api/v1/settings/captcha - 更新 CAPTCHA 配置
-// 注意：这个路由定义在 `export default router` 之后，这是不正确的。
-// 我会将它移到 `export default router` 之前，并确保它也在 `isAuthenticated` 中间件的作用域内。
-// 然而，既然它已经存在，并且在 `isAuthenticated` 之后（通过 router.use(isAuthenticated)），
-// 我们只需要确保导出路由也在正确的位置。
 router.put('/captcha', settingsController.setCaptchaConfig);
+
+export default router;
