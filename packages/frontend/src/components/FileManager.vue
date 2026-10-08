@@ -269,6 +269,15 @@ const dropOverlayRef = ref<HTMLDivElement | null>(null); // 拖拽蒙版引用
 
 const rowSizeMultiplier = ref(1.0); // 行大小乘数, 默认值会被 store 覆盖
 const tableRef = ref<HTMLTableElement | null>(null);
+const tableHeaderContainerRef = ref<HTMLDivElement | null>(null);
+
+// 表格内容滚动时同步表头的横向滚动偏移
+const handleBodyScroll = (e: Event) => {
+  const target = e.target as HTMLElement;
+  if (tableHeaderContainerRef.value && target) {
+    tableHeaderContainerRef.value.scrollLeft = target.scrollLeft;
+  }
+};
 
 // --- 列宽调整 Composable ---
 const {
@@ -1480,102 +1489,120 @@ defineExpose({ focusSearchInput, startPathEdit });
               </div>
             </div>
 
+            <!-- 桌面端列表固定表头栏 (独立于滚动条容器，横向 100% 满宽，右端绝不被滚动条截断) -->
+            <div
+              v-if="viewMode === 'list'"
+              ref="tableHeaderContainerRef"
+              class="w-full flex-shrink-0 bg-header border-b border-border select-none overflow-hidden"
+              :style="{
+                '--row-size-multiplier': rowSizeMultiplier,
+                '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
+              }"
+            >
+              <table class="w-full border-collapse table-fixed border-border">
+                <colgroup>
+                  <col v-for="colKey in columnOrder" :key="colKey" :style="{ width: `${colWidths[colKey]}px` }">
+                </colgroup>
+                <thead class="bg-header select-none">
+                  <tr>
+                    <th
+                      v-for="(colKey, colIndex) in columnOrder"
+                      :key="colKey"
+                      :data-col-key="colKey"
+                      @pointerdown="handleHeaderPointerDown($event, colKey, COLUMN_CONFIG_MAP[colKey].sortKey)"
+                      class="group relative text-left text-xs font-medium text-text-secondary select-none whitespace-nowrap bg-header"
+                      :class="[
+                        COLUMN_CONFIG_MAP[colKey].sortKey ? 'cursor-pointer' : 'cursor-default',
+                        isDraggingColumn && dragSourceCol === colKey ? 'opacity-40' : ''
+                      ]"
+                      :style="{
+                        padding: colKey === 'type'
+                          ? `calc(0.4rem * var(--row-size-multiplier)) calc(0.5rem * var(--row-size-multiplier)) calc(0.4rem * var(--row-size-multiplier)) calc(1rem * var(--row-size-multiplier))`
+                          : `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`
+                      }"
+                    >
+                      <!-- 拖拽重排插入指示竖线 (根据 dropPosition 显示在左侧或右侧) -->
+                      <div
+                        v-if="isDraggingColumn && dragOverCol === colKey && dragSourceCol !== colKey"
+                        class="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
+                        :class="dropPosition === 'before' ? 'left-0' : 'right-0'"
+                      ></div>
+
+                      <div
+                        class="inline-flex items-center gap-1.5 transition-colors group-hover:text-foreground"
+                        :class="COLUMN_CONFIG_MAP[colKey].sortKey && sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-foreground' : 'text-text-secondary'"
+                      >
+                        <span>{{ t(COLUMN_CONFIG_MAP[colKey].labelKey) }}</span>
+                        <span
+                          v-if="COLUMN_CONFIG_MAP[colKey].sortKey"
+                          class="inline-flex items-center text-[10px] transition-all duration-150"
+                          :class="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-primary opacity-100 scale-100' : 'text-text-secondary/40 opacity-0 group-hover:opacity-100 scale-90'"
+                        >
+                          <i
+                            v-if="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey"
+                            class="fas"
+                            :class="sortDirection === 'asc' ? 'fa-arrow-up-long' : 'fa-arrow-down-long'"
+                          ></i>
+                          <i
+                            v-else
+                            class="fas fa-sort"
+                          ></i>
+                        </span>
+                      </div>
+
+                      <!-- 列宽调整手柄 (不是最后一列时显示) -->
+                      <div
+                        v-if="colIndex < columnOrder.length - 1"
+                        class="absolute top-1/2 -translate-y-1/2 right-0 w-2.5 h-full flex items-center justify-center cursor-col-resize z-20 group/resizer"
+                        @mousedown.stop.prevent="startResize($event, colKey)"
+                        @pointerdown.stop
+                        @click.stop
+                      >
+                        <div class="w-px h-3 bg-border/40 group-hover/resizer:bg-primary group-hover/resizer:h-full transition-all duration-150"></div>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+
             <!-- File List Container -->
-      <div
-        ref="fileListContainerRef"
-        class="flex-grow min-h-0 overflow-y-auto relative outline-none [scrollbar-gutter:stable] transition-colors duration-150"
-        :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
-        @dragenter.prevent="handleDragEnter"
-        @dragover.prevent="handleDragOver"
-        @dragleave.prevent="handleDragLeave"
-        @drop.prevent="handleDrop"
-        @click="fileListContainerRef?.focus()"
-        @keydown="handleKeydown"
-        @wheel="handleWheel"
-        @contextmenu.prevent="showContextMenu($event)"
-        :style="{
-          '--row-size-multiplier': rowSizeMultiplier,
-          '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
-        }"
-        tabindex="0"
-      >
-        <!-- 外部文件拖拽蒙版 -->
-        <div
-          v-if="showExternalDropOverlay"
-          ref="dropOverlayRef"
-          class="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xl font-semibold rounded z-50 pointer-events-auto"
-          @dragover.prevent
-          @dragleave.prevent="handleDragLeave"
-          @drop.prevent="handleOverlayDrop"
-        >
-          {{ t('fileManager.dropFilesHere', 'Drop files here to upload') }}
-        </div>
-
-        <!-- File Table (List View) -->
-        <table v-if="viewMode === 'list'" ref="tableRef" class="w-full border-collapse table-fixed border-border rounded" :class="{'pointer-events-none': showExternalDropOverlay}" @contextmenu.prevent>
-            <colgroup>
-                <col v-for="colKey in columnOrder" :key="colKey" :style="{ width: `${colWidths[colKey]}px` }">
-           </colgroup>
-          <thead class="sticky top-0 z-10 bg-header border-b border-border select-none">
-            <tr>
-              <th
-                v-for="(colKey, colIndex) in columnOrder"
-                :key="colKey"
-                :data-col-key="colKey"
-                @pointerdown="handleHeaderPointerDown($event, colKey, COLUMN_CONFIG_MAP[colKey].sortKey)"
-                class="group relative text-left text-xs font-medium text-text-secondary select-none whitespace-nowrap bg-header"
-                :class="[
-                  COLUMN_CONFIG_MAP[colKey].sortKey ? 'cursor-pointer' : 'cursor-default',
-                  isDraggingColumn && dragSourceCol === colKey ? 'opacity-40' : ''
-                ]"
-                :style="{
-                  padding: colKey === 'type'
-                    ? `calc(0.4rem * var(--row-size-multiplier)) calc(0.5rem * var(--row-size-multiplier)) calc(0.4rem * var(--row-size-multiplier)) calc(1rem * var(--row-size-multiplier))`
-                    : `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`
-                }"
+            <div
+              ref="fileListContainerRef"
+              class="flex-grow min-h-0 overflow-y-auto relative outline-none transition-colors duration-150"
+              :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
+              @dragenter.prevent="handleDragEnter"
+              @dragover.prevent="handleDragOver"
+              @dragleave.prevent="handleDragLeave"
+              @drop.prevent="handleDrop"
+              @click="fileListContainerRef?.focus()"
+              @keydown="handleKeydown"
+              @wheel="handleWheel"
+              @scroll="handleBodyScroll"
+              @contextmenu.prevent="showContextMenu($event)"
+              :style="{
+                '--row-size-multiplier': rowSizeMultiplier,
+                '--font-scale': `max(0.85, ${rowSizeMultiplier} * 0.5 + 0.5)`
+              }"
+              tabindex="0"
+            >
+              <!-- 外部文件拖拽蒙版 -->
+              <div
+                v-if="showExternalDropOverlay"
+                ref="dropOverlayRef"
+                class="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xl font-semibold rounded z-50 pointer-events-auto"
+                @dragover.prevent
+                @dragleave.prevent="handleDragLeave"
+                @drop.prevent="handleOverlayDrop"
               >
-                <!-- 拖拽重排插入指示竖线 (根据 dropPosition 显示在左侧或右侧) -->
-                <div
-                  v-if="isDraggingColumn && dragOverCol === colKey && dragSourceCol !== colKey"
-                  class="absolute top-0 bottom-0 w-0.5 bg-primary z-30 pointer-events-none"
-                  :class="dropPosition === 'before' ? 'left-0' : 'right-0'"
-                ></div>
+                {{ t('fileManager.dropFilesHere', 'Drop files here to upload') }}
+              </div>
 
-                <div
-                  class="inline-flex items-center gap-1.5 transition-colors group-hover:text-foreground"
-                  :class="COLUMN_CONFIG_MAP[colKey].sortKey && sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-foreground' : 'text-text-secondary'"
-                >
-                  <span>{{ t(COLUMN_CONFIG_MAP[colKey].labelKey) }}</span>
-                  <span
-                    v-if="COLUMN_CONFIG_MAP[colKey].sortKey"
-                    class="inline-flex items-center text-[10px] transition-all duration-150"
-                    :class="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey ? 'text-primary opacity-100 scale-100' : 'text-text-secondary/40 opacity-0 group-hover:opacity-100 scale-90'"
-                  >
-                    <i
-                      v-if="sortKey === COLUMN_CONFIG_MAP[colKey].sortKey"
-                      class="fas"
-                      :class="sortDirection === 'asc' ? 'fa-arrow-up-long' : 'fa-arrow-down-long'"
-                    ></i>
-                    <i
-                      v-else
-                      class="fas fa-sort"
-                    ></i>
-                  </span>
-                </div>
-
-                <!-- 列宽调整手柄 (不是最后一列时显示) -->
-                <div
-                  v-if="colIndex < columnOrder.length - 1"
-                  class="absolute top-1/2 -translate-y-1/2 right-0 w-2.5 h-full flex items-center justify-center cursor-col-resize z-20 group/resizer"
-                  @mousedown.stop.prevent="startResize($event, colKey)"
-                  @pointerdown.stop
-                  @click.stop
-                >
-                  <div class="w-px h-3 bg-border/40 group-hover/resizer:bg-primary group-hover/resizer:h-full transition-all duration-150"></div>
-                </div>
-              </th>
-            </tr>
-          </thead>
+              <!-- File Table (List View) -->
+              <table v-if="viewMode === 'list'" ref="tableRef" class="w-full border-collapse table-fixed border-border rounded" :class="{'pointer-events-none': showExternalDropOverlay}" @contextmenu.prevent>
+                  <colgroup>
+                      <col v-for="colKey in columnOrder" :key="colKey" :style="{ width: `${colWidths[colKey]}px` }">
+                 </colgroup>
 
           <!-- 首次冷启动加载状态 (仅在初次加载且列表完全为空时展示，避免闪烁) -->
           <tbody v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0">
