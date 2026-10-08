@@ -654,9 +654,9 @@ const {
 } = workspaceSettings;
 
 const markdownViewModeOptions = computed(() => [
-  { value: 'preview' as const, label: t('settings.workspace.markdownViewModePreview', '预览模式'), icon: 'fas fa-eye' },
-  { value: 'split' as const, label: t('settings.workspace.markdownViewModeSplit', '一半代码一半预览'), icon: 'fas fa-columns' },
-  { value: 'edit' as const, label: t('settings.workspace.markdownViewModeEdit', '代码界面'), icon: 'fas fa-code' },
+  { value: 'preview' as const, label: t('settings.workspace.markdownViewModePreview', '仅预览'), icon: 'fas fa-eye' },
+  { value: 'split' as const, label: t('settings.workspace.markdownViewModeSplit', '分屏预览'), icon: 'fas fa-columns' },
+  { value: 'edit' as const, label: t('settings.workspace.markdownViewModeEdit', '代码编辑'), icon: 'fas fa-code' },
 ]);
 
 const handleSelectMarkdownDefaultViewMode = async (mode: 'preview' | 'split' | 'edit') => {

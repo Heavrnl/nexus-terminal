@@ -986,9 +986,9 @@
       "markdownDefaultViewModeDescription": "分别配置桌面端与移动端打开 Markdown 文件时的默认显示模式",
       "deviceDesktop": "桌面端",
       "deviceMobile": "移动端",
-      "markdownViewModePreview": "预览模式",
-      "markdownViewModeSplit": "一半代码一半预览",
-      "markdownViewModeEdit": "代码界面"
+      "markdownViewModePreview": "仅预览",
+      "markdownViewModeSplit": "分屏预览",
+      "markdownViewModeEdit": "代码编辑"
     },
     "statusMonitorShowIp": {
       "title": "状态监视器显示IP地址",
