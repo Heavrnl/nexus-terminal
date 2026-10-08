@@ -624,6 +624,20 @@ const toggleSearch = () => {
 
 defineExpose({
   focus: () => view.value?.focus(),
+  setScrollTop: (top: number) => {
+    if (view.value?.scrollDOM) {
+      view.value.scrollDOM.scrollTop = top;
+    }
+  },
+  getScrollInfo: () => {
+    const scroller = view.value?.scrollDOM;
+    return {
+      scrollTop: scroller?.scrollTop ?? 0,
+      scrollLeft: scroller?.scrollLeft ?? 0,
+      scrollHeight: scroller?.scrollHeight ?? 0,
+      clientHeight: scroller?.clientHeight ?? 0,
+    };
+  },
   openSearch,
   closeSearch,
   toggleSearch,

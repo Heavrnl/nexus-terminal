@@ -11,6 +11,7 @@ import { WebLinksAddon } from 'xterm-addon-web-links';
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import 'xterm/css/xterm.css';
+import MobileTerminalScrollbar from './MobileTerminalScrollbar.vue';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 
@@ -192,20 +193,9 @@ const removeContextMenuListener = () => {
 
 
 // --- 移动端模式下触摸控制与右侧悬浮滚动条 ---
-const mobileScrollTrackRef = ref<HTMLDivElement | null>(null);
 const canScroll = ref(false);
 const scrollProgress = ref(1); // 0 (顶部历史) 到 1 (底部最新输出)
 const thumbHeightRatio = ref(0.2);
-const isScrollbarDragging = ref(false);
-
-const thumbHeightPercent = computed(() => {
-  return Math.round(thumbHeightRatio.value * 100);
-});
-
-const thumbTopPercent = computed(() => {
-  const maxTop = 100 - thumbHeightPercent.value;
-  return Math.min(maxTop, Math.max(0, scrollProgress.value * maxTop));
-});
 
 // 计算当前文本是否超出视口并刷新进度
 const updateScrollState = () => {
@@ -231,59 +221,13 @@ const updateScrollState = () => {
   }
 };
 
-// 触摸滚动条拖拽计算
-const handleScrollbarDragTo = (clientY: number) => {
-  if (!terminal || !canScroll.value || !mobileScrollTrackRef.value) return;
-
-  const rect = mobileScrollTrackRef.value.getBoundingClientRect();
-  const trackHeight = rect.height;
-  if (trackHeight <= 0) return;
-
-  const thumbHeightPx = Math.max(28, thumbHeightRatio.value * trackHeight);
-  const maxTopPx = trackHeight - thumbHeightPx;
-  if (maxTopPx <= 0) return;
-
-  const relativeY = clientY - rect.top;
-  const targetTopPx = relativeY - thumbHeightPx / 2;
-  const progress = Math.min(1, Math.max(0, targetTopPx / maxTopPx));
-
+// 移动端悬浮滚动条拖拽滚动进度变更
+const handleScrollProgressChange = (progress: number) => {
+  if (!terminal) return;
   const baseY = terminal.buffer.active.baseY;
   const targetLine = Math.round(progress * baseY);
   terminal.scrollToLine(targetLine);
   updateScrollState();
-};
-
-const handleScrollbarTouchStart = (event: TouchEvent) => {
-  if (event.touches.length > 0) {
-    isScrollbarDragging.value = true;
-    handleScrollbarDragTo(event.touches[0].clientY);
-  }
-};
-
-const handleScrollbarTouchMove = (event: TouchEvent) => {
-  if (event.touches.length > 0) {
-    handleScrollbarDragTo(event.touches[0].clientY);
-  }
-};
-
-const handleScrollbarTouchEnd = () => {
-  isScrollbarDragging.value = false;
-};
-
-const handleScrollbarMouseDown = (event: MouseEvent) => {
-  isScrollbarDragging.value = true;
-  handleScrollbarDragTo(event.clientY);
-
-  const onMouseMove = (moveEvent: MouseEvent) => {
-    handleScrollbarDragTo(moveEvent.clientY);
-  };
-  const onMouseUp = () => {
-    isScrollbarDragging.value = false;
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  };
-  window.addEventListener('mousemove', onMouseMove);
-  window.addEventListener('mouseup', onMouseUp);
 };
 
 // --- 移动端双指缩放字号 ---
@@ -936,28 +880,14 @@ const handleTerminalClick = () => {
       <div ref="terminalRef" class="terminal-inner-container"></div>
     </div>
 
-    <!-- 移动端专属右侧悬浮滚动条 (固定跟随手机屏幕物理右边缘，仅当文本超出当前终端显示时才出现) -->
-    <div
+    <!-- 移动端专属右侧悬浮滚动条 (独立解耦组件) -->
+    <MobileTerminalScrollbar
       v-if="isMobile && canScroll"
-      ref="mobileScrollTrackRef"
-      class="mobile-terminal-scrollbar-track"
-      :class="{ 'is-dragging': isScrollbarDragging }"
-      @touchstart.stop.prevent="handleScrollbarTouchStart"
-      @touchmove.stop.prevent="handleScrollbarTouchMove"
-      @touchend.stop.prevent="handleScrollbarTouchEnd"
-      @touchcancel.stop.prevent="handleScrollbarTouchEnd"
-      @mousedown.stop.prevent="handleScrollbarMouseDown"
-    >
-      <div
-        class="mobile-terminal-scrollbar-thumb"
-        :style="{
-          height: `${thumbHeightPercent}%`,
-          top: `${thumbTopPercent}%`
-        }"
-      >
-        <div class="thumb-pill"></div>
-      </div>
-    </div>
+      :can-scroll="canScroll"
+      :scroll-progress="scrollProgress"
+      :thumb-height-ratio="thumbHeightRatio"
+      @scroll-progress="handleScrollProgressChange"
+    />
   </div>
 </template>
 
@@ -1024,51 +954,5 @@ const handleTerminalClick = () => {
   height: 0 !important;
 }
 
-/* 移动端专属终端悬浮滚动条样式 */
-.mobile-terminal-scrollbar-track {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  right: 2px;
-  width: 24px; /* 宽触摸热区，方便手指盲抓 */
-  z-index: 40;
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-
-.mobile-terminal-scrollbar-thumb {
-  position: absolute;
-  right: 2px;
-  width: 14px;
-  min-height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
-/* 谷歌浏览器 Chrome 风格极简中性灰滚动条 */
-.thumb-pill {
-  width: 5px;
-  height: 100%;
-  border-radius: 9999px;
-  background-color: rgba(156, 163, 175, 0.45);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.35);
-  transition: width 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-/* 拖动激活态或触摸按下态 */
-.mobile-terminal-scrollbar-track.is-dragging .thumb-pill,
-.mobile-terminal-scrollbar-track:active .thumb-pill {
-  width: 7px;
-  opacity: 1;
-  background-color: rgba(209, 213, 219, 0.8);
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.45);
-}
 </style>
 

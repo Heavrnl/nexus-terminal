@@ -1,0 +1,227 @@
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useSessionStore } from '../stores/session.store';
+import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
+import { useConfirmDialog } from '../composables/useConfirmDialog';
+
+const props = defineProps<{
+  isVisible: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'navigate-to-path', path: string): void;
+}>();
+
+const { t } = useI18n();
+const favoritePathsStore = useFavoritePathsStore();
+const sessionStore = useSessionStore();
+const { showConfirmDialog } = useConfirmDialog();
+
+const searchTerm = ref('');
+const showAddEditModal = ref(false);
+const editingPathItem = ref<FavoritePathItem | null>(null);
+
+const filteredPaths = computed(() => {
+  if (!searchTerm.value) {
+    return favoritePathsStore.favoritePaths;
+  }
+  const lowerSearchTerm = searchTerm.value.toLowerCase();
+  return favoritePathsStore.favoritePaths.filter(
+    (p) =>
+      p.path.toLowerCase().includes(lowerSearchTerm) ||
+      (p.name && p.name.toLowerCase().includes(lowerSearchTerm))
+  );
+});
+
+const currentSortBy = computed(() => favoritePathsStore.currentSortBy);
+
+const sortButtonIcon = computed(() => {
+  return currentSortBy.value === 'name' ? 'fas fa-sort-alpha-down' : 'fas fa-clock';
+});
+
+const toggleSort = () => {
+  const newSortBy = currentSortBy.value === 'name' ? 'last_used_at' : 'name';
+  favoritePathsStore.setSortBy(newSortBy);
+};
+
+const closeModal = () => {
+  emit('close');
+};
+
+const handleItemClick = async (pathItem: FavoritePathItem) => {
+  try {
+    await favoritePathsStore.markPathAsUsed(pathItem.id, t);
+  } catch (error) {
+    console.error('Failed to mark path as used:', error);
+  }
+  emit('navigate-to-path', pathItem.path);
+  closeModal();
+};
+
+const openAddModal = () => {
+  editingPathItem.value = null;
+  showAddEditModal.value = true;
+};
+
+const openEditModal = (pathItem: FavoritePathItem) => {
+  editingPathItem.value = { ...pathItem };
+  showAddEditModal.value = true;
+};
+
+const handleDelete = async (pathItem: FavoritePathItem) => {
+  const confirmed = await showConfirmDialog({
+    message: t('favoritePaths.confirmDelete', { name: pathItem.name || pathItem.path })
+  });
+  if (confirmed) {
+    try {
+      await favoritePathsStore.deleteFavoritePath(pathItem.id, t);
+    } catch (error) {
+      console.error('Failed to delete favorite path from modal:', error);
+    }
+  }
+};
+
+const handleSendToTerminal = (pathItem: FavoritePathItem) => {
+  const activeSession = sessionStore.activeSession;
+  if (activeSession && activeSession.terminalManager) {
+    const escapedPath = `"${pathItem.path.replace(/"/g, '\\"')}"`;
+    const command = `cd ${escapedPath}\n`;
+    try {
+      activeSession.terminalManager.sendData(command);
+    } catch (error) {
+      console.error('Failed to send cd command to terminal:', error);
+    }
+  }
+};
+
+watch(() => props.isVisible, (val) => {
+  if (val) {
+    searchTerm.value = '';
+  }
+});
+</script>
+
+<template>
+  <Teleport to="body">
+    <div
+      v-if="props.isVisible"
+      class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end select-none"
+      @click.self="closeModal"
+    >
+      <div class="w-full bg-background rounded-t-2xl border-t border-border/80 shadow-2xl p-4 flex flex-col max-h-[80vh] overflow-hidden">
+        <!-- 顶部药丸手柄 -->
+        <div class="pt-1 pb-2 flex justify-center cursor-pointer" @click="closeModal">
+          <div class="w-10 h-1 bg-border/80 rounded-full"></div>
+        </div>
+
+        <!-- 顶栏标题 -->
+        <div class="flex items-center justify-between pb-3 border-b border-border/40">
+          <h3 class="text-base font-semibold text-foreground flex items-center gap-2">
+            <i class="fas fa-star text-amber-400"></i>
+            <span>{{ t('fileManager.favoritePathsTooltip', '常用路径收藏夹') }}</span>
+          </h3>
+          <button
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground active:bg-header"
+            @click="closeModal"
+          >
+            <i class="fas fa-times text-sm"></i>
+          </button>
+        </div>
+
+        <!-- 工具栏：搜索与排序/添加按钮 -->
+        <div class="py-3 flex items-center gap-2">
+          <div class="relative flex-grow">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary pointer-events-none"></i>
+            <input
+              type="text"
+              v-model="searchTerm"
+              :placeholder="t('favoritePaths.searchPlaceholder', '搜索名称或路径...')"
+              class="w-full h-10 bg-input border border-border rounded-xl pl-8 pr-3 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+            />
+          </div>
+          <button
+            @click="toggleSort"
+            class="w-10 h-10 flex items-center justify-center bg-header/60 border border-border rounded-xl text-text-secondary hover:text-primary active:scale-95 transition-all shrink-0"
+            :title="currentSortBy === 'name' ? '按名称排序' : '按时间排序'"
+          >
+            <i :class="sortButtonIcon"></i>
+          </button>
+          <button
+            @click="openAddModal"
+            class="h-10 px-3 flex items-center justify-center gap-1.5 bg-primary text-white rounded-xl text-xs font-semibold active:scale-95 transition-all shadow-md shrink-0"
+            :title="t('favoritePaths.addNew', '添加常用路径')"
+          >
+            <i class="fas fa-plus text-xs"></i>
+            <span>添加</span>
+          </button>
+        </div>
+
+        <!-- 路径列表 -->
+        <div class="overflow-y-auto flex-grow space-y-2 py-1 pr-1 overscroll-contain">
+          <div v-if="favoritePathsStore.isLoading && filteredPaths.length === 0" class="py-8 flex flex-col items-center justify-center text-text-secondary gap-2 text-xs">
+            <i class="fas fa-spinner fa-spin text-lg text-primary"></i>
+            <span>{{ t('favoritePaths.loading', '正在加载收藏路径...') }}</span>
+          </div>
+          <div v-else-if="!favoritePathsStore.isLoading && filteredPaths.length === 0" class="py-10 text-center text-text-secondary text-xs">
+            <i class="fas fa-star-half-alt text-2xl text-text-secondary/50 block mb-2"></i>
+            <span>{{ searchTerm ? t('favoritePaths.noResults', '未找到匹配的路径') : t('favoritePaths.noFavorites', '暂无收藏路径，点击右上角添加') }}</span>
+          </div>
+          <div
+            v-else
+            v-for="favPath in filteredPaths"
+            :key="favPath.id"
+            class="w-full flex items-center justify-between p-3 rounded-xl bg-header/30 border border-border/40 hover:bg-header/60 active:bg-primary/10 transition-colors cursor-pointer"
+            @click="handleItemClick(favPath)"
+          >
+            <div class="min-w-0 flex-1 mr-2">
+              <div class="font-medium text-[13px] text-foreground truncate">
+                {{ favPath.name || favPath.path }}
+              </div>
+              <div class="text-[11px] font-mono text-text-secondary truncate mt-0.5">
+                {{ favPath.path }}
+              </div>
+            </div>
+            <!-- 触屏常驻操作按钮组 -->
+            <div class="flex items-center gap-1 shrink-0" @click.stop>
+              <button
+                @click="handleSendToTerminal(favPath)"
+                class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-primary active:bg-primary/20 transition-colors"
+                title="在终端切换至此路径"
+              >
+                <i class="fas fa-terminal text-xs"></i>
+              </button>
+              <button
+                @click="openEditModal(favPath)"
+                class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-amber-500 active:bg-amber-500/20 transition-colors"
+                :title="t('common.edit')"
+              >
+                <i class="fas fa-pencil-alt text-xs"></i>
+              </button>
+              <button
+                @click="handleDelete(favPath)"
+                class="w-8 h-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-rose-500 active:bg-rose-500/20 transition-colors"
+                :title="t('common.delete')"
+              >
+                <i class="fas fa-trash-alt text-xs"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部安全区 -->
+        <div class="h-[max(env(safe-area-inset-bottom,0px),8px)]"></div>
+      </div>
+    </div>
+
+    <!-- 添加/编辑常用路径子模态框 -->
+    <AddEditFavoritePathForm
+      :is-visible="showAddEditModal"
+      :path-item="editingPathItem"
+      :is-mobile="true"
+      @close="showAddEditModal = false"
+    />
+  </Teleport>
+</template>

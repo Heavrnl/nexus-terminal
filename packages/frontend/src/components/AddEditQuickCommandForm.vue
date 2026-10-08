@@ -1,198 +1,10 @@
 <template>
-  <!-- 移动端：底部滑出抽屉 (Bottom Sheet) -->
-  <Teleport to="body" v-if="isMobile">
-    <Transition name="bottom-sheet">
-      <div
-        class="bottom-sheet-overlay fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
-        @click.self="closeForm"
-      >
-        <div
-          class="mobile-form-sheet w-full h-[85vh] max-h-[92vh] bg-background border-t border-border/80 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
-        >
-          <!-- 顶部拖拽手柄与点击快速收起指示条 -->
-          <div
-            class="sheet-handle-zone pt-2.5 pb-1 flex flex-col items-center justify-center cursor-pointer active:opacity-60 transition-opacity"
-            @click="closeForm"
-            title="点击收起"
-          >
-            <div class="w-10 h-1.5 bg-border/80 rounded-full hover:bg-text-secondary/40 transition-colors"></div>
-          </div>
-
-          <!-- 顶栏标题与关闭按钮 -->
-          <div class="sheet-header flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0">
-            <div class="flex items-center gap-2">
-              <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                <i :class="isEditing ? 'fas fa-edit' : 'fas fa-plus'" class="text-sm"></i>
-              </div>
-              <h3 class="text-base font-semibold text-foreground tracking-tight">
-                {{ isEditing ? t('quickCommands.form.titleEdit', '编辑快捷指令') : t('quickCommands.form.titleAdd', '添加快捷指令') }}
-              </h3>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <!-- 快捷保存按钮（键盘弹起或随时可用） -->
-              <button
-                type="button"
-                @click="handleSubmit"
-                :disabled="isSubmitting || !!commandError"
-                class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1 cursor-pointer"
-                :title="isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')"
-              >
-                <i class="fas fa-check text-[11px]"></i>
-                <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
-              </button>
-
-              <!-- 收起按钮 -->
-              <button
-                @click="closeForm"
-                class="w-7 h-7 flex items-center justify-center rounded-lg text-text-secondary hover:text-foreground hover:bg-border/40 active:scale-95 transition-all cursor-pointer"
-                :title="t('close', '收起')"
-              >
-                <i class="fas fa-chevron-down text-sm"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- 移动端表单可滚动内容区 -->
-          <div class="sheet-body flex-grow overflow-y-auto px-4 py-3 space-y-4 overscroll-contain">
-            <!-- 1. 指令内容 (核心必填) -->
-            <div>
-              <label for="m-qc-command" class="block mb-1.5 text-xs font-semibold text-text-secondary">
-                {{ t('quickCommands.form.command', '指令:') }} <span class="text-error">*</span>
-              </label>
-              <textarea
-                id="m-qc-command"
-                v-model="formData.command"
-                required
-                rows="3"
-                :placeholder="placeholder"
-                class="w-full px-3 py-2 border border-border/60 rounded-xl bg-input text-foreground font-mono text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary leading-relaxed whitespace-pre-wrap break-all"
-              ></textarea>
-              <small v-if="commandError" class="text-error text-xs mt-1 block">{{ commandError }}</small>
-            </div>
-
-            <!-- 2. 指令名称 (可选) -->
-            <div>
-              <label for="m-qc-name" class="block mb-1.5 text-xs font-semibold text-text-secondary">
-                {{ t('quickCommands.form.name', '名称:') }}
-              </label>
-              <input
-                id="m-qc-name"
-                type="text"
-                v-model="formData.name"
-                :placeholder="t('quickCommands.form.namePlaceholder', '可选，用于快速识别')"
-                class="w-full px-3 py-2 border border-border/60 rounded-xl bg-input text-foreground text-xs sm:text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition duration-150"
-              />
-            </div>
-
-            <!-- 3. 标签分类 -->
-            <div>
-              <label for="m-qc-tags" class="block mb-1.5 text-xs font-semibold text-text-secondary">
-                {{ t('quickCommands.form.tags', '标签:') }}
-              </label>
-              <TagInput
-                id="m-qc-tags"
-                v-model="formData.tagIds"
-                :available-tags="quickCommandTagsStore.tags"
-                :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
-                @create-tag="handleCreateTag"
-                :allow-create="true"
-                :allow-delete="true"
-                @delete-tag="handleDeleteTag"
-                class="w-full"
-              />
-            </div>
-
-            <!-- 4. 变量管理 -->
-            <div class="pt-2 border-t border-border/40">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-semibold text-text-secondary">
-                  {{ t('quickCommands.form.variablesTitle', '变量管理') }}
-                </span>
-                <button
-                  type="button"
-                  @click="addVariable"
-                  class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <i class="fas fa-plus text-[10px]"></i>
-                  <span>{{ t('quickCommands.form.addVariable', '添加变量') }}</span>
-                </button>
-              </div>
-
-              <!-- 变量为空提示 -->
-              <div
-                v-if="localVariables.length === 0"
-                class="text-xs text-text-secondary/70 p-3 border border-dashed border-border/50 rounded-xl text-center bg-background-secondary/20"
-              >
-                {{ t('quickCommands.form.noVariables', '暂无变量。点击上方按钮添加。') }}
-              </div>
-
-              <!-- 变量卡片列表 -->
-              <div v-else class="space-y-2">
-                <div
-                  v-for="variable in localVariables"
-                  :key="variable.id"
-                  class="p-2.5 border border-border/50 rounded-xl bg-background-secondary/30 space-y-2"
-                >
-                  <div class="flex items-center gap-2">
-                    <input
-                      type="text"
-                      v-model="variable.name"
-                      :placeholder="t('quickCommands.form.variableNamePlaceholder', '变量名')"
-                      class="flex-grow px-2.5 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-xs font-mono shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                    <button
-                      type="button"
-                      @click="deleteVariable(variable.id)"
-                      class="p-1.5 text-text-secondary hover:text-error active:scale-90 rounded-lg hover:bg-error/10 transition-colors cursor-pointer shrink-0"
-                      :title="t('common.delete', '删除')"
-                    >
-                      <i class="fas fa-trash-alt text-xs"></i>
-                    </button>
-                  </div>
-                  <textarea
-                    v-model="variable.value"
-                    :placeholder="t('quickCommands.form.variableValuePlaceholder', '变量值')"
-                    rows="2"
-                    class="w-full px-2.5 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-xs font-mono shadow-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                  ></textarea>
-                </div>
-              </div>
-            </div>
-
-            <!-- 底部流式操作区 (自然跟随内容滚动，不占常驻屏幕视野，软键盘激活时绝不遮挡) -->
-            <div class="pt-4 pb-6 space-y-2.5 border-t border-border/40">
-              <button
-                type="button"
-                @click="handleSubmit"
-                :disabled="isSubmitting || !!commandError"
-                class="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-98 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <i class="fas fa-check text-xs"></i>
-                <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存快捷指令') : t('quickCommands.form.add', '确认添加快捷指令')) }}</span>
-              </button>
-              <button
-                type="button"
-                @click="handleExecute"
-                class="w-full py-2 px-4 rounded-xl text-xs font-semibold bg-[var(--color-success)] text-white hover:opacity-90 active:scale-98 transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <i class="fas fa-play text-xs"></i>
-                <span>{{ t('quickCommands.form.execute', '执行快捷指令') }}</span>
-              </button>
-              <button
-                type="button"
-                @click="closeForm"
-                class="w-full py-2 px-4 rounded-xl text-xs font-medium bg-background border border-border/60 text-text-secondary hover:bg-border/30 active:scale-98 transition-all cursor-pointer"
-              >
-                {{ t('common.cancel', '取消') }}
-              </button>
-              <div class="sheet-safe-bottom"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <!-- 移动端专属抽屉视图 -->
+  <MobileAddEditQuickCommandForm
+    v-if="isMobile"
+    :command-to-edit="props.commandToEdit"
+    @close="closeForm"
+  />
 
   <!-- 桌面端：经典 Resizable 左右双栏弹窗 -->
   <div v-else class="fixed inset-0 bg-overlay flex justify-center items-center z-50">
@@ -303,6 +115,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { useResizable } from '../composables/useResizable';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useI18n } from 'vue-i18n';
+import MobileAddEditQuickCommandForm from './MobileAddEditQuickCommandForm.vue';
 import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
 import { useSessionStore } from '../stores/session.store';
@@ -507,34 +320,5 @@ const handleExecute = () => {
 <style scoped>
 .bg-overlay {
   background-color: rgba(0, 0, 0, 0.6);
-}
-
-/* 遮罩淡入淡出动效 */
-.bottom-sheet-enter-active,
-.bottom-sheet-leave-active {
-  transition: opacity 0.24s ease;
-}
-
-.bottom-sheet-enter-from,
-.bottom-sheet-leave-to {
-  opacity: 0;
-}
-
-/* 抽屉底部弹性滑入滑出动效 */
-.bottom-sheet-enter-active .mobile-form-sheet {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.bottom-sheet-leave-active .mobile-form-sheet {
-  transition: transform 0.22s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.bottom-sheet-enter-from .mobile-form-sheet,
-.bottom-sheet-leave-to .mobile-form-sheet {
-  transform: translateY(100%);
-}
-
-.sheet-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
 }
 </style>

@@ -2,6 +2,7 @@
 import { computed, type PropType, ref, watch, defineExpose, onMounted, onBeforeUnmount, toRef } from 'vue';
 import { storeToRefs } from 'pinia';
 import SingleEditorPane from './SingleEditorPane.vue';
+import MobileFileEditorContainer from './MobileFileEditorContainer.vue';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useSessionStore } from '../stores/session.store';
@@ -171,8 +172,14 @@ const handleResizerMouseDown = (e: MouseEvent) => {
   }
 };
 
+// 移动端专用容器实例引用
+const mobileContainerRef = ref<InstanceType<typeof MobileFileEditorContainer> | null>(null);
+
 // 聚焦活动编辑器
 const focusActiveEditor = (): boolean => {
+  if (props.isMobile && mobileContainerRef.value) {
+    return mobileContainerRef.value.focusActiveEditor();
+  }
   if (activePaneId.value === 'secondary' && secondaryPaneRef.value) {
     return secondaryPaneRef.value.focusActiveEditor();
   }
@@ -184,8 +191,9 @@ const focusActiveEditor = (): boolean => {
 
 defineExpose({ focusActiveEditor });
 
-// 快捷键监听 (Alt+方向键切换标签，Ctrl+\ 分屏)
+// 快捷键监听 (Alt+方向键切换标签，Ctrl+\ 分屏，仅在桌面端生效)
 const handleKeyDown = (event: KeyboardEvent) => {
+  if (props.isMobile) return;
   // Ctrl+\ 触发向右分屏 / 切换分屏
   if (event.ctrlKey && event.key === '\\') {
     event.preventDefault();
@@ -236,7 +244,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- 移动端独立解耦视图 -->
+  <MobileFileEditorContainer
+    v-if="props.isMobile"
+    ref="mobileContainerRef"
+    :tabs="props.tabs"
+    :active-tab-id="props.activeTabId"
+    :session-id="props.sessionId"
+  />
+
+  <!-- 桌面端双窗格分屏视图 -->
   <div
+    v-else
     ref="containerRef"
     class="file-editor-container"
     :class="[splitDirection, { 'is-split-mode': isSplitActive, 'is-resizing': isResizing }]"

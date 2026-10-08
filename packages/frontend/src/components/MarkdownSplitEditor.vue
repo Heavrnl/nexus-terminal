@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount } from 'vue';
 import MonacoEditor from './MonacoEditor.vue';
-import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue';
+import MobileMarkdownSplitEditor from './MobileMarkdownSplitEditor.vue';
 import MarkdownPreview from './MarkdownPreview.vue';
 
 const props = withDefaults(
@@ -38,7 +38,7 @@ const emit = defineEmits<{
 
 // 组件引用
 const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | null>(null);
-const codeMirrorMobileEditorRef = ref<InstanceType<typeof CodeMirrorMobileEditor> | null>(null);
+const mobileMarkdownSplitEditorRef = ref<InstanceType<typeof MobileMarkdownSplitEditor> | null>(null);
 const markdownPreviewRef = ref<InstanceType<typeof MarkdownPreview> | null>(null);
 
 // 分屏比例拖拽状态 (20% ~ 80%)
@@ -155,57 +155,70 @@ onBeforeUnmount(() => {
 
 defineExpose({
   focus: () => {
-    if (monacoEditorRef.value) {
-      monacoEditorRef.value.focus();
+    if (props.isMobile) {
+      mobileMarkdownSplitEditorRef.value?.focus();
+    } else {
+      monacoEditorRef.value?.focus();
     }
   },
   setScrollTop: (top: number) => {
-    if (monacoEditorRef.value) {
-      monacoEditorRef.value.setScrollTop(top);
+    if (props.isMobile) {
+      mobileMarkdownSplitEditorRef.value?.setScrollTop(top);
+    } else {
+      monacoEditorRef.value?.setScrollTop(top);
     }
   },
   getScrollInfo: () => {
+    if (props.isMobile) {
+      return mobileMarkdownSplitEditorRef.value?.getScrollInfo() ?? { scrollTop: 0, scrollLeft: 0, scrollHeight: 0, clientHeight: 0 };
+    }
     return monacoEditorRef.value?.getScrollInfo() ?? { scrollTop: 0, scrollLeft: 0, scrollHeight: 0, clientHeight: 0 };
   },
   openSearch: () => {
-    codeMirrorMobileEditorRef.value?.openSearch?.();
+    if (props.isMobile) {
+      mobileMarkdownSplitEditorRef.value?.openSearch();
+    }
   },
   toggleSearch: () => {
-    codeMirrorMobileEditorRef.value?.toggleSearch?.();
+    if (props.isMobile) {
+      mobileMarkdownSplitEditorRef.value?.toggleSearch();
+    }
   },
 });
 </script>
 
 <template>
-  <div class="markdown-split-editor-root w-full h-full overflow-hidden relative">
+  <!-- 移动端专属拆分编辑器组件 -->
+  <MobileMarkdownSplitEditor
+    v-if="props.isMobile"
+    ref="mobileMarkdownSplitEditorRef"
+    :model-value="props.modelValue"
+    :language="props.language"
+    :font-size="props.fontSize"
+    :view-mode="props.viewMode"
+    @update:model-value="(val) => emit('update:modelValue', val)"
+    @request-save="emit('request-save')"
+  />
+
+  <!-- 桌面端全功能 Monaco 编辑器与分屏预览容器 -->
+  <div v-else class="markdown-split-editor-root w-full h-full overflow-hidden relative">
     <!-- 1. 仅源码模式 -->
-    <template v-if="props.viewMode === 'edit'">
-      <MonacoEditor
-        v-if="!props.isMobile"
-        ref="monacoEditorRef"
-        :model-value="props.modelValue"
-        :language="props.language"
-        :font-family="props.fontFamily"
-        :font-size="props.fontSize"
-        theme="vs-dark"
-        class="editor-instance"
-        :initial-scroll-top="props.initialScrollTop"
-        :initial-scroll-left="props.initialScrollLeft"
-        @update:model-value="(val) => emit('update:modelValue', val)"
-        @request-save="emit('request-save')"
-        @update:font-size="(size) => emit('update:fontSize', size)"
-        @update:scroll-position="handleEditorScroll"
-      />
-      <CodeMirrorMobileEditor
-        v-else
-        ref="codeMirrorMobileEditorRef"
-        :model-value="props.modelValue"
-        :language="props.language"
-        class="editor-instance"
-        @update:model-value="(val) => emit('update:modelValue', val)"
-        @request-save="emit('request-save')"
-      />
-    </template>
+    <MonacoEditor
+      v-if="props.viewMode === 'edit'"
+      ref="monacoEditorRef"
+      :model-value="props.modelValue"
+      :language="props.language"
+      :font-family="props.fontFamily"
+      :font-size="props.fontSize"
+      theme="vs-dark"
+      class="editor-instance"
+      :initial-scroll-top="props.initialScrollTop"
+      :initial-scroll-left="props.initialScrollLeft"
+      @update:model-value="(val) => emit('update:modelValue', val)"
+      @request-save="emit('request-save')"
+      @update:font-size="(size) => emit('update:fontSize', size)"
+      @update:scroll-position="handleEditorScroll"
+    />
 
     <!-- 2. 仅预览模式 -->
     <div v-else-if="props.viewMode === 'preview'" class="markdown-full-preview">
@@ -219,7 +232,6 @@ defineExpose({
       <!-- 左侧编辑器分屏 -->
       <div class="split-pane split-editor-pane" :style="{ width: `${splitRatio}%` }">
         <MonacoEditor
-          v-if="!props.isMobile"
           ref="monacoEditorRef"
           :model-value="props.modelValue"
           :language="props.language"
@@ -233,15 +245,6 @@ defineExpose({
           @request-save="emit('request-save')"
           @update:font-size="(size) => emit('update:fontSize', size)"
           @update:scroll-position="handleEditorScroll"
-        />
-        <CodeMirrorMobileEditor
-          v-else
-          ref="codeMirrorMobileEditorRef"
-          :model-value="props.modelValue"
-          :language="props.language"
-          class="editor-instance"
-          @update:model-value="(val) => emit('update:modelValue', val)"
-          @request-save="emit('request-save')"
         />
       </div>
 

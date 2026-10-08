@@ -1,24 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, nextTick, computed } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
-import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
-import { useDeviceDetection } from '../composables/useDeviceDetection';
-import MobileMultiLineCommandInput from './MobileMultiLineCommandInput.vue';
-
-const props = defineProps<{
-  isMobile?: boolean;
-}>();
-
-const { isMobile: detectedMobile } = useDeviceDetection();
-const isMobile = computed(() => props.isMobile ?? detectedMobile.value);
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
-const focusSwitcherStore = useFocusSwitcherStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
+const onWorkspaceEvent = useWorkspaceEventSubscriber();
+const offWorkspaceEvent = useWorkspaceEventOff();
 
 const { activeSessionId } = storeToRefs(sessionStore);
 
@@ -40,12 +31,11 @@ watch(clearAfterSend, (val) => {
   localStorage.setItem(STORAGE_KEY_CLEAR_AFTER_SEND, String(val));
 });
 
-// 使用模块级对象存储会话草稿，避免 Proxy 循环响应并保证组件重挂载时不丢失草稿
+// 使用模块级对象存储会话草稿
 const globalSessionDrafts: Record<string, string> = {};
 
 // --- 状态定义 ---
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
-
 const currentContent = ref(activeSessionId.value ? (globalSessionDrafts[activeSessionId.value] || '') : '');
 const selectedText = ref('');
 const copySuccess = ref(false);
@@ -77,7 +67,7 @@ const updateSelection = () => {
   }
 };
 
-// 键盘事件：Tab 插入 2 个空格，Ctrl+Enter 发送
+// 键盘事件
 const handleKeyDown = (event: KeyboardEvent) => {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
@@ -109,7 +99,6 @@ const handleSend = () => {
   const rawText = selectedText.value.trim() ? selectedText.value : currentContent.value;
   if (!rawText.trim()) return;
 
-  // 将多行之间的换行统一转为 \r，确保 Linux shell 终端逐行执行
   const normalizedText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalizedText.split('\n');
   let commandToSend = lines.join('\r');
@@ -153,7 +142,7 @@ const handleCopy = async () => {
       copySuccess.value = false;
     }, 1500);
   } catch (err) {
-    console.error('Copy failed:', err);
+    console.error('复制失败:', err);
   }
 };
 
@@ -163,78 +152,48 @@ const handlePaste = async () => {
     const text = await navigator.clipboard.readText();
     if (!text) return;
 
-    if (!textareaRef.value) {
-      currentContent.value += text;
-      return;
-    }
-
     const el = textareaRef.value;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    currentContent.value = el.value.substring(0, start) + text + el.value.substring(end);
-
-    nextTick(() => {
-      el.selectionStart = el.selectionEnd = start + text.length;
-      updateSelection();
-      el.focus();
-    });
+    if (el) {
+      const start = el.selectionStart || 0;
+      const end = el.selectionEnd || 0;
+      currentContent.value =
+        currentContent.value.substring(0, start) + text + currentContent.value.substring(end);
+      nextTick(() => {
+        el.selectionStart = el.selectionEnd = start + text.length;
+        updateSelection();
+        el.focus();
+      });
+    } else {
+      currentContent.value += text;
+    }
   } catch (err) {
-    console.warn('Clipboard read failed:', err);
+    console.error('无法读取剪贴板内容:', err);
   }
 };
 
-// 焦点动作
-const focusInput = (): boolean => {
-  if (textareaRef.value) {
-    textareaRef.value.focus();
-    return true;
-  }
-  return false;
-};
-
-defineExpose({ focusInput });
-
-const onWorkspaceEvent = useWorkspaceEventSubscriber();
-const offWorkspaceEvent = useWorkspaceEventOff();
-
-// 监听填入命令事件，将内容写入多行输入框并聚焦光标到末尾
+// 填充外部命令
 const handleFillCommand = (payload: { command: string }) => {
+  if (!payload || typeof payload.command !== 'string') return;
   currentContent.value = payload.command;
   if (activeSessionId.value) {
     globalSessionDrafts[activeSessionId.value] = payload.command;
   }
   nextTick(() => {
-    if (textareaRef.value) {
-      textareaRef.value.focus();
-      const len = payload.command.length;
-      textareaRef.value.selectionStart = textareaRef.value.selectionEnd = len;
-      updateSelection();
-    }
+    textareaRef.value?.focus();
   });
 };
 
-let unregisterFocus: (() => void) | null = null;
 onMounted(() => {
-  unregisterFocus = focusSwitcherStore.registerFocusAction('multiLineCommandInput', focusInput);
   onWorkspaceEvent('commandInput:fill', handleFillCommand);
 });
+
 onBeforeUnmount(() => {
-  if (unregisterFocus) {
-    unregisterFocus();
-  }
   offWorkspaceEvent('commandInput:fill', handleFillCommand);
 });
 </script>
 
 <template>
-  <!-- 移动端专属模式 -->
-  <MobileMultiLineCommandInput v-if="isMobile" />
-
-  <!-- 桌面端常规模式 -->
-  <div
-    v-else
-    class="multi-line-panel flex flex-col h-full w-full min-w-0 min-h-0 bg-background select-none overflow-hidden border border-border/50 rounded-lg"
-  >
+  <div class="multi-line-panel flex flex-col h-full w-full min-w-0 min-h-0 bg-background select-none overflow-hidden border-0 rounded-none">
     <!-- 顶部操作栏 -->
     <div class="panel-header flex items-center justify-between gap-1 px-2 py-1 border-b border-border/50 bg-background-secondary/40 shrink-0 min-w-0 overflow-hidden">
       <!-- 左侧操作组：复制、粘贴、清空 -->
@@ -271,20 +230,9 @@ onBeforeUnmount(() => {
           <span class="btn-text ml-1">清空</span>
         </button>
       </div>
-
-      <!-- 右侧：发送主按钮 -->
-      <button
-        @click="handleSend"
-        :disabled="!activeSessionId || !currentContent.trim()"
-        class="send-btn inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none shadow-sm transition-all shrink-0 cursor-pointer whitespace-nowrap ml-auto"
-        :title="activeSessionId ? '发送至当前终端 (快捷键: Ctrl+Enter)' : '请先连接终端会话'"
-      >
-        <i class="fas fa-paper-plane text-xs"></i>
-        <span class="send-text ml-1.5">{{ selectedText ? '发送选中' : '发送' }}</span>
-      </button>
     </div>
 
-    <!-- 核心多行编辑区：无行号，纯净代码文本输入 -->
+    <!-- 核心多行编辑区 -->
     <div class="panel-body relative flex-grow flex min-h-0 min-w-0 overflow-hidden bg-background">
       <textarea
         ref="textareaRef"
@@ -294,7 +242,7 @@ onBeforeUnmount(() => {
         @keyup="updateSelection"
         @mouseup="updateSelection"
         @select="updateSelection"
-        placeholder="输入多行命令/脚本... (Ctrl+Enter 发送)"
+        placeholder="在此输入多行命令或脚本..."
         class="editor-textarea flex-grow h-full w-full p-2 bg-transparent text-foreground font-mono text-xs leading-5 resize-none outline-none focus:ring-0 overflow-auto whitespace-pre-wrap break-all placeholder:text-text-secondary/40"
         spellcheck="false"
         data-focus-id="multiLineCommandInput"
@@ -326,58 +274,16 @@ onBeforeUnmount(() => {
         </label>
       </div>
 
-      <!-- 桌面端：快捷键提示 -->
-      <span class="shortcut-hint text-text-secondary/50 shrink-0 whitespace-nowrap ml-auto">
-        Ctrl+Enter ↵
-      </span>
+      <!-- 移动端大发送按钮 -->
+      <button
+        @click="handleSend"
+        :disabled="!activeSessionId || !currentContent.trim()"
+        class="send-btn inline-flex items-center justify-center px-3 py-1 text-xs font-medium rounded bg-button text-button-text hover:bg-button-hover active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm transition-all shrink-0 cursor-pointer whitespace-nowrap ml-auto"
+        :title="activeSessionId ? '发送至当前终端' : '请先连接终端会话'"
+      >
+        <i class="fas fa-paper-plane text-xs"></i>
+        <span class="send-text ml-1.5">{{ selectedText ? '发送选中' : '发送' }}</span>
+      </button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.multi-line-panel {
-  container-type: inline-size;
-}
-
-textarea {
-  tab-size: 2;
-}
-
-/* 容器查询自适应规则：当面板宽度小于 280px 时优化排版 */
-@container (max-width: 280px) {
-  .btn-text {
-    display: none;
-  }
-  .action-btn {
-    padding-left: 0.375rem;
-    padding-right: 0.375rem;
-  }
-  .shortcut-hint {
-    display: none;
-  }
-}
-
-/* 容器查询自适应规则：当面板宽度极窄（小于 200px）时 */
-@container (max-width: 200px) {
-  .send-text {
-    display: none;
-  }
-  .send-btn {
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-  .panel-footer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-    padding-top: 0.25rem;
-    padding-bottom: 0.25rem;
-  }
-  .footer-options {
-    gap: 0.5rem;
-  }
-  .option-label {
-    font-size: 10px;
-  }
-}
-</style>

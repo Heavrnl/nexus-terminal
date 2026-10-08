@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch, defineExpose, nextTick, type PropType } from 'vue';
+import { computed, ref, watch, nextTick, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import MonacoEditor from './MonacoEditor.vue';
 import MarkdownSplitEditor from './MarkdownSplitEditor.vue';
 import MarkdownViewToggle from './MarkdownViewToggle.vue';
-import MobileSingleEditorPane from './MobileSingleEditorPane.vue';
+import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue';
 import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import type { FileTab } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
 import { isImageFilePath } from '../constants/fileTypes';
-import type { SplitDirection, PaneId } from '../composables/useSplitEditor';
+import type { PaneId } from '../composables/useSplitEditor';
 
 const props = defineProps({
   paneId: {
@@ -25,18 +24,6 @@ const props = defineProps({
   activeTabId: {
     type: String as PropType<string | null>,
     default: null,
-  },
-  isSplitActive: {
-    type: Boolean,
-    default: false,
-  },
-  splitDirection: {
-    type: String as PropType<SplitDirection>,
-    default: 'horizontal',
-  },
-  isMobile: {
-    type: Boolean,
-    default: false,
   },
   sessionName: {
     type: String as PropType<string | null>,
@@ -66,9 +53,6 @@ const emit = defineEmits<{
   (e: 'resolve-conflict-reload', tabId: string): void;
   (e: 'resolve-conflict-overwrite', tabId: string): void;
   (e: 'resolve-conflict-ignore', tabId: string): void;
-  (e: 'split-editor', direction: SplitDirection, tabId?: string): void;
-  (e: 'close-split', paneId: PaneId): void;
-  (e: 'toggle-split-direction'): void;
 }>();
 
 const { t } = useI18n();
@@ -84,8 +68,8 @@ const localContent = ref('');
 const encodingSelectRef = ref<HTMLSelectElement | null>(null);
 
 // 编辑器引用
-const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | InstanceType<typeof MarkdownSplitEditor> | null>(null);
-const mobileSingleEditorPaneRef = ref<InstanceType<typeof MobileSingleEditorPane> | null>(null);
+const markdownEditorRef = ref<InstanceType<typeof MarkdownSplitEditor> | null>(null);
+const codeMirrorMobileEditorRef = ref<InstanceType<typeof CodeMirrorMobileEditor> | null>(null);
 
 // 文件类型判断
 const isImageFile = computed(() => isImageFilePath(activeTab.value?.filePath));
@@ -101,9 +85,7 @@ const settingsStore = useSettingsStore();
 const tabMarkdownViewModeMap = ref<Record<string, 'split' | 'edit' | 'preview'>>({});
 
 const getDefaultMarkdownViewMode = (): 'split' | 'edit' | 'preview' => {
-  return props.isMobile
-    ? settingsStore.markdownDefaultViewModeMobileString
-    : settingsStore.markdownDefaultViewModeString;
+  return settingsStore.markdownDefaultViewModeMobileString;
 };
 
 const markdownViewMode = ref<'split' | 'edit' | 'preview'>(getDefaultMarkdownViewMode());
@@ -114,7 +96,6 @@ watch(isSyncScrollEnabled, (newVal) => {
   localStorage.setItem(SYNC_SCROLL_STORAGE_KEY, String(newVal));
 });
 
-// 当切换或打开 tab 时，如果是 Markdown 文件，应用该 tab 的视图模式（若未记录则赋予默认模式）
 watch(
   [() => activeTab.value?.id, isMarkdownFile],
   ([newTabId, isMd]) => {
@@ -130,7 +111,6 @@ watch(
   { immediate: true }
 );
 
-// 用户手动切换视图模式时，记住当前 tab 的偏好
 watch(markdownViewMode, (newMode) => {
   if (activeTab.value?.id && isMarkdownFile.value) {
     tabMarkdownViewModeMap.value[activeTab.value.id] = newMode;
@@ -141,7 +121,6 @@ watch(markdownViewMode, (newMode) => {
 const encodingOptions = FILE_ENCODING_OPTIONS;
 const currentSelectedEncoding = computed(() => activeTab.value?.selectedEncoding ?? 'utf-8');
 
-// 动态测量编码下拉框宽度
 const updateSelectWidth = () => {
   nextTick(() => {
     if (!encodingSelectRef.value) return;
@@ -162,14 +141,10 @@ const updateSelectWidth = () => {
     const textWidth = span.offsetWidth;
     document.body.removeChild(span);
 
-    // 加大宽度并确保有舒适的呼吸空间与箭头空位 (移动端自适应紧凑宽度)
-    const minW = props.isMobile ? 68 : 86;
-    const paddingW = props.isMobile ? 22 : 36;
-    select.style.width = `${Math.max(minW, textWidth + paddingW)}px`;
+    select.style.width = `${Math.max(68, textWidth + 22)}px`;
   });
 };
 
-// 侦听 activeTab 变化同步内容与编码
 watch(
   activeTab,
   (newTab) => {
@@ -183,14 +158,12 @@ watch(currentSelectedEncoding, () => {
   updateSelectWidth();
 });
 
-// 侦听本地内容变动通知父层
 watch(localContent, (newContent) => {
   if (activeTab.value && newContent !== activeTab.value.content) {
     emit('update-content', { tabId: activeTab.value.id, content: newContent });
   }
 });
 
-// 事件处理
 const handleEncodingChange = (e: Event) => {
   const target = e.target as HTMLSelectElement;
   const newEncoding = target.value;
@@ -215,107 +188,82 @@ const handleFontSizeUpdate = (size: number) => {
   emit('update-font-size', size);
 };
 
-// 聚焦当前活动编辑器
 const focusActiveEditor = (): boolean => {
-  if (props.isMobile) {
-    return mobileSingleEditorPaneRef.value?.focusActiveEditor() ?? false;
+  if (isMarkdownFile.value && markdownEditorRef.value) {
+    markdownEditorRef.value.focus();
+    return true;
   }
-  if (monacoEditorRef.value) {
-    monacoEditorRef.value.focus();
+  if (codeMirrorMobileEditorRef.value) {
+    codeMirrorMobileEditorRef.value.focus();
     return true;
   }
   return false;
 };
 
+const handleOpenSearch = () => {
+  if (isMarkdownFile.value) {
+    markdownEditorRef.value?.toggleSearch();
+  } else {
+    codeMirrorMobileEditorRef.value?.toggleSearch();
+  }
+};
+
 defineExpose({
   focusActiveEditor,
   openSearch: () => {
-    if (props.isMobile) {
-      mobileSingleEditorPaneRef.value?.openSearch();
-    } else if (isMarkdownFile.value) {
-      (monacoEditorRef.value as any)?.openSearch?.();
+    if (isMarkdownFile.value) {
+      markdownEditorRef.value?.openSearch();
+    } else {
+      codeMirrorMobileEditorRef.value?.openSearch();
     }
   },
-  toggleSearch: () => {
-    if (props.isMobile) {
-      mobileSingleEditorPaneRef.value?.toggleSearch();
-    } else if (isMarkdownFile.value) {
-      (monacoEditorRef.value as any)?.toggleSearch?.();
-    }
-  },
+  toggleSearch: handleOpenSearch,
 });
 </script>
 
 <template>
-  <!-- 移动端专属拆分单文件编辑器面板组件 -->
-  <MobileSingleEditorPane
-    v-if="props.isMobile"
-    ref="mobileSingleEditorPaneRef"
-    :pane-id="props.paneId"
-    :tabs="props.tabs"
-    :active-tab-id="props.activeTabId"
-    :session-name="props.sessionName"
-    :font-family="props.fontFamily"
-    :font-size="props.fontSize"
-    @activate-tab="(id: string) => emit('activate-tab', id)"
-    @close-tab="(id: string) => emit('close-tab', id)"
-    @close-other-tabs="(id: string) => emit('close-other-tabs', id)"
-    @close-tabs-to-right="(id: string) => emit('close-tabs-to-right', id)"
-    @close-tabs-to-left="(id: string) => emit('close-tabs-to-left', id)"
-    @update-content="(payload) => emit('update-content', payload)"
-    @save-tab="(id: string) => emit('save-tab', id)"
-    @change-encoding="(payload) => emit('change-encoding', payload)"
-    @update-scroll="(payload) => emit('update-scroll', payload)"
-    @update-font-size="(size) => emit('update-font-size', size)"
-    @resolve-conflict-reload="(id: string) => emit('resolve-conflict-reload', id)"
-    @resolve-conflict-overwrite="(id: string) => emit('resolve-conflict-overwrite', id)"
-    @resolve-conflict-ignore="(id: string) => emit('resolve-conflict-ignore', id)"
-  >
-    <template #header-actions>
-      <slot name="header-actions"></slot>
-    </template>
-  </MobileSingleEditorPane>
-
-  <!-- 桌面端全功能单文件编辑器面板 -->
-  <div v-else class="single-editor-pane" :class="[`pane-${props.paneId}`, { 'is-split-child': props.isSplitActive }]">
-    <!-- 1. 标签栏 -->
+  <div class="mobile-single-editor-pane pane-primary flex flex-col w-full h-full overflow-hidden relative">
+    <!-- 1. 移动端标签栏 -->
     <FileEditorTabs
       :tabs="props.tabs"
       :active-tab-id="props.activeTabId"
-      :is-mobile="false"
+      :is-mobile="true"
       @activate-tab="(id: string) => emit('activate-tab', id)"
       @close-tab="(id: string) => emit('close-tab', id)"
       @close-other-tabs="(id: string) => emit('close-other-tabs', id)"
       @close-tabs-to-right="(id: string) => emit('close-tabs-to-right', id)"
       @close-tabs-to-left="(id: string) => emit('close-tabs-to-left', id)"
-      @split-right="(id: string) => emit('split-editor', 'horizontal', id)"
-      @split-down="(id: string) => emit('split-editor', 'vertical', id)"
     />
 
-    <!-- 2. 编辑器工具头部 -->
-    <div v-if="activeTab" class="editor-header">
+    <!-- 2. 移动端特化编辑器工具头部 -->
+    <div v-if="activeTab" class="mobile-editor-header">
       <div class="file-info-title">
-        <span class="file-path-text" :title="activeTab.filePath">
-          {{ t('fileManager.editingFile') }}<template v-if="props.sessionName">({{ props.sessionName }})</template>: {{ activeTab.filePath }}
+        <i class="fas fa-file-code text-primary text-xs mr-1.5 shrink-0"></i>
+        <span class="file-name-text truncate font-medium text-xs text-foreground" :title="activeTab.filePath">
+          {{ activeTab.filename }}
         </span>
-        <span v-if="activeTab.isModified" class="modified-indicator">*</span>
+        <span
+          v-if="activeTab.isModified"
+          class="w-2 h-2 rounded-full bg-amber-400 shrink-0 ml-1.5 shadow-xs"
+          title="未保存变更"
+        ></span>
       </div>
 
-      <div class="editor-actions">
-        <!-- Markdown 工具栏 -->
+      <div class="mobile-editor-actions">
+        <!-- Markdown 视图切换工具栏 -->
         <MarkdownViewToggle
           v-if="isMarkdownFile && !activeTab.isLoading"
           v-model:view-mode="markdownViewMode"
           v-model:sync-scroll="isSyncScrollEnabled"
         />
 
-        <!-- 编码下拉框与保存按钮 (文本文件专用) -->
+        <!-- 文本文件编码下拉框 -->
         <template v-if="!isImageFile">
           <div v-if="!activeTab.isLoading" class="encoding-select-wrapper">
             <select
               ref="encodingSelectRef"
               :value="currentSelectedEncoding"
-              class="encoding-select"
+              class="mobile-encoding-select"
               :title="t('fileManager.changeEncodingTooltip', '更改文件编码')"
               @change="handleEncodingChange"
             >
@@ -326,65 +274,29 @@ defineExpose({
           </div>
           <span v-else class="encoding-select-placeholder">{{ t('fileManager.loadingEncoding', '加载中...') }}</span>
 
-          <!-- 保存状态反馈 (桌面端展示文本) -->
-          <span v-if="activeTab.saveStatus === 'saving'" class="save-status saving">{{ t('fileManager.saving') }}...</span>
-          <span v-if="activeTab.saveStatus === 'success'" class="save-status success">✅ {{ t('fileManager.saveSuccess') }}</span>
-          <span v-if="activeTab.saveStatus === 'error'" class="save-status error">❌ {{ t('fileManager.saveError') }}: {{ activeTab.saveError }}</span>
-
-          <!-- 保存按钮 -->
+          <!-- 移动端搜索快捷按钮 -->
           <button
-            class="save-btn"
+            v-if="!activeTab.isLoading"
+            class="mobile-action-icon-btn mobile-search-btn"
+            :title="t('fileManager.actions.search', '搜索')"
+            @click="handleOpenSearch"
+          >
+            <i class="fas fa-search text-xs"></i>
+          </button>
+
+          <!-- 移动端大触控保存按钮 -->
+          <button
+            class="mobile-save-btn"
+            :class="{ 'has-changes': activeTab.isModified }"
             :disabled="activeTab.isSaving || activeTab.isLoading || !!activeTab.loadingError || !activeTab.isModified"
             @click="handleSave"
           >
+            <i v-if="activeTab.saveStatus === 'saving'" class="fas fa-circle-notch fa-spin text-xs"></i>
+            <i v-else-if="activeTab.saveStatus === 'success'" class="fas fa-check text-xs text-emerald-400"></i>
+            <i v-else class="fas fa-save text-xs mr-1"></i>
             <span>{{ t('fileManager.actions.save') }}</span>
           </button>
         </template>
-
-        <!-- VSCode 风格的分屏操作按钮组 -->
-        <div class="split-controls-group">
-          <!-- 未分屏时：展示向右拆分与向下拆分按钮 -->
-          <template v-if="!props.isSplitActive">
-            <button
-              class="action-icon-btn split-btn"
-              :title="t('editor.splitRight', '向右拆分编辑器 (Split Editor Right)')"
-              @click="emit('split-editor', 'horizontal', activeTab?.id)"
-            >
-              <svg class="split-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2">
-                <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
-                <line x1="8" y1="2" x2="8" y2="14" />
-              </svg>
-            </button>
-            <button
-              class="action-icon-btn split-btn"
-              :title="t('editor.splitDown', '向下拆分编辑器 (Split Editor Down)')"
-              @click="emit('split-editor', 'vertical', activeTab?.id)"
-            >
-              <svg class="split-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2">
-                <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
-                <line x1="1.5" y1="8" x2="14.5" y2="8" />
-              </svg>
-            </button>
-          </template>
-
-          <!-- 分屏开启时：展示切换拆分方向与关闭分屏按钮 -->
-          <template v-else>
-            <button
-              class="action-icon-btn split-btn"
-              :title="t('editor.toggleSplitDirection', '切换水平/垂直拆分方向')"
-              @click="emit('toggle-split-direction')"
-            >
-              <i class="fas fa-sync-alt"></i>
-            </button>
-            <button
-              class="action-icon-btn close-split-btn"
-              :title="t('editor.closeSplit', '关闭此拆分窗格')"
-              @click="emit('close-split', props.paneId)"
-            >
-              <i class="fas fa-times"></i>
-            </button>
-          </template>
-        </div>
 
         <!-- 外部扩展按钮插槽 (例如 Overlay 关闭弹窗) -->
         <slot name="header-actions"></slot>
@@ -392,9 +304,9 @@ defineExpose({
     </div>
 
     <!-- 无活动标签占位头部 -->
-    <div v-else class="editor-header editor-header-placeholder">
+    <div v-else class="mobile-editor-header mobile-editor-header-placeholder">
       <span>{{ t('fileManager.noOpenFile') }}</span>
-      <div class="editor-actions">
+      <div class="mobile-editor-actions">
         <slot name="header-actions"></slot>
       </div>
     </div>
@@ -430,10 +342,10 @@ defineExpose({
         :tab="activeTab"
       />
 
-      <!-- Markdown 视图 (含分屏预览) -->
+      <!-- Markdown 移动端专属拆分视图 -->
       <MarkdownSplitEditor
         v-else-if="activeTab && isMarkdownFile"
-        ref="monacoEditorRef"
+        ref="markdownEditorRef"
         :key="`md-${activeTab.id}-${props.paneId}`"
         v-model="localContent"
         :language="activeTab.language"
@@ -443,28 +355,21 @@ defineExpose({
         :sync-scroll="isSyncScrollEnabled"
         :initial-scroll-top="activeTab.scrollTop ?? 0"
         :initial-scroll-left="activeTab.scrollLeft ?? 0"
-        :is-mobile="false"
+        :is-mobile="true"
         @request-save="handleSave"
         @update:font-size="handleFontSizeUpdate"
         @update:scroll-position="handleEditorScroll"
       />
 
-      <!-- 桌面端 Monaco Editor -->
-      <MonacoEditor
+      <!-- 移动端纯轻量 CodeMirror 编辑器 -->
+      <CodeMirrorMobileEditor
         v-else-if="activeTab"
-        ref="monacoEditorRef"
-        :key="`monaco-${activeTab.id}-${props.paneId}`"
+        ref="codeMirrorMobileEditorRef"
+        :key="`cm-${activeTab.id}-${props.paneId}`"
         v-model="localContent"
         :language="activeTab.language"
-        :font-family="props.fontFamily"
-        :font-size="props.fontSize"
-        theme="vs-dark"
         class="editor-instance"
-        :initial-scroll-top="activeTab.scrollTop ?? 0"
-        :initial-scroll-left="activeTab.scrollLeft ?? 0"
         @request-save="handleSave"
-        @update:font-size="handleFontSizeUpdate"
-        @update:scroll-position="handleEditorScroll"
       />
 
       <!-- 空白占位 -->
@@ -474,27 +379,26 @@ defineExpose({
 </template>
 
 <style scoped>
-.single-editor-pane {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
+.mobile-single-editor-pane {
   background-color: var(--nexus-bg-primary, #1e1e1e);
 }
 
-.editor-header {
+.mobile-editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 10px;
-  background-color: #252526;
-  border-bottom: 1px solid #333333;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 10px;
+  background-color: #202022;
+  border-bottom: 1px solid #333336;
   font-size: 12px;
   color: #cccccc;
   flex-shrink: 0;
-  min-height: 32px;
+}
+
+.mobile-editor-header-placeholder {
+  color: #888888;
 }
 
 .file-info-title {
@@ -503,68 +407,21 @@ defineExpose({
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  margin-right: 8px;
+  max-width: 45%;
+  margin-right: 6px;
 }
 
-.file-path-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.modified-indicator {
-  color: #e2b340;
-  margin-left: 4px;
-  font-weight: bold;
-}
-
-.editor-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.split-controls-group {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 2px;
-  padding-left: 4px;
-  border-left: 1px solid #3c3c3c;
-}
-
-.action-icon-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  color: #858585;
-  cursor: pointer;
-  padding: 3px 6px;
+.file-name-text {
   font-size: 12px;
-  line-height: 1;
-  border-radius: 3px;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.mobile-editor-actions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.action-icon-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-}
-
-.action-icon-btn.split-btn:hover {
-  color: #58a6ff;
-}
-
-.action-icon-btn.close-split-btn:hover {
-  color: #f85149;
-}
-
-.split-icon {
-  display: block;
-  pointer-events: none;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .encoding-select-wrapper {
@@ -573,26 +430,21 @@ defineExpose({
   vertical-align: middle;
 }
 
-.encoding-select {
+.mobile-encoding-select {
   box-sizing: border-box;
-  height: 22px;
-  min-width: 86px;
-  background-color: #3c3c3c;
-  color: #cccccc;
-  border: 1px solid #555555;
-  padding: 0 16px 0 8px;
+  height: 26px;
+  min-width: 68px;
+  background-color: #2c2c2f;
+  color: #d4d4d8;
+  border: 1px solid #444448;
+  padding: 0 14px 0 6px;
   font-size: 11px;
-  border-radius: 3px;
+  border-radius: 6px;
   cursor: pointer;
-  line-height: 20px;
+  line-height: 24px;
   outline: none;
   display: inline-flex;
   align-items: center;
-  transition: border-color 0.15s ease;
-}
-
-.encoding-select:focus {
-  border-color: #007acc;
 }
 
 .encoding-select-placeholder {
@@ -600,50 +452,57 @@ defineExpose({
   color: #888888;
 }
 
-.save-status {
-  font-size: 11px;
-  padding: 1px 4px;
-  border-radius: 2px;
+.mobile-action-icon-btn.mobile-search-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background-color: #2c2c2f;
+  border: 1px solid #444448;
+  color: #a1a1aa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.save-status.saving {
-  color: #e2b340;
+.mobile-action-icon-btn.mobile-search-btn:active {
+  background-color: #3f3f46;
+  color: #ffffff;
 }
 
-.save-status.success {
-  color: #89d185;
-}
-
-.save-status.error {
-  color: #f14c4c;
-}
-
-.save-btn {
+.mobile-save-btn {
   box-sizing: border-box;
-  height: 22px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background-color: #0e639c;
-  color: white;
+  background-color: #2563eb;
+  color: #ffffff;
   border: 1px solid transparent;
   padding: 0 10px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  border-radius: 3px;
-  line-height: 20px;
-  transition: background-color 0.15s, border-color 0.15s;
+  border-radius: 6px;
+  gap: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
 }
 
-.save-btn:hover:not(:disabled) {
-  background-color: #1177bb;
+.mobile-save-btn:active:not(:disabled) {
+  transform: scale(0.96);
+  background-color: #1d4ed8;
 }
 
-.save-btn:disabled {
-  background-color: #3a3d41;
-  color: #6a6a6a;
+.mobile-save-btn.has-changes {
+  background-color: #2563eb;
+}
+
+.mobile-save-btn:disabled {
+  background-color: #2e3035;
+  color: #71717a;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .conflict-banner {

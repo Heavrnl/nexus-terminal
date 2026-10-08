@@ -2,6 +2,7 @@
 import { ref, watch, nextTick, type PropType, onUnmounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SendFilesModal from './SendFilesModal.vue';
+import MobileFileManagerContextMenu from './MobileFileManagerContextMenu.vue';
 import type { ContextMenuItem } from '../composables/file-manager/useFileManagerContextMenu';
 import type { FileListItem } from '../types/sftp.types';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
@@ -218,31 +219,88 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    ref="contextMenuRef"
-    v-if="isVisible"
-    class="fixed bg-background border border-border shadow-lg rounded-md z-[1002] min-w-[150px]"
-    :style="{ top: `${computedRenderPosition.y}px`, left: `${computedRenderPosition.x}px` }"
-    @click.stop
-  >
-    <ul class="list-none p-1 m-0">
-      <template v-for="(menuItem, index) in items" :key="index">
-        <li v-if="menuItem.separator" class="border-t border-border/50 my-1 mx-1"></li>
-        <!-- 如果是移动设备且有子菜单，则平铺子菜单 -->
-        <template v-else-if="isMobile && menuItem.submenu && menuItem.submenu.length > 0">
+  <!-- 移动端专属上下文右键触控菜单 -->
+  <MobileFileManagerContextMenu
+    v-if="isMobile"
+    :is-visible="isVisible"
+    :position="position"
+    :items="items"
+    :active-context-item="activeContextItem"
+    :selected-file-items="selectedFileItems"
+    :current-directory-path="currentDirectoryPath"
+    @item-click="(item) => emit('item-click', item)"
+    @close-request="emit('close-request')"
+  />
+
+  <!-- 桌面端全功能鼠标悬浮二级右键菜单 -->
+  <template v-else>
+    <div
+      ref="contextMenuRef"
+      v-if="isVisible"
+      class="fixed bg-background border border-border shadow-lg rounded-md z-[1002] min-w-[150px]"
+      :style="{ top: `${computedRenderPosition.y}px`, left: `${computedRenderPosition.x}px` }"
+      @click.stop
+    >
+      <ul class="list-none p-1 m-0">
+        <template v-for="(menuItem, index) in items" :key="index">
+          <li v-if="menuItem.separator" class="border-t border-border/50 my-1 mx-1"></li>
+
+          <!-- 普通一级菜单项 -->
           <li
-            v-for="(subItem, subIndex) in menuItem.submenu"
-            :key="`${index}-${subIndex}`"
-            @click.stop="handleItemClick(subItem)"
+            v-else-if="!menuItem.submenu"
+            @click.stop="handleItemClick(menuItem)"
             :class="[
               'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
               'hover:bg-primary/10 hover:text-primary'
             ]"
           >
-            {{ subItem.label }}
+            {{ menuItem.label }}
           </li>
-          <!-- 如果 menuItem (作为移动端子菜单容器) 是 "压缩", 在其子项后添加 "发送到" -->
-          <template v-if="menuItem.label === t('fileManager.contextMenu.compress')">
+
+          <!-- 普通压缩项后的“发送到”快捷项 -->
+          <template v-if="!menuItem.submenu && menuItem.label === t('fileManager.contextMenu.compress')">
+            <li
+              @click.stop="handleSendToClick"
+              :class="[
+                'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
+                'hover:bg-primary/10 hover:text-primary'
+              ]"
+            >
+              {{ t('fileManager.contextMenu.sendTo', 'Send to...') }}
+            </li>
+          </template>
+
+          <!-- 桌面端带子菜单的项：悬浮 hover 展开二级菜单 -->
+          <li
+            v-if="menuItem.submenu"
+            class="px-4 py-1.5 text-foreground text-sm flex items-center justify-between transition-colors duration-150 rounded mx-1 hover:bg-primary/10 hover:text-primary relative"
+            @mouseenter="showSubmenu(menuItem.label)"
+            @mouseleave="hideSubmenu()"
+          >
+            {{ menuItem.label }}
+            <span class="ml-2">›</span>
+            <ul
+              v-if="expandedSubmenu === menuItem.label"
+              class="absolute left-full top-0 mt-0 ml-1 bg-background border border-border shadow-lg rounded-md z-[1003] min-w-[150px] list-none p-1"
+              @mouseenter="showSubmenu(menuItem.label)"
+              @mouseleave="hideSubmenu()"
+            >
+              <li
+                v-for="(subItem, subIndex) in menuItem.submenu"
+                :key="subIndex"
+                @click.stop="handleItemClick(subItem)"
+                :class="[
+                  'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
+                  'hover:bg-primary/10 hover:text-primary'
+                ]"
+              >
+                {{ subItem.label }}
+              </li>
+            </ul>
+          </li>
+
+          <!-- 桌面端带子菜单的压缩项后的“发送到”快捷项 -->
+          <template v-if="menuItem.submenu && menuItem.label === t('fileManager.contextMenu.compress')">
             <li
               @click.stop="handleSendToClick"
               :class="[
@@ -254,75 +312,13 @@ onUnmounted(() => {
             </li>
           </template>
         </template>
-        <!-- 否则，按原有逻辑渲染一级菜单或带子菜单的一级菜单 -->
-        <li
-          v-else-if="!menuItem.submenu"
-          @click.stop="handleItemClick(menuItem)"
-          :class="[
-            'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
-            'hover:bg-primary/10 hover:text-primary'
-          ]"
-        >
-          {{ menuItem.label }}
-        </li>
-        <!-- 如果普通菜单项是 "压缩", 在其后添加 "发送到" -->
-        <template v-if="!menuItem.submenu && menuItem.label === t('fileManager.contextMenu.compress')">
-          <li
-            @click.stop="handleSendToClick"
-            :class="[
-              'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
-              'hover:bg-primary/10 hover:text-primary'
-            ]"
-          >
-            {{ t('fileManager.contextMenu.sendTo', 'Send to...') }}
-          </li>
-        </template>
-        <li
-          v-if="menuItem.submenu && !isMobile"
-          class="px-4 py-1.5 text-foreground text-sm flex items-center justify-between transition-colors duration-150 rounded mx-1 hover:bg-primary/10 hover:text-primary relative"
-          @mouseenter="showSubmenu(menuItem.label)"
-          @mouseleave="hideSubmenu()"
-        >
-          {{ menuItem.label }}
-          <span class="ml-2">›</span>
-          <ul
-            v-if="expandedSubmenu === menuItem.label"
-            class="absolute left-full top-0 mt-0 ml-1 bg-background border border-border shadow-lg rounded-md z-[1003] min-w-[150px] list-none p-1"
-            @mouseenter="showSubmenu(menuItem.label)"
-            @mouseleave="hideSubmenu()"
-          >
-            <li
-              v-for="(subItem, subIndex) in menuItem.submenu"
-              :key="subIndex"
-              @click.stop="handleItemClick(subItem)"
-              :class="[
-                'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
-                'hover:bg-primary/10 hover:text-primary'
-              ]"
-            >
-              {{ subItem.label }}
-            </li>
-          </ul>
-        </li>
-        <!-- 如果桌面端带子菜单的项是 "压缩", 在其后添加 "发送到" -->
-        <template v-if="menuItem.submenu && !isMobile && menuItem.label === t('fileManager.contextMenu.compress')">
-          <li
-            @click.stop="handleSendToClick"
-            :class="[
-              'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
-              'hover:bg-primary/10 hover:text-primary'
-            ]"
-          >
-            {{ t('fileManager.contextMenu.sendTo', 'Send to...') }}
-          </li>
-        </template>
-      </template>
-    </ul>
-  </div>
-  <SendFilesModal
-    v-model:visible="showSendFilesModal"
-    :items-to-send="itemsToSendData"
-    :source-connection-id="sourceConnectionId"
-    @send="handleFilesSent"
-  />
+      </ul>
+    </div>
+    <SendFilesModal
+      v-model:visible="showSendFilesModal"
+      :items-to-send="itemsToSendData"
+      :source-connection-id="sourceConnectionId"
+      @send="handleFilesSent"
+    />
+  </template>
 </template>

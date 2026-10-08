@@ -7,13 +7,11 @@ import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
 import { useTagsStore } from '../stores/tags.store';
 import AddConnectionFormComponent from '../components/AddConnectionForm.vue';
-import TerminalTabBar from '../components/TerminalTabBar.vue';
-import LayoutRenderer from '../components/LayoutRenderer.vue';
+import DesktopWorkspaceView from './DesktopWorkspaceView.vue';
+import MobileWorkspaceView from './MobileWorkspaceView.vue';
 import LayoutConfigurator from '../components/LayoutConfigurator.vue';
 import Terminal from '../components/Terminal.vue';
-import CommandInputBar from '../components/CommandInputBar.vue'; 
-import VirtualKeyboard from '../components/VirtualKeyboard.vue';
-import FileManager from '../components/FileManager.vue'; 
+import FileManagerModal from '../components/FileManagerModal.vue'; 
 import { useSessionStore } from '../stores/session.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
 import { useSettingsStore } from '../stores/settings.store';
@@ -64,26 +62,14 @@ const activeEditorTabId = computed(() => {
   }
 });
 
-// +++ Add computed property for mobile terminal layout node +++
-const mobileLayoutNodeForTerminal = computed((): LayoutNode | null => {
-  return {
-    id: 'mobile-main-terminal-pane',
-    type: 'pane' as const,
-    component: 'terminal' as const,
-    size: 100,
-  };
-});
-
 // --- UI 状态 (保持本地) ---
 const showAddEditForm = ref(false);
 const connectionToEdit = ref<ConnectionInfo | null>(null);
 const showLayoutConfigurator = ref(false); // 控制布局配置器可见性
-// 本地 RDP 状态已被移除
 
 // --- 搜索状态 ---
 const currentSearchTerm = ref(''); // 当前搜索的关键词
-const mobileTerminalRef = ref<InstanceType<typeof Terminal> | null>(null);
-const isVirtualKeyboardVisible = ref(false); 
+const mobileTerminalRef = ref<InstanceType<typeof Terminal> | null>(null); 
 
 // --- 文件管理器模态框状态 ---
 const showFileManagerModal = ref(false);
@@ -560,33 +546,7 @@ const handleCloseEditorTab = (tabId: string) => {
     sessionStore.handleOpenNewSession(id);
  };
 
-// +++ 处理虚拟键盘按键事件 +++
-const handleVirtualKeyPress = (keySequence: string) => {
- const currentSession = activeSession.value;
- if (!currentSession) {
-   console.warn('[WorkspaceView] Cannot send virtual key, no active session.');
-   return;
- }
- // 在移动端模式下，我们假设 terminalManager 总是存在的（如果会话活动）
- // 并且直接发送数据，因为虚拟键盘通常用于发送控制字符或特殊序列
- const terminalManager = currentSession.terminalManager as (SshTerminalInstance | undefined);
- if (terminalManager && typeof terminalManager.sendData === 'function') {
-   console.log(`[WorkspaceView Mobile] Sending virtual key sequence: ${JSON.stringify(keySequence)}`);
-   terminalManager.sendData(keySequence);
- } else {
-   console.warn(`[WorkspaceView Mobile] Cannot send virtual key for session ${currentSession.sessionId}, terminal manager or sendData method not available.`);
- }
-};
-
-// +++ Function to toggle virtual keyboard visibility +++
-const toggleVirtualKeyboard = () => {
- isVirtualKeyboardVisible.value = !isVirtualKeyboardVisible.value;
-};
-
-// RDP 事件处理方法已被移除
-
- // --- 标签页关闭操作处理 ---
-
+ // --- 会话标签页关闭操作处理 (由事件总线或子组件调用) ---
  const handleCloseOtherSessions = (targetSessionId: string) => {
    const sessionsToClose = sessionTabsWithStatus.value
      .filter(tab => tab.sessionId !== targetSessionId)
@@ -711,89 +671,38 @@ const closeFileManagerModal = () => {
 <template>
   <!-- *** 动态 class 绑定，添加 is-mobile 类 *** -->
   <div :class="['workspace-view', { 'with-header': isHeaderVisible, 'is-mobile': isMobile }]">
-    <!-- --- 桌面端布局 --- -->
-    <template v-if="!isMobile">
-      <TerminalTabBar
-        :sessions="sessionTabsWithStatus"
-        :active-session-id="activeSessionId"
-        :is-mobile="false"
-        @activate-session="sessionStore.activateSession"
-        @close-session="sessionStore.closeSession"
-        @open-layout-configurator="handleOpenLayoutConfigurator"
-        @request-add-connection-from-popup="handleRequestAddConnection"
-        @request-edit-connection-from-popup="handleRequestEditConnection"
-        @close-other-sessions="handleCloseOtherSessions"
-        @close-sessions-to-right="handleCloseSessionsToRight"
-        @close-sessions-to-left="handleCloseSessionsToLeft"
-      />
-      <div class="main-content-area">
-        <LayoutRenderer
-          v-if="layoutTree"
-          :is-root-renderer="true"
-          :layout-node="layoutTree"
-          :active-session-id="activeSessionId"
-          :layout-locked="layoutLockedBoolean"
-          class="layout-renderer-wrapper"
-          :editor-tabs="editorTabs"
-          :active-editor-tab-id="activeEditorTabId"
-        ></LayoutRenderer>
-        <div v-else class="pane-placeholder">
-          {{ t('layout.loading', '加载布局中...') }}
-        </div>
-      </div>
-    </template>
+    <!-- 桌面端工作区独立解耦视图 -->
+    <DesktopWorkspaceView
+      v-if="!isMobile"
+      :sessions="sessionTabsWithStatus"
+      :active-session-id="activeSessionId"
+      :layout-tree="layoutTree"
+      :layout-locked="layoutLockedBoolean"
+      :editor-tabs="editorTabs"
+      :active-editor-tab-id="activeEditorTabId"
+      @open-layout-configurator="handleOpenLayoutConfigurator"
+      @request-add-connection="handleRequestAddConnection"
+      @request-edit-connection="handleRequestEditConnection"
+    />
 
-    <!-- --- 移动端布局 --- -->
-    <template v-else>
-      <div class="mobile-content-area">
-        <LayoutRenderer
-          v-if="activeSessionId && mobileLayoutNodeForTerminal"
-          :layout-node="mobileLayoutNodeForTerminal"
-          :active-session-id="activeSessionId"
-          :is-root-renderer="false"
-          :layout-locked="layoutLockedBoolean"
-          class="layout-renderer-wrapper flex-grow overflow-auto"
-          :editor-tabs="editorTabs"
-          :active-editor-tab-id="activeEditorTabId"
-        />
-        <div v-else class="pane-placeholder">
-          {{ t('workspace.noActiveSession', '没有活动的会话') }}
-        </div>
-      </div>
-      <!-- 移动端会话标签栏：自然流位于终端内容区下方、工具栏上方 -->
-      <TerminalTabBar
-        :sessions="sessionTabsWithStatus"
-        :active-session-id="activeSessionId"
-        :is-mobile="true"
-        @activate-session="sessionStore.activateSession"
-        @close-session="sessionStore.closeSession"
-        @open-layout-configurator="handleOpenLayoutConfigurator"
-        @request-add-connection-from-popup="handleRequestAddConnection"
-        @request-edit-connection-from-popup="handleRequestEditConnection"
-        @close-other-sessions="handleCloseOtherSessions"
-        @close-sessions-to-right="handleCloseSessionsToRight"
-        @close-sessions-to-left="handleCloseSessionsToLeft"
-      />
-      <!-- 移动端命令工具栏：自然流紧随标签栏下方 -->
-      <CommandInputBar
-        class="mobile-command-bar"
-        :is-mobile="isMobile"
-        @send-command="handleSendCommand"
-        @search="handleSearch"
-        @find-next="handleFindNext"
-        @find-previous="handleFindPrevious"
-        @close-search="handleCloseSearch"
-        @clear-terminal="handleClearTerminal"
-        :is-virtual-keyboard-visible="isVirtualKeyboardVisible"
-        @toggle-virtual-keyboard="toggleVirtualKeyboard"
-      />
-      <!-- +++ Use v-show for VirtualKeyboard and bind visibility +++ -->
-      <VirtualKeyboard
-        v-show="isVirtualKeyboardVisible"
-        class="mobile-virtual-keyboard"
-        @send-key="handleVirtualKeyPress"
-      />
-    </template>
+    <!-- 移动端工作区独立解耦视图 -->
+    <MobileWorkspaceView
+      v-else
+      :sessions="sessionTabsWithStatus"
+      :active-session-id="activeSessionId"
+      :layout-locked="layoutLockedBoolean"
+      :editor-tabs="editorTabs"
+      :active-editor-tab-id="activeEditorTabId"
+      @open-layout-configurator="handleOpenLayoutConfigurator"
+      @request-add-connection="handleRequestAddConnection"
+      @request-edit-connection="handleRequestEditConnection"
+      @send-command="handleSendCommand"
+      @search="handleSearch"
+      @find-next="handleFindNext"
+      @find-previous="handleFindPrevious"
+      @close-search="handleCloseSearch"
+      @clear-terminal="handleClearTerminal"
+    />
 
     <!-- Modals 保持不变，应在布局之外 -->
     <AddConnectionFormComponent
@@ -813,47 +722,15 @@ const closeFileManagerModal = () => {
     <!-- RDP Modal is now rendered in App.vue -->
     <!-- VNC Modal is now rendered in App.vue -->
 
-    <!-- FileManager Modal Container -->
-    <div
-      v-show="showFileManagerModal && currentFileManagerSessionId && fileManagerPropsMap.get(currentFileManagerSessionId)"
-      class="fixed inset-0 z-50 transition-colors"
-      :class="isMobile ? 'flex flex-col justify-end' : 'flex items-center justify-center p-4'"
-      :style="{ backgroundColor: 'var(--overlay-bg-color)' }"
-      @click.self="closeFileManagerModal"
-    >
-      <div
-        class="bg-background shadow-xl w-full flex flex-col overflow-hidden border border-border"
-        :class="isMobile ? 'rounded-t-2xl max-h-[92vh] h-[92vh] border-b-0 pb-[env(safe-area-inset-bottom,0px)]' : 'rounded-lg max-w-4xl h-[85vh]'"
-      >
-        <!-- 移动端顶部药丸手柄条 -->
-        <div v-if="isMobile" class="pt-2.5 pb-1 flex justify-center shrink-0 cursor-pointer" @click="closeFileManagerModal">
-          <div class="w-10 h-1 bg-border/80 rounded-full"></div>
-        </div>
-        <div class="flex justify-between items-center px-4 py-2.5 border-b border-border flex-shrink-0 bg-header">
-          <h2 class="text-sm sm:text-lg font-semibold text-foreground truncate flex items-center gap-2">
-            <i class="fas fa-folder-open text-primary text-sm sm:text-base"></i>
-            <span>{{ t('fileManager.modalTitle', '文件管理器') }} ({{ currentFileManagerSessionId ? (sessionStore.sessions.get(currentFileManagerSessionId)?.connectionName || currentFileManagerSessionId) : '未知会话' }})</span>
-          </h2>
-          <button @click="closeFileManagerModal" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-header text-text-secondary hover:text-foreground transition-colors shrink-0" :title="t('common.close', '关闭')">
-            <i :class="isMobile ? 'fas fa-chevron-down text-base' : 'fas fa-times text-base sm:text-xl'"></i>
-          </button>
-        </div>
-        <div class="flex-grow overflow-hidden relative">
-          <template v-for="propsData in fileManagerPropsMap.values()" :key="`${propsData.sessionId}-${isMobile}`">
-            <div v-show="propsData.sessionId === currentFileManagerSessionId" class="h-full">
-              <FileManager
-                :session-id="propsData.sessionId"
-                :instance-id="propsData.instanceId"
-                :db-connection-id="propsData.dbConnectionId"
-                :ws-deps="propsData.wsDeps"
-                :is-mobile="isMobile"
-                class="h-full"
-              />
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
+    <!-- FileManager Modal (包含桌面端居中弹窗与移动端 Bottom Sheet 抽屉) -->
+    <FileManagerModal
+      :visible="showFileManagerModal"
+      :session-id="currentFileManagerSessionId"
+      :session-name="currentFileManagerSessionId ? (sessionStore.sessions.get(currentFileManagerSessionId)?.connectionName || currentFileManagerSessionId) : null"
+      :file-manager-props-map="fileManagerPropsMap"
+      :is-mobile="isMobile"
+      @close="closeFileManagerModal"
+    />
 
   </div>
 </template>
@@ -868,78 +745,10 @@ const closeFileManagerModal = () => {
   overflow: hidden;
 }
 
-.main-content-area {
-    display: flex;
-    flex: 1;
-    overflow: hidden; /* Keep overflow hidden */
-    border: 1px solid var(--border-color, #ccc); /* Use variable for border */
-    border-top: none; /* Remove top border as it's handled by the tab bar */
-    border-radius: 0 0 5px 5px; /* Top-left, Top-right, Bottom-right, Bottom-left */
-    margin: var(--base-margin, 0.5rem); /* Add some margin around the content area */
-    margin-top: 0; /* Remove top margin if tab bar is directly above */
-}
-
-.layout-renderer-wrapper {
-  flex-grow: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* 面板占位符样式 (用于加载或错误状态) */
-.pane-placeholder {
-    flex-grow: 1;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    color: var(--text-color-secondary); /* Use secondary text color variable */
-    background-color: var(--header-bg-color); /* Use header background for slight contrast */
-    font-size: 0.9em;
-    padding: var(--base-padding); /* Use base padding variable */
-}
-
-
-/* --- Mobile Layout Styles --- */
 .workspace-view.is-mobile {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-}
-
-.workspace-view.is-mobile .main-content-area {
-  /* Hide the desktop content area in mobile view */
-  display: none;
-}
-
-.mobile-content-area {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0%;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-  margin: 0;
-  border: none;
-  border-radius: 0;
-}
-
-.mobile-terminal {
-  flex-grow: 1; /* Terminal takes all available space in mobile-content-area */
-  width: 100%;
-  overflow: hidden;
-}
-
-.mobile-command-bar {
-  flex-shrink: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-.mobile-virtual-keyboard {
-  flex-shrink: 0; /* 防止虚拟键盘缩小 */
-  width: 100%; /* 确保宽度为 100% */
-  box-sizing: border-box; /* 边框和内边距包含在宽度内 */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 </style>
