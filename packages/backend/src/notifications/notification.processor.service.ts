@@ -104,7 +104,8 @@ class NotificationProcessorService extends EventEmitter {
              return;
          }
         console.log(`[NotificationProcessor] 收到测试事件`, payload);
-        const { testTargetConfig, testTargetChannelType } = payload.details || {};
+        const testTargetConfig = payload.testTargetConfig || payload.details?.testTargetConfig;
+        const testTargetChannelType = payload.testTargetChannelType || payload.details?.testTargetChannelType;
 
         if (!testTargetConfig || !testTargetChannelType) {
             console.error('[NotificationProcessor] 测试事件负载缺少 testTargetConfig 或 testTargetChannelType。');
@@ -162,16 +163,24 @@ class NotificationProcessorService extends EventEmitter {
         lang: string
     ): ProcessedNotification | null {
 
-         const baseInterpolationData = {
+        const cleanDetails = typeof payload.details === 'object' && payload.details !== null ? { ...payload.details } : {};
+        delete cleanDetails.testTargetConfig;
+        delete cleanDetails.testTargetChannelType;
+
+        const detailsString = Object.keys(cleanDetails).length > 0
+            ? (cleanDetails.message || JSON.stringify(cleanDetails, null, 2))
+            : (typeof payload.details === 'string' ? payload.details : '');
+
+        const baseInterpolationData: Record<string, any> = {
             event: translatedEvent,
             rawEvent: eventType,
             timestamp: payload.timestamp.toISOString(),
-            details: typeof payload.details === 'object' ? JSON.stringify(payload.details, null, 2) : (payload.details || ''),
+            details: detailsString,
             userId: payload.userId || 'N/A',
-            ...(typeof payload.details === 'object' ? payload.details : {}),
-             settingId: payload.details?.settingId,
-             settingName: payload.details?.name,
-             settingType: payload.details?.type,
+            ...cleanDetails,
+            settingId: cleanDetails.settingId,
+            settingName: cleanDetails.name,
+            settingType: cleanDetails.type,
         };
 
 
@@ -196,7 +205,10 @@ class NotificationProcessorService extends EventEmitter {
             case 'webhook':
                 const webhookConfig = setting.config as WebhookConfig;
                 const webhookTemplate = webhookConfig.bodyTemplate || genericWebhookBody;
-                body = this.interpolate(webhookTemplate, baseInterpolationData);
+                const isJson = this.isJsonTemplate(webhookTemplate, webhookConfig.headers);
+                body = isJson
+                    ? this.interpolateJson(webhookTemplate, baseInterpolationData)
+                    : this.interpolate(webhookTemplate, baseInterpolationData);
                 break;
 
             case 'telegram':
@@ -217,6 +229,84 @@ class NotificationProcessorService extends EventEmitter {
             body: body,
             rawPayload: payload
         };
+    }
+
+    /**
+     * 判断模板是否为 JSON 结构或声明为 JSON 请求头
+     */
+    private isJsonTemplate(template: string, headers?: Record<string, string>): boolean {
+        const trimmed = (template || '').trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            return true;
+        }
+        if (headers) {
+            for (const key of Object.keys(headers)) {
+                if (key.toLowerCase() === 'content-type' && headers[key].toLowerCase().includes('application/json')) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * JSON 感知的安全模板插值
+     */
+    private interpolateJson(template: string, data: Record<string, any>): string {
+        if (!template) return '';
+        let result = '';
+        let inString = false;
+        let i = 0;
+
+        while (i < template.length) {
+            const char = template[i];
+
+            if (inString) {
+                if (char === '\\') {
+                    result += char;
+                    if (i + 1 < template.length) {
+                        result += template[i + 1];
+                        i += 2;
+                        continue;
+                    }
+                } else if (char === '"') {
+                    inString = false;
+                    result += char;
+                    i++;
+                    continue;
+                }
+            } else {
+                if (char === '"') {
+                    inString = true;
+                    result += char;
+                    i++;
+                    continue;
+                }
+            }
+
+            if (char === '{') {
+                const match = template.slice(i).match(/^\{(\w+)\}/);
+                if (match) {
+                    const key = match[1];
+                    if (data.hasOwnProperty(key) && data[key] !== null && data[key] !== undefined) {
+                        const rawVal = data[key];
+                        if (inString) {
+                            const strVal = typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal);
+                            result += JSON.stringify(strVal).slice(1, -1);
+                        } else {
+                            result += JSON.stringify(rawVal);
+                        }
+                        i += match[0].length;
+                        continue;
+                    }
+                }
+            }
+
+            result += char;
+            i++;
+        }
+
+        return result;
     }
 
     /**

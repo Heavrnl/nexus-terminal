@@ -230,6 +230,16 @@ export class NotificationService {
       defaultBody
     );
 
+    let requestData: any = requestBody;
+    const isJsonHeader = (config.headers?.["Content-Type"] || "application/json").toLowerCase().includes("application/json");
+    if (isJsonHeader) {
+      try {
+        requestData = JSON.parse(requestBody);
+      } catch (e) {
+        requestData = requestBody;
+      }
+    }
+
     const requestConfig: AxiosRequestConfig = {
       method: config.method || "POST",
       url: config.url,
@@ -237,7 +247,7 @@ export class NotificationService {
         "Content-Type": "application/json",
         ...(config.headers || {}),
       },
-      data: requestBody,
+      data: requestData,
       timeout: 15000,
     };
 
@@ -492,6 +502,58 @@ export class NotificationService {
     defaultText: string
   ): string {
     if (!template) return defaultText;
+    const trimmed = template.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      let result = '';
+      let inString = false;
+      let i = 0;
+      while (i < template.length) {
+        const char = template[i];
+        if (inString) {
+          if (char === '\\') {
+            result += char;
+            if (i + 1 < template.length) {
+              result += template[i + 1];
+              i += 2;
+              continue;
+            }
+          } else if (char === '"') {
+            inString = false;
+            result += char;
+            i++;
+            continue;
+          }
+        } else {
+          if (char === '"') {
+            inString = true;
+            result += char;
+            i++;
+            continue;
+          }
+        }
+
+        if (char === '{') {
+          const match = template.slice(i).match(/^\{(\w+)\}/);
+          if (match) {
+            const key = match[1];
+            if (data.hasOwnProperty(key) && data[key] !== null && data[key] !== undefined) {
+              const rawVal = data[key];
+              if (inString) {
+                result += JSON.stringify(String(rawVal)).slice(1, -1);
+              } else {
+                result += JSON.stringify(rawVal);
+              }
+              i += match[0].length;
+              continue;
+            }
+          }
+        }
+        result += char;
+        i++;
+      }
+      return result;
+    }
+
     let rendered = template;
     for (const key in data) {
       rendered = rendered.replace(new RegExp(`\\{${key}\\}`, "g"), data[key]);
@@ -572,6 +634,16 @@ export class NotificationService {
       defaultBody
     );
 
+    let requestData: any = requestBody;
+    const isJsonHeader = (config.headers?.["Content-Type"] || "application/json").toLowerCase().includes("application/json");
+    if (isJsonHeader) {
+      try {
+        requestData = JSON.parse(requestBody);
+      } catch (e) {
+        requestData = requestBody;
+      }
+    }
+
     const requestConfig: AxiosRequestConfig = {
       method: config.method || "POST",
       url: config.url,
@@ -579,7 +651,7 @@ export class NotificationService {
         "Content-Type": "application/json",
         ...(config.headers || {}),
       },
-      data: requestBody,
+      data: requestData,
       timeout: 10000,
     };
 

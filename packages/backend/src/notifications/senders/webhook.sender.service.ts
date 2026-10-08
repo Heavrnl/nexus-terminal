@@ -60,9 +60,9 @@ class WebhookSenderService implements INotificationSender {
         ) {
           try {
             requestData = JSON.parse(requestBody);
-          } catch (parseError) {
+          } catch (parseError: any) {
             console.warn(
-              `[WebhookSender] Failed to parse request body as JSON for Content-Type application/json. Sending as raw string. Body: ${requestBody.substring(
+              `[WebhookSender] Failed to parse request body as JSON for Content-Type application/json (${parseError.message}). Sending as raw string. Body: ${requestBody.substring(
                 0,
                 100
               )}...`

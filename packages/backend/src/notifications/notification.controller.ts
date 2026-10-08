@@ -161,9 +161,9 @@ export class NotificationController {
               details: {
                  // Use i18next.t for i18n with interpolation
                  message: i18next.t('notificationController.testMessageSaved', { id, name: settingToTest.name }),
-                 testTargetConfig: settingToTest.config, // Pass the config to use
-                 testTargetChannelType: settingToTest.channel_type // Pass the channel type
-                }
+                },
+                testTargetConfig: settingToTest.config,
+                testTargetChannelType: settingToTest.channel_type
             });
 
           // Respond immediately confirming the event was triggered
@@ -201,9 +201,9 @@ export class NotificationController {
               details: {
                  // Use i18next.t for i18n with interpolation
                  message: i18next.t('notificationController.testMessageUnsaved', { channelType: channel_type }),
-                 testTargetConfig: config, // Pass the unsaved config to use
-                 testTargetChannelType: channel_type // Pass the channel type
-                }
+                },
+                testTargetConfig: config,
+                testTargetChannelType: channel_type
             });
 
            // Respond immediately confirming the event was triggered
