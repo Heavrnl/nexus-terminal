@@ -287,7 +287,7 @@
           </div>
         </div>
 
-        <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊) -->
+        <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊，移动端自适应) -->
         <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
             <div class="text-[15px] sm:text-base font-medium text-foreground block">
@@ -297,53 +297,53 @@
               {{ $t('settings.workspace.markdownDefaultViewModeDescription', '分别配置桌面端与移动端打开 Markdown 文件时的默认显示模式') }}
             </p>
           </div>
-          <div class="flex flex-col gap-2.5 shrink-0">
+          <div class="w-full sm:w-auto flex flex-col gap-3 shrink-0">
             <!-- 桌面端设置胶囊 -->
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 w-full">
               <span class="text-xs font-semibold text-text-secondary w-14 shrink-0 flex items-center gap-1.5">
                 <i class="fas fa-desktop text-xs opacity-75"></i>
                 <span>{{ $t('settings.workspace.deviceDesktop', '桌面端') }}</span>
               </span>
-              <div class="inline-flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none">
+              <div class="grid grid-cols-3 sm:flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none w-full sm:w-auto">
                 <button
                   v-for="opt in markdownViewModeOptions"
                   :key="'desktop-' + opt.value"
                   type="button"
                   :disabled="markdownDefaultViewModeLoading"
                   @click="handleSelectMarkdownDefaultViewMode(opt.value)"
-                  class="h-7.5 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50"
+                  class="h-8 sm:h-7.5 px-1.5 sm:px-3 rounded-md text-xs font-medium flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50 min-w-0"
                   :class="markdownDefaultViewModeLocal === opt.value
                     ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
                     : 'text-text-secondary hover:text-foreground hover:bg-muted/40'"
                   :title="opt.label"
                 >
-                  <i :class="[opt.icon, 'text-xs']"></i>
-                  <span>{{ opt.label }}</span>
+                  <i :class="[opt.icon, 'text-xs shrink-0']"></i>
+                  <span class="truncate">{{ opt.label }}</span>
                 </button>
               </div>
             </div>
 
             <!-- 移动端设置胶囊 -->
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3 w-full">
               <span class="text-xs font-semibold text-text-secondary w-14 shrink-0 flex items-center gap-1.5">
                 <i class="fas fa-mobile-alt text-xs opacity-75"></i>
                 <span>{{ $t('settings.workspace.deviceMobile', '移动端') }}</span>
               </span>
-              <div class="inline-flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none">
+              <div class="grid grid-cols-3 sm:flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none w-full sm:w-auto">
                 <button
                   v-for="opt in markdownViewModeOptions"
                   :key="'mobile-' + opt.value"
                   type="button"
                   :disabled="markdownDefaultViewModeMobileLoading"
                   @click="handleSelectMarkdownDefaultViewModeMobile(opt.value)"
-                  class="h-7.5 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50"
+                  class="h-8 sm:h-7.5 px-1.5 sm:px-3 rounded-md text-xs font-medium flex items-center justify-center gap-1 sm:gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50 min-w-0"
                   :class="markdownDefaultViewModeMobileLocal === opt.value
                     ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
                     : 'text-text-secondary hover:text-foreground hover:bg-muted/40'"
                   :title="opt.label"
                 >
-                  <i :class="[opt.icon, 'text-xs']"></i>
-                  <span>{{ opt.label }}</span>
+                  <i :class="[opt.icon, 'text-xs shrink-0']"></i>
+                  <span class="truncate">{{ opt.label }}</span>
                 </button>
               </div>
             </div>

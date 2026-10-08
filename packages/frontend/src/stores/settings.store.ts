@@ -122,7 +122,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
       // --- 设置默认值 (如果后端未返回) ---
       if (!settings.value.markdownDefaultViewMode) {
-          settings.value.markdownDefaultViewMode = 'preview';
+          settings.value.markdownDefaultViewMode = 'split';
       }
       if (!settings.value.markdownDefaultViewModeMobile) {
           settings.value.markdownDefaultViewModeMobile = 'preview';
@@ -948,7 +948,7 @@ export const useSettingsStore = defineStore('settings', () => {
   };
   const markdownDefaultViewModeString = computed<'preview' | 'split' | 'edit'>(() => {
     const val = settings.value.markdownDefaultViewMode;
-    return (val === 'split' || val === 'edit') ? val : 'preview';
+    return (val === 'preview' || val === 'edit') ? val : 'split';
   });
 
   const markdownDefaultViewModeMobileString = computed<'preview' | 'split' | 'edit'>(() => {

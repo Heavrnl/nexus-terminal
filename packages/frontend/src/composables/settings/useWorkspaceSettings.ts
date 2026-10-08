@@ -27,7 +27,7 @@ export function useWorkspaceSettings() {
   } = storeToRefs(settingsStore);
 
   // --- Markdown Default View Mode (Desktop) ---
-  const markdownDefaultViewModeLocal = ref<'preview' | 'split' | 'edit'>('preview');
+  const markdownDefaultViewModeLocal = ref<'preview' | 'split' | 'edit'>('split');
   const markdownDefaultViewModeLoading = ref(false);
   const markdownDefaultViewModeMessage = ref('');
   const markdownDefaultViewModeSuccess = ref(false);
