@@ -6,7 +6,6 @@ import { useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import WorkspaceConnectionListComponent from './WorkspaceConnectionList.vue';
 import TabBarContextMenu from './TabBarContextMenu.vue';
-import TransferProgressModal from './TransferProgressModal.vue';
 import MobileTerminalTabBar from './MobileTerminalTabBar.vue';
 import { useSessionStore } from '../stores/session.store';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
@@ -58,7 +57,6 @@ const closeSession = (event: MouseEvent, sessionId: string) => {
 const sessionStore = useSessionStore();
 const showConnectionListPopup = ref(false);
 const draggableSessions = ref<SessionTabInfoWithStatus[]>([]);
-const showTransferProgressModal = ref(false);
 
 watch(() => props.sessions, (newSessions) => {
   draggableSessions.value = [...newSessions];
@@ -264,13 +262,7 @@ onMounted(() => {
       handlePopupConnect(payload.connectionId);
     });
 
-    const handleOpenTransferProgressModal = () => {
-      showTransferProgressModal.value = true;
-    };
-    onWorkspaceEvent('ui:openTransferProgressModal', handleOpenTransferProgressModal);
-
     onBeforeUnmount(() => {
-      offWorkspaceEvent('ui:openTransferProgressModal', handleOpenTransferProgressModal);
       const container = document.querySelector('.overflow-x-auto');
       if (container) {
         container.removeEventListener('wheel', handleWheel as EventListener);
@@ -367,7 +359,7 @@ onBeforeUnmount(() => {
       <!-- 查看传输进度按钮 -->
       <button
         class="flex items-center justify-center px-3 h-full border-l border-border text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150"
-        @click="showTransferProgressModal = true"
+        @click="emitWorkspaceEvent('ui:openTransferProgressModal')"
         :title="$t('terminalTabBar.showTransferProgressTooltip', '查看传输进度')"
       >
         <i class="fas fa-tasks text-sm"></i>
@@ -415,8 +407,5 @@ onBeforeUnmount(() => {
       @menu-action="handleContextMenuAction"
       @close="closeContextMenu"
     />
-
-    <!-- 传输进度模态框 -->
-    <TransferProgressModal v-model:visible="showTransferProgressModal" :is-mobile="false" />
   </div>
 </template>

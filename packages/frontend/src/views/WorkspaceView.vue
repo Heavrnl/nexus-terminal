@@ -10,8 +10,8 @@ import AddConnectionFormComponent from '../components/AddConnectionForm.vue';
 import DesktopWorkspaceView from './DesktopWorkspaceView.vue';
 import MobileWorkspaceView from './MobileWorkspaceView.vue';
 import LayoutConfigurator from '../components/LayoutConfigurator.vue';
-import Terminal from '../components/Terminal.vue';
 import FileManagerModal from '../components/FileManagerModal.vue'; 
+import TransferProgressModal from '../components/TransferProgressModal.vue';
 import { useSessionStore } from '../stores/session.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
 import { useSettingsStore } from '../stores/settings.store';
@@ -68,8 +68,7 @@ const connectionToEdit = ref<ConnectionInfo | null>(null);
 const showLayoutConfigurator = ref(false); // 控制布局配置器可见性
 
 // --- 搜索状态 ---
-const currentSearchTerm = ref(''); // 当前搜索的关键词
-const mobileTerminalRef = ref<InstanceType<typeof Terminal> | null>(null); 
+const currentSearchTerm = ref(''); // 当前搜索的关键词 
 
 // --- 文件管理器模态框状态 ---
 const showFileManagerModal = ref(false);
@@ -80,6 +79,12 @@ const fileManagerPropsMap = shallowRef<Map<string, {
   wsDeps: WebSocketDependencies;
 }>>(new Map());
 const currentFileManagerSessionId = ref<string | null>(null);
+
+// --- 文件传输进度模态框状态 ---
+const showTransferProgressModal = ref(false);
+const handleOpenTransferProgressModal = () => {
+  showTransferProgressModal.value = true;
+};
 
 // --- 处理全局键盘事件 ---
 const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -165,6 +170,7 @@ onMounted(() => {
   subscribeToWorkspaceEvents('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
   subscribeToWorkspaceEvents('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
   subscribeToWorkspaceEvents('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
+  subscribeToWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
   subscribeToWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
   subscribeToWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
 });
@@ -210,6 +216,7 @@ onBeforeUnmount(() => {
   unsubscribeFromWorkspaceEvents('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
   unsubscribeFromWorkspaceEvents('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
   unsubscribeFromWorkspaceEvents('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
+  unsubscribeFromWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
   unsubscribeFromWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 取消订阅文件管理器打开请求 +++
   unsubscribeFromWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
 });
@@ -730,6 +737,12 @@ const closeFileManagerModal = () => {
       :file-manager-props-map="fileManagerPropsMap"
       :is-mobile="isMobile"
       @close="closeFileManagerModal"
+    />
+
+    <!-- Transfer Progress Modal (包含桌面端居中弹窗与移动端 Bottom Sheet 抽屉) -->
+    <TransferProgressModal
+      v-model:visible="showTransferProgressModal"
+      :is-mobile="isMobile"
     />
 
   </div>
