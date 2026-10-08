@@ -15,12 +15,14 @@ const props = withDefaults(
     sftpManager: SftpManagerInstance | null;
     width?: number;
     showFiles?: boolean;
+    searchQuery?: string;
   }>(),
   {
     instanceId: 'default',
     width: 220,
     isSftpReady: false,
     showFiles: undefined,
+    searchQuery: '',
   }
 );
 
@@ -204,21 +206,52 @@ const toggleExpand = async (node: TreeNode, event?: MouseEvent) => {
   }
 };
 
-// 点击节点项：目录则展开并跳转，文件则触发选中打开
+// 点击节点项：目录则展开/收起并跳转，文件则触发选中打开
 const handleSelectNode = async (node: TreeNode) => {
   if (node.isDirectory) {
-    if (!node.isExpanded && node.hasChildren) {
-      node.isExpanded = true;
-      if (node.children === null) {
-        await loadChildren(node);
-      } else {
-        treeVersion.value++;
+    if (node.isExpanded) {
+      // 若当前已展开，点击整行则收起该目录
+      node.isExpanded = false;
+      treeVersion.value++;
+    } else {
+      // 若当前未展开，点击整行展开并加载子节点
+      if (node.hasChildren) {
+        node.isExpanded = true;
+        if (node.children === null) {
+          await loadChildren(node);
+        } else {
+          treeVersion.value++;
+        }
       }
     }
     emit('select-directory', node.path);
   } else {
     emit('select-file', node.path, node.name);
   }
+};
+
+// 搜索高亮片段拆分接口与函数
+interface HighlightPart {
+  text: string;
+  isMatch: boolean;
+}
+
+const getHighlightedParts = (text: string, query?: string): HighlightPart[] => {
+  if (!query || !query.trim()) return [{ text, isMatch: false }];
+  const q = query.trim().toLowerCase();
+  const lowerText = text.toLowerCase();
+  const idx = lowerText.indexOf(q);
+  if (idx === -1) return [{ text, isMatch: false }];
+
+  const parts: HighlightPart[] = [];
+  if (idx > 0) {
+    parts.push({ text: text.substring(0, idx), isMatch: false });
+  }
+  parts.push({ text: text.substring(idx, idx + q.length), isMatch: true });
+  if (idx + q.length < text.length) {
+    parts.push({ text: text.substring(idx + q.length), isMatch: false });
+  }
+  return parts;
 };
 
 // 展开并确保所有祖先路径就绪
@@ -465,9 +498,17 @@ defineExpose({
           ></i>
         </template>
 
-        <!-- 名称 -->
+        <!-- 名称（支持实时搜索高亮） -->
         <span class="truncate flex-1 select-none text-[11px] leading-tight">
-          {{ node.path === '/' ? '/' : node.name }}
+          <template v-if="node.path === '/'">/</template>
+          <template v-else-if="props.searchQuery">
+            <span
+              v-for="(part, idx) in getHighlightedParts(node.name, props.searchQuery)"
+              :key="idx"
+              :class="part.isMatch ? 'bg-primary/25 text-primary font-bold px-0.5 rounded-[2px]' : ''"
+            >{{ part.text }}</span>
+          </template>
+          <template v-else>{{ node.name }}</template>
         </span>
       </div>
 

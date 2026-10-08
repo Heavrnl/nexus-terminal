@@ -58,23 +58,21 @@ onBeforeUnmount(() => {
 
 const showButtonLabels = computed(() => {
   if (props.isMobile) return false;
-  return props.isSearchActive ? containerWidth.value >= 640 : containerWidth.value >= 530;
+  return containerWidth.value >= 530;
 });
 
 // --- 搜索输入框引用与交互 ---
 const searchInputRef = ref<HTMLInputElement | null>(null);
+
+const toggleSearch = () => {
+  emit('update:isSearchActive', !props.isSearchActive);
+};
 
 const activateSearch = () => {
   emit('update:isSearchActive', true);
   nextTick(() => {
     searchInputRef.value?.focus();
   });
-};
-
-const deactivateSearch = () => {
-  if (!props.isMobile) {
-    emit('update:isSearchActive', false);
-  }
 };
 
 const cancelSearch = () => {
@@ -167,44 +165,17 @@ defineExpose({
         <!-- 分隔微线 -->
         <div class="h-4 w-px bg-border/60 mx-1 flex-shrink-0"></div>
 
-        <!-- 搜索区域 -->
-        <div class="flex items-center flex-shrink min-w-0">
-          <button
-            v-if="!isSearchActive"
-            type="button"
-            class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground flex-shrink-0"
-            @click.stop="activateSearch"
-            :disabled="!isConnected"
-            :title="t('fileManager.searchPlaceholder')"
-          >
-            <i class="fas fa-search text-xs"></i>
-          </button>
-          <div v-else class="relative flex items-center min-w-[80px] max-w-[200px] flex-shrink">
-            <i class="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-text-secondary/70 text-[11px] pointer-events-none"></i>
-            <input
-              ref="searchInputRef"
-              type="text"
-              :value="searchQuery"
-              @input="onSearchInput"
-              :placeholder="t('fileManager.searchPlaceholder')"
-              class="w-full bg-background border border-border/80 rounded pl-6 pr-6 py-0.5 text-foreground text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-150"
-              data-focus-id="fileManagerSearch"
-              @blur="deactivateSearch"
-              @keyup.esc="cancelSearch"
-              @keydown.up.prevent="emit('keydown-search', $event)"
-              @keydown.down.prevent="emit('keydown-search', $event)"
-              @keydown.enter.prevent="emit('keydown-search', $event)"
-            />
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-[10px]"
-              @click.stop="cancelSearch"
-            >
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-        </div>
+        <!-- 搜索切换按钮（点击在下方新建/收起独立搜索栏） -->
+        <button
+          type="button"
+          class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+          :class="isSearchActive ? 'bg-primary/20 text-primary font-medium' : 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'"
+          @click.stop="toggleSearch"
+          :disabled="!isConnected"
+          :title="isSearchActive ? t('fileManager.actions.closeSearch', '关闭搜索栏') : t('fileManager.searchPlaceholder', '搜索')"
+        >
+          <i class="fas fa-search text-xs"></i>
+        </button>
       </div>
 
       <!-- 右侧主要操作按钮组 -->

@@ -1152,12 +1152,43 @@ const handleBreadcrumbOpenFile = (fileItem: FileListItem, fullPath?: string) => 
   }
 };
 
+// --- 桌面端独立搜索栏状态与操作 ---
+const desktopSearchInputRef = ref<HTMLInputElement | null>(null);
+
+const currentDirectoryName = computed(() => {
+  const p = currentSftpManager.value?.currentPath.value || '/';
+  if (p === '/') return '/';
+  const parts = p.split('/').filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : '/';
+});
+
+const closeDesktopSearch = () => {
+  isSearchActive.value = false;
+  searchQuery.value = '';
+};
+
+// 监听 isSearchActive 变化，桌面端激活时自动获得焦点
+watch(isSearchActive, (active) => {
+  if (active && !props.isMobile) {
+    nextTick(() => {
+      desktopSearchInputRef.value?.focus();
+    });
+  }
+});
+
 // +++ 暴露给外部与焦点切换器的操作 +++
 const focusSearchInput = (): boolean => {
   if (props.sessionId !== sessionStore.activeSessionId) {
     return false;
   }
-  return headerRef.value?.focusSearchInput() ?? false;
+  if (props.isMobile) {
+    return headerRef.value?.focusSearchInput() ?? false;
+  }
+  isSearchActive.value = true;
+  nextTick(() => {
+    desktopSearchInputRef.value?.focus();
+  });
+  return true;
 };
 
 const startPathEdit = () => {
@@ -1212,6 +1243,65 @@ defineExpose({ focusSearchInput, startPathEdit });
       @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
     />
 
+    <!-- 第三层：桌面端独立搜索栏（点击顶栏搜索按钮后在下方新建一行，支持当前选中目录即时搜索） -->
+    <div
+      v-if="!props.isMobile && isSearchActive"
+      class="px-3 py-1.5 bg-header/90 border-b border-border/50 flex items-center gap-2.5 text-xs flex-shrink-0 animate-in slide-in-from-top-1 duration-150 shadow-sm"
+    >
+      <div class="relative flex-1 flex items-center">
+        <i class="fas fa-search absolute left-2.5 text-text-secondary/70 text-xs pointer-events-none"></i>
+        <input
+          ref="desktopSearchInputRef"
+          type="text"
+          v-model="searchQuery"
+          :placeholder="`在 ${currentDirectoryName} 中搜索文件...`"
+          class="w-full h-7 bg-background border border-border/70 rounded-md pl-8 pr-7 text-xs text-foreground placeholder:text-text-secondary/50 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-sans"
+          data-focus-id="fileManagerSearch"
+          @keyup.esc="closeDesktopSearch"
+          @keydown="handleKeydown"
+        />
+        <button
+          v-if="searchQuery"
+          type="button"
+          @click="searchQuery = ''"
+          class="absolute right-2 text-text-secondary hover:text-foreground text-xs p-0.5 cursor-pointer"
+          title="清空"
+        >
+          <i class="fas fa-times-circle"></i>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 text-[11px] text-text-secondary flex-shrink-0">
+        <!-- 范围徽章：明确指出当前在目录树选中的文件夹 -->
+        <span
+          class="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-1 font-mono max-w-[180px] truncate"
+          :title="`搜索范围: ${currentSftpManager?.currentPath?.value ?? '/'}`"
+        >
+          <i class="fas fa-folder text-[10px]"></i>
+          <span class="truncate">{{ currentDirectoryName }}</span>
+        </span>
+
+        <!-- 匹配统计 -->
+        <span
+          v-if="searchQuery"
+          class="px-1.5 py-0.5 rounded font-mono font-medium text-[11px]"
+          :class="filteredFileList.length > 0 ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'"
+        >
+          {{ filteredFileList.length }} 项匹配
+        </span>
+
+        <!-- 关闭按钮 -->
+        <button
+          type="button"
+          @click="closeDesktopSearch"
+          class="h-6 px-2 rounded hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary hover:text-foreground flex items-center gap-1 transition-colors cursor-pointer text-xs"
+          title="关闭搜索栏 (Esc)"
+        >
+          <i class="fas fa-times text-xs"></i>
+          <span>关闭</span>
+        </button>
+      </div>
+    </div>
 
     <!-- File List Viewport Wrapper (视口定位层，确保提示始终居中于可视区域) -->
     <div class="flex-grow min-h-0 relative overflow-hidden flex flex-col">
@@ -1259,6 +1349,7 @@ defineExpose({ focusSearchInput, startPathEdit });
             :is-sftp-ready="Boolean(props.wsDeps.isSftpReady.value)"
             :sftp-manager="currentSftpManager"
             :width="directoryTreeWidth"
+            :search-query="searchQuery"
             @select-directory="handleTreeSelectDirectory"
             @select-file="handleTreeSelectFile"
           />
