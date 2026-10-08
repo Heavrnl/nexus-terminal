@@ -230,29 +230,6 @@ const handleSelectNode = async (node: TreeNode) => {
   }
 };
 
-// 搜索高亮片段拆分接口与函数
-interface HighlightPart {
-  text: string;
-  isMatch: boolean;
-}
-
-const getHighlightedParts = (text: string, query?: string): HighlightPart[] => {
-  if (!query || !query.trim()) return [{ text, isMatch: false }];
-  const q = query.trim().toLowerCase();
-  const lowerText = text.toLowerCase();
-  const idx = lowerText.indexOf(q);
-  if (idx === -1) return [{ text, isMatch: false }];
-
-  const parts: HighlightPart[] = [];
-  if (idx > 0) {
-    parts.push({ text: text.substring(0, idx), isMatch: false });
-  }
-  parts.push({ text: text.substring(idx, idx + q.length), isMatch: true });
-  if (idx + q.length < text.length) {
-    parts.push({ text: text.substring(idx + q.length), isMatch: false });
-  }
-  return parts;
-};
 
 // 展开并确保所有祖先路径就绪
 const expandAncestors = async (targetPath: string) => {
@@ -297,10 +274,49 @@ const expandAncestors = async (targetPath: string) => {
   });
 };
 
-// 拍平渲染的可见节点列表
+// 拍平渲染的可见节点列表（仅对当前选择的文件夹内部内容进行及时显隐过滤，不影响整个树形骨架）
 const visibleNodes = computed<TreeNode[]>(() => {
   // 显式依赖版本号，确保状态变化必然重新触发计算
   void treeVersion.value;
+
+  const query = props.searchQuery?.trim().toLowerCase();
+  const currentNorm = normalizePath(props.currentPath);
+
+  // 判断某路径是否属于当前选择的文件夹的内部内容（后代项）
+  const isInsideSelectedDir = (nodePath: string): boolean => {
+    const norm = normalizePath(nodePath);
+    if (norm === currentNorm) return false;
+    if (currentNorm === '/') return norm !== '/';
+    return norm.startsWith(currentNorm + '/');
+  };
+
+  // 记忆化检查：处于当前选中文件夹内部的子节点，自身是否匹配或其已加载的子孙中是否有匹配项
+  const matchMemo = new Map<string, boolean>();
+
+  const checkChildMatch = (path: string): boolean => {
+    if (!query) return true;
+    if (matchMemo.has(path)) return matchMemo.get(path)!;
+    const node = nodesMap.value.get(path);
+    if (!node) {
+      matchMemo.set(path, false);
+      return false;
+    }
+
+    const selfMatch = node.name.toLowerCase().includes(query);
+    let subChildMatch = false;
+
+    if (node.isDirectory && node.children && node.children.length > 0) {
+      for (const childPath of node.children) {
+        if (checkChildMatch(childPath)) {
+          subChildMatch = true;
+        }
+      }
+    }
+
+    const res = selfMatch || subChildMatch;
+    matchMemo.set(path, res);
+    return res;
+  };
 
   const list: TreeNode[] = [];
 
@@ -308,9 +324,28 @@ const visibleNodes = computed<TreeNode[]>(() => {
     const node = nodesMap.value.get(nodePath);
     if (!node) return;
 
+    const inSelected = isInsideSelectedDir(nodePath);
+
+    // 如果处于当前选择的文件夹内部，且存在搜索关键词：执行显隐过滤
+    if (inSelected && query) {
+      const isMatched = checkChildMatch(nodePath);
+      if (!isMatched) {
+        // 不匹配的条目像文件管理器一样直接隐藏
+        return;
+      }
+    }
+
+    // 其它情况（当前选中目录自身、其祖先节点、同级兄弟分支，或匹配的子项）：正常加入可见列表
     list.push(node);
 
-    if (node.isDirectory && node.isExpanded && node.children) {
+    // 遍历子节点：
+    // 若当前节点是选中的文件夹且存在搜索词，确保深入其子项展示过滤结果；其余节点遵循正常 isExpanded
+    const shouldTraverseChildren =
+      node.isDirectory &&
+      node.children &&
+      (node.isExpanded || (query && normalizePath(node.path) === currentNorm));
+
+    if (shouldTraverseChildren && node.children) {
       for (const childPath of node.children) {
         traverse(childPath);
       }
@@ -498,26 +533,18 @@ defineExpose({
           ></i>
         </template>
 
-        <!-- 名称（支持实时搜索高亮） -->
+        <!-- 名称 -->
         <span class="truncate flex-1 select-none text-[11px] leading-tight">
-          <template v-if="node.path === '/'">/</template>
-          <template v-else-if="props.searchQuery">
-            <span
-              v-for="(part, idx) in getHighlightedParts(node.name, props.searchQuery)"
-              :key="idx"
-              :class="part.isMatch ? 'bg-primary/25 text-primary font-bold px-0.5 rounded-[2px]' : ''"
-            >{{ part.text }}</span>
-          </template>
-          <template v-else>{{ node.name }}</template>
+          {{ node.path === '/' ? '/' : node.name }}
         </span>
       </div>
 
-      <!-- 空目录或未就绪 -->
+      <!-- 空目录或未就绪或无搜索结果 -->
       <div
         v-if="visibleNodes.length === 0"
         class="py-6 text-center text-text-secondary/60 text-xs italic"
       >
-        {{ t('fileManager.loading', '正在加载目录...') }}
+        {{ props.searchQuery ? t('fileManager.noSearchResults', '未找到匹配项') : t('fileManager.loading', '正在加载目录...') }}
       </div>
     </div>
   </aside>

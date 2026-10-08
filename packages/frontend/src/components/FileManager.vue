@@ -1272,15 +1272,6 @@ defineExpose({ focusSearchInput, startPathEdit });
       </div>
 
       <div class="flex items-center gap-2 text-[11px] text-text-secondary flex-shrink-0">
-        <!-- 范围徽章：明确指出当前在目录树选中的文件夹 -->
-        <span
-          class="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 flex items-center gap-1 font-mono max-w-[180px] truncate"
-          :title="`搜索范围: ${currentSftpManager?.currentPath?.value ?? '/'}`"
-        >
-          <i class="fas fa-folder text-[10px]"></i>
-          <span class="truncate">{{ currentDirectoryName }}</span>
-        </span>
-
         <!-- 匹配统计 -->
         <span
           v-if="searchQuery"
@@ -1290,15 +1281,14 @@ defineExpose({ focusSearchInput, startPathEdit });
           {{ filteredFileList.length }} 项匹配
         </span>
 
-        <!-- 关闭按钮 -->
+        <!-- 关闭按钮（纯图标，无文字） -->
         <button
           type="button"
           @click="closeDesktopSearch"
-          class="h-6 px-2 rounded hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary hover:text-foreground flex items-center gap-1 transition-colors cursor-pointer text-xs"
+          class="w-6 h-6 rounded flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary hover:text-foreground transition-colors cursor-pointer"
           title="关闭搜索栏 (Esc)"
         >
           <i class="fas fa-times text-xs"></i>
-          <span>关闭</span>
         </button>
       </div>
     </div>
