@@ -9,7 +9,7 @@
       "dev": "cross-env NODE_ENV=development npx ts-node-dev --respawn --transpile-only src/index.ts"
    },
    "dependencies": {
-      "@simplewebauthn/server": "^13.3.3",
+      "@simplewebauthn/server": "^14.0.3",
       "@types/archiver": "^6.0.3",
       "@types/multer": "^1.4.12",
       "@types/session-file-store": "^1.2.5",
