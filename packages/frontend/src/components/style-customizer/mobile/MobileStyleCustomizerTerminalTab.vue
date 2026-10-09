@@ -25,6 +25,14 @@ const {
   terminalTextShadowColor,
 } = storeToRefs(appearanceStore);
 
+import {
+  TERMINAL_FONT_PRESETS,
+  TERMINAL_FONT_CATEGORIES,
+  QUICK_FONT_PILLS,
+  findMatchingPreset,
+  cleanFontName,
+} from '../../../constants/terminalFonts';
+
 // 本地状态
 const editableTerminalFontFamily = ref('');
 const editableTerminalFontSize = ref(14);
@@ -39,14 +47,11 @@ const editableTerminalTextShadowEnabled = ref(false);
 const editableTerminalTextShadowBlur = ref(0);
 const editableTerminalTextShadowColor = ref('rgba(0,0,0,0.5)');
 
-// 默认内置等宽字体预设
-const DEFAULT_PRESET_FONTS = [
-  'monospace',
-  'Consolas',
-  '"Fira Code"',
-  '"JetBrains Mono"',
-  '"Courier New"',
-];
+// 下拉预设选择状态
+const selectedFontPresetId = ref<string>('generic-monospace');
+
+// 默认内置等宽字体预设 (引用全量常量预设值)
+const DEFAULT_PRESET_FONTS = TERMINAL_FONT_PRESETS.map(p => p.value);
 
 const STORAGE_KEY_CUSTOM_TERMINAL_FONTS = 'nexus_mobile_custom_terminal_fonts';
 
@@ -96,9 +101,21 @@ const allAvailableFonts = computed(() => {
   return result;
 });
 
+const syncPresetFromFontValue = (fontVal: string) => {
+  const matched = findMatchingPreset(fontVal);
+  if (matched) {
+    selectedFontPresetId.value = matched.id;
+  } else if (!fontVal || fontVal.trim() === 'monospace') {
+    selectedFontPresetId.value = 'generic-monospace';
+  } else {
+    selectedFontPresetId.value = 'custom';
+  }
+};
+
 const initializeState = () => {
   loadCustomFonts();
   editableTerminalFontFamily.value = currentTerminalFontFamily.value;
+  syncPresetFromFontValue(editableTerminalFontFamily.value);
   editableTerminalFontSize.value = currentTerminalFontSize.value;
   editableTerminalTextStrokeEnabled.value = terminalTextStrokeEnabled.value;
   editableTerminalTextStrokeWidth.value = terminalTextStrokeWidth.value;
@@ -111,7 +128,10 @@ const initializeState = () => {
 initializeState();
 
 watch(currentTerminalFontSize, val => { editableTerminalFontSize.value = val; });
-watch(currentTerminalFontFamily, val => { editableTerminalFontFamily.value = val; });
+watch(currentTerminalFontFamily, val => {
+  editableTerminalFontFamily.value = val;
+  syncPresetFromFontValue(val);
+});
 
 // 字体大小增减步进器
 const changeFontSize = async (delta: number) => {
@@ -127,11 +147,24 @@ const changeFontSize = async (delta: number) => {
 // 选择预设或已有字体
 const selectFont = async (font: string) => {
   editableTerminalFontFamily.value = font;
+  syncPresetFromFontValue(font);
   try {
     await appearanceStore.setTerminalFontFamily(font);
     notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalFontSaved', '终端字体已更新') });
   } catch (err: any) {
     notificationsStore.addNotification({ type: 'error', message: err.message || '更新字体失败' });
+  }
+};
+
+// 下拉菜单选择字体预设
+const handleSelectPreset = async (presetId: string) => {
+  selectedFontPresetId.value = presetId;
+  if (presetId === 'custom') {
+    return;
+  }
+  const preset = TERMINAL_FONT_PRESETS.find(p => p.id === presetId);
+  if (preset) {
+    await selectFont(preset.value);
   }
 };
 
@@ -258,8 +291,8 @@ const updateShadow = async () => {
           </div>
         </div>
 
-        <!-- 字体族输入与自定义添加行 -->
-        <div class="space-y-2 pt-2 border-t border-border/30">
+        <!-- 字体族预设选择与自定义添加行 -->
+        <div class="space-y-2.5 pt-2 border-t border-border/30">
           <div class="flex items-center justify-between">
             <span class="text-[11px] text-text-secondary/80 font-medium">终端字体族 (Font Family)</span>
             <button
@@ -273,22 +306,53 @@ const updateShadow = async () => {
             </button>
           </div>
 
-          <!-- 自定义输入并保存应用 -->
-          <div class="flex items-center gap-2">
-            <input
-              type="text"
-              v-model="editableTerminalFontFamily"
-              @keydown.enter.prevent="handleApplyCustomFont"
-              placeholder="如 'JetBrains Mono', Consolas, monospace"
-              class="flex-grow min-w-0 px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary transition-colors"
-            />
-            <button
-              type="button"
-              @click="handleApplyCustomFont"
-              class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shrink-0 cursor-pointer shadow-2xs"
+          <!-- 预设下拉选择器 -->
+          <div class="space-y-1">
+            <div class="text-[10px] text-text-secondary/70">精选字体下拉选择：</div>
+            <select
+              id="mobileTerminalFontSelect"
+              v-model="selectedFontPresetId"
+              @change="handleSelectPreset(selectedFontPresetId)"
+              class="w-full px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary transition-colors cursor-pointer"
             >
-              应用
-            </button>
+              <optgroup
+                v-for="cat in TERMINAL_FONT_CATEGORIES"
+                :key="cat.key"
+                :label="cat.label"
+              >
+                <option
+                  v-for="font in TERMINAL_FONT_PRESETS.filter(p => p.category === cat.key)"
+                  :key="font.id"
+                  :value="font.id"
+                >
+                  {{ font.name }} - {{ font.description }}
+                </option>
+              </optgroup>
+              <optgroup label="⚙️ 其他">
+                <option value="custom">✏️ 自定义输入字体...</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <!-- 自定义输入并保存应用 -->
+          <div class="space-y-1">
+            <div class="text-[10px] text-text-secondary/70">当前生效 CSS 字体值：</div>
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                v-model="editableTerminalFontFamily"
+                @keydown.enter.prevent="handleApplyCustomFont"
+                placeholder="如 'JetBrains Mono', Consolas, monospace"
+                class="flex-grow min-w-0 px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary transition-colors"
+              />
+              <button
+                type="button"
+                @click="handleApplyCustomFont"
+                class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all shrink-0 cursor-pointer shadow-2xs"
+              >
+                应用
+              </button>
+            </div>
           </div>
 
           <!-- 新增自定义字体快捷输入卡片 -->
@@ -318,6 +382,25 @@ const updateShadow = async () => {
               >
                 添加并应用
               </button>
+            </div>
+          </div>
+
+          <!-- 实际渲染效果预览卡片 -->
+          <div
+            class="p-2.5 rounded-xl border border-border/70 bg-background space-y-1 transition-colors"
+            :style="{ fontFamily: editableTerminalFontFamily || 'monospace' }"
+          >
+            <div class="flex items-center justify-between text-[11px] text-text-secondary font-sans border-b border-border/40 pb-1">
+              <span class="flex items-center gap-1 font-medium text-foreground">
+                <i class="fas fa-eye text-primary text-[10px]"></i>
+                <span>效果预览 ({{ cleanFontName(editableTerminalFontFamily) || '默认' }})</span>
+              </span>
+            </div>
+            <div class="text-[11px] leading-relaxed text-foreground font-normal select-all pt-0.5">
+              0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ
+            </div>
+            <div class="text-[10px] text-text-secondary select-all">
+              a != b &amp;&amp; x &lt;= y -&gt; =&gt;
             </div>
           </div>
         </div>

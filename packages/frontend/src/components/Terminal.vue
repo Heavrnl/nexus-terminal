@@ -10,6 +10,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import 'xterm/css/xterm.css';
 import MobileTerminalScrollbar from './MobileTerminalScrollbar.vue';
 import TerminalContextMenu, { type TerminalMenuAction } from './TerminalContextMenu.vue';
@@ -39,6 +40,7 @@ const terminalOuterWrapperRef = ref<HTMLElement | null>(null); // 最外层容�
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let searchAddon: SearchAddon | null = null; // *** 添加 searchAddon 变量 ***
+let serializeAddon: SerializeAddon | null = null; // 官方序列化插件，用于保存完整 ANSI 颜色与样式
 let resizeObserver: ResizeObserver | null = null;
 let observedElement: HTMLElement | null = null; // +++ Store the observed element +++
 let debounceTimer: number | null = null; // 用于防抖的计时器 ID
@@ -419,11 +421,13 @@ onMounted(() => {
     // 加载插件
     fitAddon = new FitAddon();
     searchAddon = new SearchAddon(); // *** 创建 SearchAddon 实例 ***
+    serializeAddon = new SerializeAddon(); // *** 创建 SerializeAddon 实例 ***
     const unicode11Addon = new Unicode11Addon(); // 支持 Unicode 11 现代宽字符规范
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.loadAddon(searchAddon); // *** 加载 SearchAddon ***
     terminal.loadAddon(unicode11Addon);
+    terminal.loadAddon(serializeAddon); // *** 加载 SerializeAddon ***
     terminal.unicode.activeVersion = '11'; // 激活 Unicode 11 版本支持
 
     // 将终端附加到 DOM
@@ -562,9 +566,14 @@ onMounted(() => {
       }
     }, { immediate: true }); // 立即执行一次 watch
 
-    // 触发 ready 事件，传递 sessionId, terminal 和 searchAddon 实例
+    // 触发 ready 事件，传递 sessionId, terminal, searchAddon 和 serializeAddon 实例
     if (terminal) {
-        emitWorkspaceEvent('terminal:ready', { sessionId: props.sessionId, terminal: terminal, searchAddon: searchAddon });
+        emitWorkspaceEvent('terminal:ready', {
+          sessionId: props.sessionId,
+          terminal: terminal,
+          searchAddon: searchAddon,
+          serializeAddon: serializeAddon,
+        });
     }
 
     // --- 监听并处理选中即复制 ---
@@ -780,6 +789,15 @@ onBeforeUnmount(() => {
   }
   resizeObserver = null;
   observedElement = null;
+
+  if (serializeAddon) {
+    try {
+      serializeAddon.dispose();
+    } catch (e) {
+      // ignore
+    }
+    serializeAddon = null;
+  }
 
   if (terminal) {
     console.log(`[Terminal ${props.sessionId}] Disposing terminal instance.`);

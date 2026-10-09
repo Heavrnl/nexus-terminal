@@ -103,8 +103,8 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                                 console.log(`WebSocket: 为自动挂起写入终端屏幕历史 (会话 ${sessionId}, 字符数: ${matchedSync.terminalBuffer.length})...`);
                                 await temporaryLogStorageService.ensureLogDirectoryExists();
                                 const normalized = matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n');
-                                const formatted = normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`;
-                                await temporaryLogStorageService.writeToLog(state.suspendLogPath, formatted);
+                                const formatted = normalized;
+                                await temporaryLogStorageService.overwriteLog(state.suspendLogPath, formatted);
                             } catch (logErr) {
                                 console.warn(`[cleanupClientConnection] 写入终端历史日志失败:`, logErr);
                             }

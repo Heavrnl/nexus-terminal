@@ -7,6 +7,14 @@ import { storeToRefs } from 'pinia';
 import type { ITheme } from 'xterm';
 import type { TerminalTheme } from '../../types/terminal-theme.types';
 import { defaultXtermTheme } from '../../features/appearance/config/default-themes';
+import {
+  TERMINAL_FONT_PRESETS,
+  TERMINAL_FONT_CATEGORIES,
+  QUICK_FONT_PILLS,
+  findMatchingPreset,
+  cleanFontName,
+  type TerminalFontOption,
+} from '../../constants/terminalFonts';
 
 const { t } = useI18n();
 const appearanceStore = useAppearanceStore();
@@ -40,6 +48,29 @@ const {
 
 const editableTerminalFontFamily = ref('');
 const editableTerminalFontSize = ref(14);
+
+// --- 终端字体预设与自定义模式状态 ---
+const selectedFontPresetId = ref<string>('generic-monospace');
+const isCustomFontMode = ref(false);
+
+const currentFontPreset = computed(() => {
+  return TERMINAL_FONT_PRESETS.find(p => p.id === selectedFontPresetId.value);
+});
+
+// 根据字体字符串智能对齐下拉预设
+const syncPresetFromFontValue = (fontVal: string) => {
+  const matched = findMatchingPreset(fontVal);
+  if (matched) {
+    selectedFontPresetId.value = matched.id;
+    isCustomFontMode.value = false;
+  } else if (!fontVal || fontVal.trim() === 'monospace') {
+    selectedFontPresetId.value = 'generic-monospace';
+    isCustomFontMode.value = false;
+  } else {
+    selectedFontPresetId.value = 'custom';
+    isCustomFontMode.value = true;
+  }
+};
 
 const editableTerminalTextStrokeEnabled = ref(false);
 const editableTerminalTextStrokeWidth = ref(1);
@@ -77,6 +108,7 @@ brightWhite: #ffffff`;
 
 const initializeEditableState = () => {
   editableTerminalFontFamily.value = currentTerminalFontFamily.value;
+  syncPresetFromFontValue(editableTerminalFontFamily.value);
   editableTerminalFontSize.value = currentTerminalFontSize.value;
 
   editableTerminalTextStrokeEnabled.value = terminalTextStrokeEnabled.value;
@@ -95,8 +127,9 @@ const initializeEditableState = () => {
 
 // Watch for external changes to current font settings
 watch(currentTerminalFontFamily, (newValue) => {
-  if (!props.isEditingTheme) { // Only update if not actively editing a theme (to avoid overriding user input during theme edit)
+  if (!props.isEditingTheme) {
     editableTerminalFontFamily.value = newValue;
+    syncPresetFromFontValue(newValue);
   }
 });
 
@@ -129,6 +162,27 @@ watch(
   { immediate: true, deep: true }
 );
 
+// 下拉菜单选择字体预设
+const handleSelectFontPreset = async (presetId: string) => {
+  selectedFontPresetId.value = presetId;
+  if (presetId === 'custom') {
+    isCustomFontMode.value = true;
+    return;
+  }
+  const preset = TERMINAL_FONT_PRESETS.find(p => p.id === presetId);
+  if (preset) {
+    editableTerminalFontFamily.value = preset.value;
+    isCustomFontMode.value = false;
+    await handleSaveTerminalFont();
+  }
+};
+
+// 药丸快捷标签切换字体
+const handleSelectQuickFontPill = async (fontValue: string) => {
+  editableTerminalFontFamily.value = fontValue;
+  syncPresetFromFontValue(fontValue);
+  await handleSaveTerminalFont();
+};
 
 // Methods
 const handleSaveTerminalFont = async () => {
@@ -490,12 +544,119 @@ watch(() => props.isEditingTheme, (isEditing) => {
   <section v-if="!isEditingTheme">
     <h3 class="mt-0 border-b border-border pb-2 mb-4 text-lg font-semibold text-foreground">{{ t('styleCustomizer.terminalStyles') }}</h3>
     
-    <div class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] items-start md:items-center gap-2 md:gap-3 mb-3">
-        <label for="terminalFontFamily" class="text-left text-foreground text-sm font-medium overflow-hidden text-ellipsis block w-full mb-1 md:mb-0">{{ t('styleCustomizer.terminalFontFamily') }}:</label>
-        <input type="text" id="terminalFontFamily" v-model="editableTerminalFontFamily" class="border border-border px-[0.7rem] py-2 rounded text-sm bg-background text-foreground w-full box-border transition duration-200 ease-in-out focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" :placeholder="t('styleCustomizer.terminalFontPlaceholder')" />
-        <button @click="handleSaveTerminalFont" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap justify-self-start mt-1 md:mt-0">{{ t('common.save') }}</button>
+    <!-- 终端字体设置区域 (下拉列表预设 + 快捷药丸 + 实时预览 + 自定义输入) -->
+    <div class="space-y-3 mb-5 border border-border/80 rounded-xl p-3.5 bg-header/20">
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <label for="terminalFontSelect" class="text-foreground text-sm font-semibold flex items-center gap-1.5">
+            <i class="fas fa-font text-primary text-xs"></i>
+            <span>{{ t('styleCustomizer.terminalFontFamily') }}</span>
+          </label>
+          <button
+            type="button"
+            @click="isCustomFontMode = !isCustomFontMode"
+            class="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer transition-colors select-none"
+          >
+            <i :class="isCustomFontMode ? 'fas fa-list-ul' : 'fas fa-pen-to-square'"></i>
+            <span>{{ isCustomFontMode ? '返回预设列表' : '自定义输入' }}</span>
+          </button>
+        </div>
+
+        <!-- 1. 下拉预设选择模式 -->
+        <div v-if="!isCustomFontMode" class="flex items-center gap-2">
+          <select
+            id="terminalFontSelect"
+            v-model="selectedFontPresetId"
+            @change="handleSelectFontPreset(selectedFontPresetId)"
+            class="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors cursor-pointer"
+          >
+            <optgroup
+              v-for="cat in TERMINAL_FONT_CATEGORIES"
+              :key="cat.key"
+              :label="cat.label"
+            >
+              <option
+                v-for="font in TERMINAL_FONT_PRESETS.filter(p => p.category === cat.key)"
+                :key="font.id"
+                :value="font.id"
+              >
+                {{ font.name }} - {{ font.description }}
+              </option>
+            </optgroup>
+            <optgroup label="⚙️ 其他">
+              <option value="custom">✏️ 自定义输入字体...</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- 2. 自定义输入模式 -->
+        <div v-else class="flex items-center gap-2">
+          <input
+            type="text"
+            id="terminalFontFamily"
+            v-model="editableTerminalFontFamily"
+            @keydown.enter.prevent="handleSaveTerminalFont"
+            class="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono transition-colors"
+            placeholder="例如：'Cascadia Code', Consolas, monospace"
+          />
+          <button
+            type="button"
+            @click="handleSaveTerminalFont"
+            class="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors cursor-pointer shrink-0 shadow-2xs"
+          >
+            {{ t('common.save') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 快速切换热门字体标签 -->
+      <div class="space-y-1.5 pt-0.5">
+        <div class="text-[11px] text-text-secondary flex items-center justify-between">
+          <span>常用推荐一键切换：</span>
+          <span v-if="currentFontPreset" class="text-text-secondary/70 italic text-[11px] truncate max-w-[260px]">
+            {{ currentFontPreset.description }}
+          </span>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button
+            v-for="pill in QUICK_FONT_PILLS"
+            :key="pill.name"
+            type="button"
+            @click="handleSelectQuickFontPill(pill.value)"
+            class="px-2.5 py-1 text-xs rounded-md border transition-all cursor-pointer font-mono"
+            :class="cleanFontName(editableTerminalFontFamily).toLowerCase() === cleanFontName(pill.value).toLowerCase()
+              ? 'bg-primary text-primary-foreground border-primary font-semibold shadow-2xs'
+              : 'bg-header/60 text-text-secondary border-border/80 hover:text-foreground hover:bg-header'"
+          >
+            {{ pill.name }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 字体效果实时预览卡片 -->
+      <div
+        class="p-2.5 rounded-lg border border-border/70 bg-background space-y-1.5 transition-colors"
+        :style="{ fontFamily: editableTerminalFontFamily || 'monospace' }"
+      >
+        <div class="flex items-center justify-between text-xs text-text-secondary font-sans border-b border-border/40 pb-1">
+          <span class="flex items-center gap-1.5 font-medium text-foreground">
+            <i class="fas fa-eye text-primary text-[10px]"></i>
+            <span>实际渲染预览：{{ currentFontPreset?.name || cleanFontName(editableTerminalFontFamily) || '系统默认' }}</span>
+          </span>
+          <span class="font-mono text-[10px] text-text-secondary/80 truncate max-w-[280px]">
+            {{ editableTerminalFontFamily || 'monospace' }}
+          </span>
+        </div>
+        <div class="text-xs leading-relaxed overflow-x-auto text-foreground select-all py-1">
+          <div class="font-normal">
+            0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz
+          </div>
+          <div class="text-text-secondary select-all mt-0.5 text-[11px]">
+            const flag = (a != b) &amp;&amp; (x &lt;= y) &amp;&amp; (str === "hello"); // 0xDEADBEEF -&gt; =&gt;
+          </div>
+        </div>
+      </div>
     </div>
-    <p class="text-xs text-text-secondary -mt-1 mb-2">{{ t('styleCustomizer.terminalFontDescription') }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] items-start md:items-center gap-2 md:gap-3 mb-3">
         <label for="terminalFontSize" class="text-left text-foreground text-sm font-medium overflow-hidden text-ellipsis block w-full mb-1 md:mb-0">{{ t('styleCustomizer.terminalFontSize') }}:</label>

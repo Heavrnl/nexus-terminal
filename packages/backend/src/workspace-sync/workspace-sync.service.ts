@@ -181,7 +181,7 @@ export class WorkspaceSyncService {
                         console.log(`[WorkspaceSyncService] 为挂起会话 ${sessionId} 覆盖同步终端屏幕历史 (字符数: ${matchedSync.terminalBuffer.length})...`);
                         await temporaryLogStorageService.ensureLogDirectoryExists();
                         const normalized = matchedSync.terminalBuffer ? matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n') : '';
-                        const formatted = normalized ? (normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`) : '';
+                        const formatted = normalized || '';
                         await temporaryLogStorageService.overwriteLog(state.suspendLogPath, formatted);
                     } catch (logErr) {
                         console.warn(`[WorkspaceSyncService] 覆盖写入终端历史日志失败:`, logErr);

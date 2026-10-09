@@ -538,7 +538,7 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
  // 处理终端就绪 (用于 Terminal)
  // 注意：LayoutRenderer 内部的 Terminal 组件需要 emit('terminal-ready', payload)
  // *** 修正：更新 payload 类型以包含 searchAddon ***
- const handleTerminalReady = (payload: { sessionId: string; terminal: XtermTerminal; searchAddon: any | null }) => { // --- 使用重命名的 XtermTerminal ---
+ const handleTerminalReady = (payload: { sessionId: string; terminal: XtermTerminal; searchAddon: any | null; serializeAddon?: any | null }) => { // --- 使用重命名的 XtermTerminal ---
     console.log(`[工作区视图 ${payload.sessionId}] 收到 terminal-ready 事件。Payload:`, payload); // *** 添加 Payload 日志 ***
     // *** 检查 payload 中 searchAddon 是否存在 ***
     if (payload && payload.searchAddon) {

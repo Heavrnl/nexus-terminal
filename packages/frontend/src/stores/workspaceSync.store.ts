@@ -23,6 +23,25 @@ const logSyncError = (message: string, ...args: any[]) => {
   console.error(`%c[WorkspaceSync] ${message}`, 'color: #ef4444; font-weight: bold;', ...args);
 };
 
+/**
+ * 清理快照终端文本末尾悬空的 Shell 提示符行（用于新建立 SSH 连接时，防止旧 Prompt 与新 Shell 登录 Prompt 重复叠加）
+ */
+const cleanTrailingPromptForReconnect = (text: string): string => {
+  if (!text) return '';
+  const normalized = text.replace(/\r?\n/g, '\r\n');
+  const lines = normalized.split('\r\n');
+  if (lines.length > 0) {
+    const lastLine = lines[lines.length - 1];
+    // 剥离 ANSI 转义序列后判断是否为悬空的 shell 提示符（例如 root@localhost:~# 或 user@host:~$ ）
+    const plainLastLine = lastLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trimEnd();
+    if (plainLastLine && /[#$%>]\s*$/.test(plainLastLine)) {
+      lines.pop(); // 裁剪掉末尾尚未执行命令的旧提示符行，留给新连接的远程 Shell 真实输出
+      return lines.join('\r\n') + (lines.length > 0 ? '\r\n' : '');
+    }
+  }
+  return normalized;
+};
+
 export interface SyncedSessionInfo {
   sessionId: string;
   connectionId: number | string;
@@ -285,9 +304,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     sortedSessionIds.forEach((sId) => {
       const s = sessionStore.sessions.get(sId);
       if (!s) return;
-      // 提取终端屏幕缓冲区文本 (保持换行并去除冗余空白)
+      // 提取终端屏幕缓冲区 (优先使用官方 SerializeAddon 提取带完整 ANSI 转义序列、RGB真色彩与格式的数据)
       let terminalBuffer = '';
-      if (s.terminalManager?.terminalInstance?.value) {
+      if (s.terminalManager && typeof (s.terminalManager as any).serializeTerminal === 'function') {
+        const serialized = (s.terminalManager as any).serializeTerminal();
+        if (typeof serialized === 'string') {
+          terminalBuffer = serialized;
+        }
+      }
+
+      // 若 SerializeAddon 未激活或未输出，降级使用文本缓冲区提取算法保底
+      if (!terminalBuffer && s.terminalManager?.terminalInstance?.value) {
         const term = s.terminalManager.terminalInstance.value;
         const buffer = term.buffer.active;
         let lastNonEmptyLineIndex = -1;
@@ -675,9 +702,9 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
                 const sessionState = sessionStore.sessions.get(targetSessionId);
                 if (sessionState) {
                   logSync(`为新连接会话 ${targetSessionId} 回放快照保存的终端屏幕历史 (字符数: ${s.terminalBuffer.length})`);
-                  const normalized = s.terminalBuffer.replace(/\r?\n/g, '\r\n');
-                  const bufferData = normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`;
-                  const highlightedData: string = highlightStore.highlight(bufferData) as string;
+                  // 对于重新建立的新连接，智能去除末尾悬空的旧提示符，避免与新 Shell 登录提示符重叠多出一行
+                  const cleanedBuffer = cleanTrailingPromptForReconnect(s.terminalBuffer);
+                  const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
 
                   if (sessionState.terminalManager?.terminalInstance?.value) {
                     sessionState.terminalManager.terminalInstance.value.write(highlightedData);

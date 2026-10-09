@@ -4,6 +4,7 @@ import { sessions as globalSessionsRef } from '../stores/session/state'; // +++ 
 // import { useWebSocketConnection } from './useWebSocketConnection'; // 移除全局导入
 import type { Terminal } from 'xterm';
 import type { SearchAddon, ISearchOptions } from '@xterm/addon-search'; // *** 移除 ISearchResult 导入 ***
+import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { WebSocketMessage, MessagePayload } from '../types/websocket.types';
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
@@ -29,6 +30,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     const terminalInstance = ref<Terminal | null>(null);
     const searchAddon = ref<SearchAddon | null>(null); // Keep searchAddon ref
+    const serializeAddon = ref<SerializeAddon | null>(null); // 保存 SerializeAddon 实例
     // Removed search result state refs
     // const searchResultCount = ref(0);
     // const currentSearchResultIndex = ref(-1);
@@ -61,12 +63,13 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- 终端事件处理 ---
 
-    // *** 更新 handleTerminalReady 签名以接收 searchAddon ***
-    const handleTerminalReady = (payload: { terminal: Terminal; searchAddon: SearchAddon | null }) => {
-        const { terminal: term, searchAddon: addon } = payload;
-        console.log(`[会话 ${sessionId}][SSH终端模块] 终端实例已就绪。SearchAddon 实例:`, addon ? '存在' : '不存在');
+    // *** 更新 handleTerminalReady 签名以接收 searchAddon 与 serializeAddon ***
+    const handleTerminalReady = (payload: { terminal: Terminal; searchAddon: SearchAddon | null; serializeAddon?: SerializeAddon | null }) => {
+        const { terminal: term, searchAddon: addon, serializeAddon: sAddon } = payload;
+        console.log(`[会话 ${sessionId}][SSH终端模块] 终端实例已就绪。SearchAddon: ${addon ? '存在' : '不存在'}, SerializeAddon: ${sAddon ? '存在' : '不存在'}`);
         terminalInstance.value = term;
         searchAddon.value = addon; // *** 存储 searchAddon 实例 ***
+        serializeAddon.value = sAddon || null; // *** 存储 serializeAddon 实例 ***
 
         
         // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
@@ -364,6 +367,18 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         searchNext,
         searchPrevious,
         clearTerminalSearch,
+        // --- 序列化方法 (带完整 ANSI 样式) ---
+        serializeTerminal: (): string | null => {
+            if (serializeAddon.value) {
+                try {
+                    return serializeAddon.value.serialize();
+                } catch (e) {
+                    console.warn(`[会话 ${sessionId}][SSH终端模块] 序列化终端内容失败:`, e);
+                }
+            }
+            return null;
+        },
+        serializeAddon,
         // --- 暴露状态 ---
         isSshConnected: readonly(isSshConnected), // 暴露 SSH 连接状态 (只读)
         terminalInstance, // 暴露 terminal 实例，以便 WorkspaceView 可以写入提示信息

@@ -8,7 +8,7 @@ export type WorkspaceEventPayloads = {
   // Terminal Events
   'terminal:input': { sessionId: string; data: string };
   'terminal:resize': { sessionId: string; dims: { cols: number; rows: number } };
-  'terminal:ready': { sessionId: string; terminal: XtermTerminal; searchAddon: any };
+  'terminal:ready': { sessionId: string; terminal: XtermTerminal; searchAddon: any; serializeAddon?: any };
   'terminal:sendCommand': { command: string; sessionId?: string }; // sessionId 可选，用于指定目标，默认为 active
   'terminal:clear': void; // sessionId 可选，默认为 active
   'terminal:scrollToBottomRequest': { sessionId: string };
