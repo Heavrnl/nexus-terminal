@@ -16,8 +16,8 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.15.2",
-    "@types/ws": "^8.18.1",
-    "nodemon": "^3.1.10",
+    "@types/ws": "^8.18.2",
+    "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
