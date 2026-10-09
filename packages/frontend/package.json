@@ -47,7 +47,7 @@
       "pinia": "^3.0.2",
       "pinia-plugin-persistedstate": "^4.2.0",
       "splitpanes": "^4.0.3",
-      "uuid": "^11.1.1",
+      "uuid": "^14.0.2",
       "vite-plugin-monaco-editor": "^1.1.0",
       "vue": "^3.3.0",
       "vue-chartjs": "^5.3.2",
