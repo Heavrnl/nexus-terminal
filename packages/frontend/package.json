@@ -30,7 +30,7 @@
       "@tailwindcss/vite": "^4.1.4",
       "@uiw/codemirror-theme-vscode": "^4.23.12",
       "@vscode/iconv-lite-umd": "^0.7.0",
-      "@vueuse/core": "^13.1.0",
+      "@vueuse/core": "^15.0.0",
       "@xterm/addon-fit": "^0.10.0",
       "@xterm/addon-search": "^0.15.0",
       "@xterm/addon-serialize": "^0.14.0",
