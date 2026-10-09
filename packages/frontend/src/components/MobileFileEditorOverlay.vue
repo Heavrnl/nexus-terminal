@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import SingleEditorPane from './SingleEditorPane.vue';
@@ -8,6 +8,7 @@ import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useSessionStore } from '../stores/session.store';
 import { useAppearanceStore } from '../stores/appearance.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -18,6 +19,7 @@ const fileEditorStore = useFileEditorStore();
 const settingsStore = useSettingsStore();
 const sessionStore = useSessionStore();
 const appearanceStore = useAppearanceStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 
 const { popupFileInfo, activeTabId: globalActiveTabIdRef } = storeToRefs(fileEditorStore);
 const { shareFileEditorTabsBoolean } = storeToRefs(settingsStore);
@@ -49,10 +51,12 @@ const {
   updateTabScrollPositionInSession,
 } = sessionStore;
 
-// 会话数据源
+// 会话数据源 (增加对当前活动会话的 fallback 兜底)
 const currentSession = computed(() => {
-  if (shareFileEditorTabsBoolean.value || !popupFileInfo.value?.sessionId) return null;
-  return sessionStore.sessions.get(popupFileInfo.value.sessionId) ?? null;
+  if (shareFileEditorTabsBoolean.value) return null;
+  const targetSessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
+  if (!targetSessionId) return null;
+  return sessionStore.sessions.get(targetSessionId) ?? null;
 });
 
 // 当前展示的所有标签页列表
@@ -71,7 +75,7 @@ const activeTabId = computed(() => {
 });
 
 const currentSessionName = computed(() => {
-  const sessionId = popupFileInfo.value?.sessionId;
+  const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
   if (!sessionId) return null;
   return sessionStore.sessions.get(sessionId)?.connectionName ?? null;
 });
@@ -81,82 +85,105 @@ const handleActivateTab = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     setGlobalActiveTab(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) setActiveEditorTabInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseTab = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     closeGlobalTab(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) closeEditorTabInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseOtherTabs = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     closeOtherTabs(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) closeOtherTabsInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseTabsToRight = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     closeTabsToTheRight(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) closeTabsToTheRightInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseTabsToLeft = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     closeTabsToTheLeft(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) closeTabsToTheLeftInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleUpdateContent = ({ tabId, content }: { tabId: string; content: string }) => {
   if (shareFileEditorTabsBoolean.value) {
     updateGlobalFileContent(tabId, content);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) updateFileContentInSession(sessionId, tabId, content);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleSaveTab = (tabId: string) => {
   if (shareFileEditorTabsBoolean.value) {
     saveGlobalFile(tabId);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) saveFileInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleChangeEncoding = ({ tabId, encoding }: { tabId: string; encoding: string }) => {
   if (shareFileEditorTabsBoolean.value) {
     changeGlobalEncoding(tabId, encoding);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) changeEncodingInSession(sessionId, tabId, encoding);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleUpdateScroll = ({ tabId, scrollTop, scrollLeft }: { tabId: string; scrollTop: number; scrollLeft: number }) => {
   if (shareFileEditorTabsBoolean.value) {
     updateTabScrollPosition(tabId, scrollTop, scrollLeft);
   } else {
-    const sessionId = popupFileInfo.value?.sessionId;
+    const sessionId = popupFileInfo.value?.sessionId || sessionStore.activeSessionId;
     if (sessionId) updateTabScrollPositionInSession(sessionId, tabId, scrollTop, scrollLeft);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
+
+// 自动对齐/激活可用标签：若有标签页但当前 activeTabId 为空或无效，自动选中首个标签
+watch(
+  [() => orderedTabs.value, () => activeTabId.value],
+  ([tabs, curActiveId]) => {
+    if (tabs && tabs.length > 0) {
+      const exists = tabs.some(t => t.id === curActiveId);
+      if (!curActiveId || !exists) {
+        handleActivateTab(tabs[0].id);
+      }
+    }
+  },
+  { immediate: true }
+);
 
 const handleUpdateFontSize = async (newSize: number) => {
   appearanceStore.setEditorFontSize(newSize);

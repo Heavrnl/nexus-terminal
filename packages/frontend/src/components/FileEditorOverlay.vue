@@ -9,6 +9,7 @@ import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useSessionStore } from '../stores/session.store';
 import { useAppearanceStore } from '../stores/appearance.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useOverlayResizable } from '../composables/useOverlayResizable';
 import { useSplitEditor, type SplitDirection, type PaneId } from '../composables/useSplitEditor';
 
@@ -21,9 +22,22 @@ const fileEditorStore = useFileEditorStore();
 const settingsStore = useSettingsStore();
 const sessionStore = useSessionStore();
 const appearanceStore = useAppearanceStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 
-// 本地弹窗显示状态
-const isVisible = ref(false);
+// 弹窗显示状态与全局 Store 联动 (跨设备/刷新保持)
+const isVisible = computed({
+  get: () => {
+    if (!showPopupFileEditorBoolean.value && !props.isMobile) return false;
+    return fileEditorStore.isPopupOpen;
+  },
+  set: (val: boolean) => {
+    if (val) {
+      fileEditorStore.openPopup();
+    } else {
+      fileEditorStore.closePopup();
+    }
+  },
+});
 
 // Store 状态
 const {
@@ -63,7 +77,8 @@ const {
 
 // 关闭弹窗
 const handleCloseContainer = () => {
-  isVisible.value = false;
+  fileEditorStore.closePopup();
+  workspaceSyncStore.triggerDebouncedSave(200);
 };
 
 // 弹窗拖拽缩放与后端尺寸持久化 (跨设备恢复)
@@ -184,6 +199,7 @@ const handleActivateTab = (paneId: PaneId, tabId: string) => {
     secondaryActiveTabId.value = tabId;
   }
   activePaneId.value = paneId;
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 标签关闭
@@ -195,6 +211,7 @@ const handleCloseTab = (tabId: string) => {
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) closeEditorTabInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseOtherTabs = (tabId: string) => {
@@ -204,6 +221,7 @@ const handleCloseOtherTabs = (tabId: string) => {
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) closeOtherTabsInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseTabsToRight = (tabId: string) => {
@@ -213,6 +231,7 @@ const handleCloseTabsToRight = (tabId: string) => {
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) closeTabsToTheRightInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 const handleCloseTabsToLeft = (tabId: string) => {
@@ -222,6 +241,7 @@ const handleCloseTabsToLeft = (tabId: string) => {
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) closeTabsToTheLeftInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 内容变更
@@ -232,6 +252,7 @@ const handleUpdateContent = ({ tabId, content }: { tabId: string; content: strin
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) updateFileContentInSession(sessionId, tabId, content);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 保存
@@ -242,6 +263,7 @@ const handleSaveTab = (tabId: string) => {
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) saveFileInSession(sessionId, tabId);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 编码切换
@@ -252,6 +274,7 @@ const handleChangeEncoding = ({ tabId, encoding }: { tabId: string; encoding: st
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) changeEncodingInSession(sessionId, tabId, encoding);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 滚动同步
@@ -262,6 +285,7 @@ const handleUpdateScroll = ({ tabId, scrollTop, scrollLeft }: { tabId: string; s
     const sessionId = popupFileInfo.value?.sessionId;
     if (sessionId) updateTabScrollPositionInSession(sessionId, tabId, scrollTop, scrollLeft);
   }
+  workspaceSyncStore.triggerDebouncedSave();
 };
 
 // 字号调整
@@ -311,12 +335,22 @@ const handleResizerMouseDown = (e: MouseEvent) => {
 
 // 监听弹窗触发信号
 watch(popupTrigger, () => {
-  if (!showPopupFileEditorBoolean.value || !popupFileInfo.value) {
-    isVisible.value = false;
+  if (!showPopupFileEditorBoolean.value && !props.isMobile) {
+    fileEditorStore.closePopup();
     return;
   }
-  isVisible.value = true;
+  fileEditorStore.isPopupOpen = true;
 });
+
+// 监听弹窗显隐变化驱动工作区云端防抖保存
+watch(
+  () => fileEditorStore.isPopupOpen,
+  (newVal) => {
+    if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+      workspaceSyncStore.triggerDebouncedSave(300);
+    }
+  }
+);
 </script>
 
 <template>

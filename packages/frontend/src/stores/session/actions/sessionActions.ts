@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useConnectionsStore, type ConnectionInfo } from '../../connections.store'; 
-import { sessions, activeSessionId } from '../state';
+import { sessions, activeSessionId, sessionOrder } from '../state';
 import { generateSessionId } from '../utils';
 import type { SessionState, SshTerminalInstance, StatusMonitorInstance, DockerManagerInstance, SftpManagerInstance, WsManagerInstance } from '../types';
 
@@ -28,8 +28,9 @@ export const openNewSession = (
         connectionsStore: ReturnType<typeof useConnectionsStore>;
         t: ReturnType<typeof useI18n>['t'];
     },
-    existingSessionId?: string // 可选的预定义会话 ID
-) => {
+    existingSessionId?: string, // 可选的预定义会话 ID
+    shouldActivate: boolean = true // 是否在创建后立即激活此会话，默认为 true
+): string | undefined => {
   const { connectionsStore, t } = dependencies;
   let connInfo: ConnectionInfo | undefined;
   let connIdForLog: string | number;
@@ -107,15 +108,24 @@ export const openNewSession = (
       terminalManager: terminalManager,
       statusMonitorManager: statusMonitorManager,
       dockerManager: dockerManager,
+      shouldActivateOnResume: shouldActivate, // 记录是否在唤醒/就绪后允许激活
   };
   // newSession.isMarkedForSuspend 已经在 newSessionPartial 中初始化为 false
 
-  // 3. 添加到 Map 并激活
+  // 3. 添加到 Map 并根据 shouldActivate 决定是否立即激活
   const newSessionsMap = new Map(sessions.value);
   newSessionsMap.set(newSessionId, newSession);
   sessions.value = newSessionsMap;
-  activeSessionId.value = newSessionId;
-  console.log(`[SessionActions] 已创建新会话实例: ${newSessionId} for connection ${dbConnId}`);
+  if (shouldActivate) {
+    activeSessionId.value = newSessionId;
+  }
+  if (!sessionOrder.value.includes(newSessionId)) {
+    sessionOrder.value = [...sessionOrder.value, newSessionId];
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sessionOrder', JSON.stringify(sessionOrder.value));
+    }
+  }
+  console.log(`[SessionActions] 已创建新会话实例: ${newSessionId} for connection ${dbConnId} (shouldActivate: ${shouldActivate})`);
 
   // +++ 在连接前设置 ssh:connected 处理器以更新 sessionId +++
   let currentSessionKey = newSessionId; // 动态跟踪当前会话的 Key
@@ -162,6 +172,21 @@ export const openNewSession = (
         }
         currentSessionKey = backendSID; // 更新闭包中的跟踪键，确保后续重连能继续正确定位
         console.log(`[SessionActions/ssh:connected] 会话存储已更新，新键为 ${backendSID}。`);
+
+        // 关键修复：同步将 sessionOrder 中的 matchedKey 原位替换为 backendSID，绝不破坏用户排好的顺序！
+        if (sessionOrder.value.includes(matchedKey)) {
+          const nextOrder = sessionOrder.value.map(id => id === matchedKey ? backendSID : id);
+          sessionOrder.value = nextOrder;
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('sessionOrder', JSON.stringify(nextOrder));
+          }
+          console.log(`[SessionActions/ssh:connected] sessionOrder 已将 ${matchedKey} 原位替换为 ${backendSID}`);
+        } else if (!sessionOrder.value.includes(backendSID)) {
+          sessionOrder.value = [...sessionOrder.value, backendSID];
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('sessionOrder', JSON.stringify(sessionOrder.value));
+          }
+        }
       } else if (backendSID === matchedKey) {
         console.log(`[SessionActions/ssh:connected] 后端SID ${backendSID} 与前端当前Key匹配。无需重新键控。`);
       } else {
@@ -194,6 +219,7 @@ export const openNewSession = (
   } else if (connInfo) {
     console.log(`[SessionActions] 会话 ${newSessionId} 类型为 ${connInfo.type}，不注册 SSH 挂起处理器。`);
   }
+  return newSessionId;
 };
 
 export const activateSession = (sessionId: string) => {
@@ -249,6 +275,14 @@ export const closeSession = (sessionId: string) => {
   newSessionsMap.delete(sessionId);
   sessions.value = newSessionsMap;
   console.log(`[SessionActions] 已从 Map 中移除会话: ${sessionId}`);
+
+  // 同步从 sessionOrder 中移除
+  if (sessionOrder.value.includes(sessionId)) {
+    sessionOrder.value = sessionOrder.value.filter(id => id !== sessionId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sessionOrder', JSON.stringify(sessionOrder.value));
+    }
+  }
 
   // 3. 切换活动标签页
   if (activeSessionId.value === sessionId) {

@@ -56,6 +56,7 @@ import sshSuspendRouter from './ssh-suspend/ssh-suspend.routes';
 import { transfersRoutes } from './transfers/transfers.routes';
 import pathHistoryRoutes from './path-history/path-history.routes';
 import favoritePathsRouter from './favorite-paths/favorite-paths.routes';
+import workspaceSyncRouter from './workspace-sync/workspace-sync.routes';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
 
@@ -263,6 +264,7 @@ const startServer = () => {
     app.use('/api/v1/transfers', transfersRoutes());
     app.use('/api/v1/path-history', pathHistoryRoutes);
     app.use('/api/v1/favorite-paths', favoritePathsRouter);
+    app.use('/api/v1/workspace-sync', workspaceSyncRouter);
     
     // 状态检查接口
     app.get('/api/v1/status', (req: Request, res: Response) => {

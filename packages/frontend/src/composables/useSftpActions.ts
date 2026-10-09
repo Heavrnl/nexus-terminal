@@ -1,4 +1,4 @@
-import { ref, readonly, reactive, computed, type Ref, type ComputedRef } from 'vue'; 
+import { ref, readonly, reactive, computed, watch, type Ref, type ComputedRef } from 'vue'; 
 import type { FileListItem, FileAttributes, EditorFileContent, SftpReadFileSuccessPayload, SftpReadFileRequestPayload } from '../types/sftp.types';
 import type { WebSocketMessage, MessagePayload, MessageHandler } from '../types/websocket.types';
 
@@ -108,6 +108,7 @@ export function createSftpActionsManager(
     // 记录本实例发起的移动/复制请求，避免同会话多窗格并发监听导致重复提示与重复广播
     const pendingMoveRequestIds = new Set<string>();
     const pendingCopyRequestIds = new Set<string>();
+    const pendingDirectoryToLoad = ref<{ path: string; forceRefresh: boolean } | null>(null);
 
     // *** 响应式文件树 ***
     const fileTree = reactive<FileTreeNode>({
@@ -262,9 +263,14 @@ export function createSftpActionsManager(
             console.warn(`[SFTP ${instanceSessionId}] 尝试加载目录 ${path} 但 SFTP 未就绪。`); // 日志改为中文
             return;
         }
-        // *** 如果已经在加载，则阻止新的加载请求 ***
+        // *** 如果已经在加载，记录最新排队请求，待当前完成后自动无缝执行 ***
         if (isLoading.value) {
-            console.warn(`[SFTP ${instanceSessionId}] 尝试加载目录 ${path} 但已在加载中。`);
+            if (path === currentPathRef.value && !forceRefresh) {
+                console.log(`[SFTP ${instanceSessionId}] 目标目录已是当前路径且正在加载，忽略重复请求: ${path}`);
+                return;
+            }
+            console.log(`[SFTP ${instanceSessionId}] 当前正在加载目录，已将最新目标目录加入排队: ${path} (forceRefresh=${forceRefresh})`);
+            pendingDirectoryToLoad.value = { path, forceRefresh };
             return;
         }
 
@@ -348,10 +354,33 @@ export function createSftpActionsManager(
     // readFile 和 writeFile 仍然返回 Promise，并在内部处理自己的消息监听器注销
     // --- 修改：接受可选 encoding 参数，返回包含 content 和 encodingUsed 的 Payload ---
     const readFile = (path: string, encoding?: string): Promise<SftpReadFileSuccessPayload> => {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
+            // 如果 SFTP 尚未就绪但连接可能正在建立中，优雅等待就绪（最多等待 10 秒）
+            if (!isSftpReady.value) {
+                console.log(`[SFTP ${instanceSessionId}] 读取文件 ${path} 时 SFTP 尚未就绪，等待就绪中...`);
+                await new Promise<void>((waitResolve) => {
+                    if (isSftpReady.value) return waitResolve();
+                    const timer = setTimeout(() => {
+                        stopWatch();
+                        waitResolve();
+                    }, 10000);
+                    const stopWatch = watch(
+                        isSftpReady,
+                        (ready) => {
+                            if (ready) {
+                                clearTimeout(timer);
+                                stopWatch();
+                                waitResolve();
+                            }
+                        },
+                        { immediate: true }
+                    );
+                });
+            }
+
             if (!isSftpReady.value) {
                 const errMsg = t('fileManager.errors.sftpNotReady');
-                console.warn(`[SFTP ${instanceSessionId}] 尝试读取文件 ${path} 但 SFTP 未就绪。`);
+                console.warn(`[SFTP ${instanceSessionId}] 等待超时，尝试读取文件 ${path} 但 SFTP 未就绪。`);
                 uiNotificationsStore.showError(errMsg);
                 return reject(new Error(errMsg));
             }
@@ -761,6 +790,16 @@ export function createSftpActionsManager(
         isLoading.value = false;
         loadingRequestId.value = null;
         console.log(`[SFTP ${instanceSessionId}] isLoading reset after successful readdir for ${path}.`);
+        checkAndExecutePendingDirectoryLoad();
+    };
+
+    const checkAndExecutePendingDirectoryLoad = () => {
+        if (pendingDirectoryToLoad.value) {
+            const next = pendingDirectoryToLoad.value;
+            pendingDirectoryToLoad.value = null;
+            console.log(`[SFTP ${instanceSessionId}] 正在执行排队的最新目录加载: ${next.path}`);
+            loadDirectory(next.path, next.forceRefresh);
+        }
     };
 
     const onSftpReaddirError = (payload: MessagePayload, message: WebSocketMessage) => {
@@ -782,6 +821,7 @@ export function createSftpActionsManager(
         isLoading.value = false;
         loadingRequestId.value = null;
         console.log(`[SFTP ${instanceSessionId}] isLoading reset after failed readdir for ${errorPath}.`);
+        checkAndExecutePendingDirectoryLoad();
     };
 
     // 移除通用的 onActionSuccessRefresh

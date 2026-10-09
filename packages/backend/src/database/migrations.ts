@@ -317,6 +317,23 @@ const definedMigrations: Migration[] = [
         sql: `
             ALTER TABLE connections ADD COLUMN background_color TEXT NULL;
         `
+    },
+    {
+        id: 12,
+        name: 'Create workspace_sync table for real-time cloud workspace sync',
+        check: async (db: Database): Promise<boolean> => {
+            const tableAlreadyExists = await tableExists(db, 'workspace_sync');
+            return !tableAlreadyExists;
+        },
+        sql: `
+            CREATE TABLE IF NOT EXISTS workspace_sync (
+                user_id INTEGER PRIMARY KEY NOT NULL,
+                state TEXT NOT NULL DEFAULT '{}',
+                active_client_id TEXT NULL,
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        `
     }
 ];
 

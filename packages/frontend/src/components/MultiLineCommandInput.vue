@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import MobileMultiLineCommandInput from './MobileMultiLineCommandInput.vue';
@@ -18,6 +19,7 @@ const isMobile = computed(() => props.isMobile ?? detectedMobile.value);
 const { t } = useI18n();
 const sessionStore = useSessionStore();
 const focusSwitcherStore = useFocusSwitcherStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
 const { activeSessionId } = storeToRefs(sessionStore);
@@ -61,6 +63,31 @@ watch(activeSessionId, (newId, oldId) => {
     currentContent.value = '';
   }
   selectedText.value = '';
+});
+
+// 监听当前内容变化并同步至云端工作区
+watch(currentContent, (newVal) => {
+  if (activeSessionId.value) {
+    globalSessionDrafts[activeSessionId.value] = newVal;
+  }
+  workspaceSyncStore.updateMultiLineCommandState({
+    currentContent: newVal,
+    sessionDrafts: { ...globalSessionDrafts },
+  });
+});
+
+onMounted(() => {
+  // 从云端工作区快照恢复多行命令草稿
+  if (workspaceSyncStore.syncEnabled && workspaceSyncStore.multiLineCommandState) {
+    if (workspaceSyncStore.multiLineCommandState.sessionDrafts) {
+      Object.assign(globalSessionDrafts, workspaceSyncStore.multiLineCommandState.sessionDrafts);
+    }
+    if (activeSessionId.value && globalSessionDrafts[activeSessionId.value]) {
+      currentContent.value = globalSessionDrafts[activeSessionId.value];
+    } else if (workspaceSyncStore.multiLineCommandState.currentContent) {
+      currentContent.value = workspaceSyncStore.multiLineCommandState.currentContent;
+    }
+  }
 });
 
 // 更新选区

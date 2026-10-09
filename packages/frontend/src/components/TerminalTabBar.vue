@@ -10,6 +10,7 @@ import MobileTerminalTabBar from './MobileTerminalTabBar.vue';
 import { useSessionStore } from '../stores/session.store';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
 import { useLayoutStore } from '../stores/layout.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import type { SessionTabInfoWithStatus } from '../stores/session/types';
 
@@ -19,7 +20,10 @@ const onWorkspaceEvent = useWorkspaceEventSubscriber();
 const offWorkspaceEvent = useWorkspaceEventOff();
 const layoutStore = useLayoutStore();
 const connectionsStore = useConnectionsStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
+const { syncEnabled, isSyncing } = storeToRefs(workspaceSyncStore);
+const { toggleSyncEnabled } = workspaceSyncStore;
 const route = useRoute();
 
 const props = defineProps({
@@ -219,7 +223,7 @@ watch(() => route.path, (newPath) => {
 const handleSessionsUpdate = (newSessions: SessionTabInfoWithStatus[]) => {
   emit('update:sessions', newSessions);
   const sessionOrder = newSessions.map(session => session.sessionId);
-  localStorage.setItem('sessionOrder', JSON.stringify(sessionOrder));
+  sessionStore.setSessionOrder(sessionOrder);
 };
 
 const toggleHeader = () => {
@@ -233,6 +237,16 @@ const eyeIconClass = computed(() => isHeaderVisible.value ? 'fas fa-eye' : 'fas 
 const toggleButtonTitle = computed(() =>
   isHeaderVisible.value ? t('header.hide', '隐藏顶部导航') : t('header.show', '显示顶部导航')
 );
+
+const syncButtonTitle = computed(() => {
+  if (!syncEnabled.value) {
+    return t('workspaceSync.disabledTooltip', '工作区实时云端同步 (已关闭，点击开启)');
+  }
+  if (isSyncing.value) {
+    return t('workspaceSync.syncingTooltip', '正在同步工作区到云端...');
+  }
+  return t('workspaceSync.enabledTooltip', '工作区实时云端同步 (已开启，点击可关闭)');
+});
 
 const handleDragStart = (event: DragEvent) => {
   if (event.dataTransfer) {
@@ -345,6 +359,33 @@ onBeforeUnmount(() => {
 
     <!-- 桌面端右侧控制按钮区 -->
     <div class="ml-auto flex items-center h-full flex-shrink-0">
+      <!-- 实时同步工作区按钮 -->
+      <button
+        class="group flex items-center justify-center px-3 h-full border-l border-border transition-colors duration-150 cursor-pointer"
+        :class="syncEnabled ? 'text-emerald-500 hover:text-emerald-400 hover:bg-border' : 'text-text-secondary hover:text-foreground hover:bg-border'"
+        @click="toggleSyncEnabled()"
+        :title="syncButtonTitle"
+      >
+        <span class="relative inline-flex items-center justify-center">
+          <i class="fas fa-cloud text-sm"></i>
+          <!-- 开启状态：右下角绿色实心圆点 -->
+          <span
+            v-if="syncEnabled"
+            class="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-header shadow-sm"
+          ></span>
+          <!-- 关闭状态：一条带背景镂空间距的斜杠横穿云朵图标 -->
+          <span
+            v-else
+            class="absolute inset-0 flex items-center justify-center pointer-events-none"
+          >
+            <!-- 视觉切割底层：使用与按钮背景严格同步的遮罩色 (常态 bg-header，悬停 group-hover:bg-border)，宽度高度充分隔离产生清晰留白切口 -->
+            <span class="absolute w-[150%] h-[5px] bg-header group-hover:bg-border rotate-45 transform origin-center transition-colors duration-150"></span>
+            <!-- 斜杠主体线：细线居中叠加 -->
+            <span class="absolute w-[135%] h-[1.5px] bg-text-secondary group-hover:bg-foreground rotate-45 transform origin-center rounded-full transition-colors duration-150"></span>
+          </span>
+        </span>
+      </button>
+
       <!-- 显隐导航栏按钮 -->
       <button
         class="flex items-center justify-center px-3 h-full border-l border-border text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150"

@@ -147,7 +147,10 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
   /**
    * 将终端输出数据应用语法着色 (Span 冲突仲裁)
    */
-  const highlight = (data: string | Uint8Array): string | Uint8Array => {
+  function highlight(data: string): string;
+  function highlight(data: Uint8Array): Uint8Array;
+  function highlight(data: string | Uint8Array): string | Uint8Array;
+  function highlight(data: string | Uint8Array): string | Uint8Array {
     if (!enabled.value || compiledMatchers.value.length === 0) {
       return data;
     }
@@ -166,7 +169,7 @@ export const useTerminalHighlightStore = defineStore('terminalHighlight', () => 
     }
 
     return data;
-  };
+  }
 
   // --- 分组管理操作 ---
   const toggleEnabled = (val?: boolean) => {

@@ -190,9 +190,17 @@ const props = defineProps({
     type: String,
     default: 'plaintext', 
   },
+  initialScrollTop: {
+    type: Number,
+    default: 0,
+  },
+  initialScrollLeft: {
+    type: Number,
+    default: 0,
+  },
 });
 
-const emit = defineEmits(['update:modelValue', 'request-save']);
+const emit = defineEmits(['update:modelValue', 'request-save', 'update:scrollPosition']);
 
 const appearanceStore = useAppearanceStore();
 const editorRef = ref<HTMLDivElement | null>(null);
@@ -399,14 +407,50 @@ onMounted(async () => {
       state: startState,
       parent: editorRef.value,
     });
+
+    // 还原初始滚动位置
+    if (props.initialScrollTop > 0 || props.initialScrollLeft > 0) {
+      nextTick(() => {
+        if (view.value?.scrollDOM) {
+          view.value.scrollDOM.scrollTop = props.initialScrollTop;
+          view.value.scrollDOM.scrollLeft = props.initialScrollLeft;
+        }
+      });
+    }
+
+    if (view.value.scrollDOM) {
+      view.value.scrollDOM.addEventListener('scroll', handleScrollerScroll, { passive: true });
+    }
+
     editorRef.value.addEventListener('touchstart', onTouchStart, { passive: false });
     editorRef.value.addEventListener('touchmove', onTouchMove, { passive: false });
     editorRef.value.addEventListener('touchend', onTouchEnd, { passive: false });
   }
 });
 
+let editorScrollTimer: ReturnType<typeof setTimeout> | null = null;
+const handleScrollerScroll = () => {
+  const scroller = view.value?.scrollDOM;
+  if (!scroller) return;
+  if (editorScrollTimer) clearTimeout(editorScrollTimer);
+  editorScrollTimer = setTimeout(() => {
+    emit('update:scrollPosition', {
+      scrollTop: scroller.scrollTop,
+      scrollLeft: scroller.scrollLeft,
+      scrollHeight: scroller.scrollHeight,
+    });
+  }, 100);
+};
+
 onBeforeUnmount(() => {
+  if (editorScrollTimer) {
+    clearTimeout(editorScrollTimer);
+    editorScrollTimer = null;
+  }
   if (view.value) {
+    if (view.value.scrollDOM) {
+      view.value.scrollDOM.removeEventListener('scroll', handleScrollerScroll);
+    }
     view.value.destroy();
     view.value = null;
   }

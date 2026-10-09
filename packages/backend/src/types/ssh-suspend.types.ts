@@ -53,4 +53,5 @@ export interface SuspendedSessionInfo {
   customSuspendName?: string;
   backendSshStatus: BackendSshStatus;
   disconnectionTimestamp?: string;
+  originalSessionId?: string;
 }

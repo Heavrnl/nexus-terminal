@@ -16,7 +16,9 @@ import {
   
   suspendedSshSessions,
   isLoadingSuspendedSessions,
+  sessionOrder,
 } from './session/state';
+import { useWorkspaceSyncStore } from './workspaceSync.store';
 
 
 import {
@@ -54,8 +56,17 @@ export const useSessionStore = defineStore('session', () => {
   const closeVncModal = () => modalActions.closeVncModal();
 
   // Session Actions
-  const openNewSession = (connectionId: number | string) =>
-    sessionActions.openNewSession(connectionId, { connectionsStore, t }); // 移除了 router 和不正确的 registerSshSuspendHandlers
+  const openNewSession = (
+    connectionId: number | string,
+    existingSessionId?: string,
+    shouldActivate: boolean = true
+  ) =>
+    sessionActions.openNewSession(
+      connectionId,
+      { connectionsStore, t },
+      existingSessionId,
+      shouldActivate
+    );
   const activateSession = (sessionId: string) => sessionActions.activateSession(sessionId);
   const closeSession = (sessionId: string) => sessionActions.closeSession(sessionId);
   const handleConnectRequest = (connection: ConnectionInfo) =>
@@ -129,11 +140,29 @@ export const useSessionStore = defineStore('session', () => {
   const updateSessionCommandInput = (sessionId: string, content: string) =>
     commandInputActions.updateSessionCommandInput(sessionId, content);
 
+  // 会话顺序管理 Action
+  const setSessionOrder = (newOrder: string[], triggerSync: boolean = true) => {
+    sessionOrder.value = [...newOrder];
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('sessionOrder', JSON.stringify(newOrder));
+    }
+    if (triggerSync) {
+      try {
+        const workspaceSyncStore = useWorkspaceSyncStore();
+        if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring) {
+          workspaceSyncStore.triggerDebouncedSave(300);
+        }
+      } catch (e) {
+        // 忽略可能存在的依赖初始化异常
+      }
+    }
+  };
 
   return {
     // State (直接从 state 模块导出，Pinia 会处理)
     sessions,
     activeSessionId,
+    sessionOrder,
     isRdpModalOpen,
     rdpConnectionInfo,
     isVncModalOpen,
@@ -148,6 +177,7 @@ export const useSessionStore = defineStore('session', () => {
     activeSession,
 
     // Wrapped Actions
+    setSessionOrder,
     openNewSession,
     activateSession,
     closeSession,

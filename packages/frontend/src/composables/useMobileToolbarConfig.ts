@@ -108,6 +108,13 @@ export const ALL_TOOLBAR_ITEMS: Record<string, ToolbarItemDefinition> = {
     icon: 'fas fa-arrow-down',
     description: '快速滚动终端视口至最新输出内容',
   },
+  workspaceSync: {
+    id: 'workspaceSync',
+    name: '云端同步',
+    i18nKey: 'workspaceSync.title',
+    icon: 'fas fa-cloud',
+    description: '开启或关闭多设备与标签页工作区实时云端同步',
+  },
 };
 
 // 默认工具栏激活项顺序
@@ -117,6 +124,7 @@ export const DEFAULT_ACTIVE_TOOLBAR_IDS: string[] = [
   'commandHistory',
   'terminalBufferText',
   'multiLine',
+  'workspaceSync',
   'statusMonitor',
   'dockerManager',
   'suspendedSessions',
@@ -143,6 +151,9 @@ const loadConfigFromStorage = () => {
         // 过滤掉已失效的废弃 ID
         const validIds = parsed.filter(id => typeof id === 'string' && id in ALL_TOOLBAR_ITEMS);
         if (validIds.length > 0) {
+          if (!validIds.includes('workspaceSync')) {
+            validIds.push('workspaceSync');
+          }
           activeItemIds.value = validIds;
           return;
         }

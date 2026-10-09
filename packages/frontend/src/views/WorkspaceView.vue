@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed, ref, shallowRef, type PropType } from 'vue';
+import { onMounted, onBeforeUnmount, computed, ref, shallowRef, watch, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useLayoutStore, type LayoutNode } from '../stores/layout.store'; // +++ Import LayoutNode +++
@@ -13,11 +13,13 @@ import LayoutConfigurator from '../components/LayoutConfigurator.vue';
 import FileManagerModal from '../components/FileManagerModal.vue'; 
 import TransferProgressModal from '../components/TransferProgressModal.vue';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
+import WorkspaceTakeoverOverlay from '../components/WorkspaceTakeoverOverlay.vue';
 import type { QuickCommandFE } from '../stores/quickCommands.store';
 import { useSessionStore } from '../stores/session.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
 import { useSettingsStore } from '../stores/settings.store';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useCommandHistoryStore } from '../stores/commandHistory.store';
 import type { Terminal as XtermTerminal } from 'xterm';
 import type { ISearchOptions } from '@xterm/addon-search';
@@ -33,6 +35,7 @@ const { t } = useI18n();
 const sessionStore = useSessionStore();
 const settingsStore = useSettingsStore(); // Keep settingsStore instance
 const fileEditorStore = useFileEditorStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 const layoutStore = useLayoutStore();
 const commandHistoryStore = useCommandHistoryStore();
 const connectionsStore = useConnectionsStore(); 
@@ -72,7 +75,7 @@ const showLayoutConfigurator = ref(false); // 控制布局配置器可见性
 // --- 搜索状态 ---
 const currentSearchTerm = ref(''); // 当前搜索的关键词 
 
-// --- 文件管理器模态框状态 ---
+// --- 文件管理器模态框与后台预加载状态 ---
 const showFileManagerModal = ref(false);
 const fileManagerPropsMap = shallowRef<Map<string, {
   sessionId: string;
@@ -81,6 +84,143 @@ const fileManagerPropsMap = shallowRef<Map<string, {
   wsDeps: WebSocketDependencies;
 }>>(new Map());
 const currentFileManagerSessionId = ref<string | null>(null);
+
+// 是否应当在后台静默预加载文件管理器 (移动端全量预加载，桌面端开启弹窗管理器时预加载)
+const shouldPreloadFileManager = computed(() => {
+  return isMobile.value || settingsStore.showPopupFileManagerBoolean;
+});
+
+// 保持 currentFileManagerSessionId 默认自动跟随激活的会话
+watch(activeSessionId, (newId) => {
+  if (newId) {
+    currentFileManagerSessionId.value = newId;
+    if (shouldPreloadFileManager.value) {
+      syncFileManagerProps();
+    }
+  }
+}, { immediate: true });
+
+// 保持 fileManagerPropsMap 与活跃 sessions 严格双向同步并预加载
+const syncFileManagerProps = () => {
+  if (!shouldPreloadFileManager.value) {
+    return;
+  }
+
+  const currentMap = fileManagerPropsMap.value;
+  const nextMap = new Map(currentMap);
+  let hasChanged = false;
+
+  // 1. 收集当前所有有效的会话 ID 集合
+  const activeSessionIds = new Set<string>();
+
+  // 遍历所有存在的会话
+  const candidateSessionIds = new Set<string>([
+    ...sessionTabsWithStatus.value.map(tab => tab.sessionId),
+    ...sessionStore.sessions.keys(),
+  ]);
+
+  for (const sId of candidateSessionIds) {
+    const session = sessionStore.sessions.get(sId);
+    if (!session || !session.connectionId || !session.wsManager) {
+      continue;
+    }
+    activeSessionIds.add(sId);
+
+    // 检查是否已有条目（匹配 sessionId 或匹配相同的底层 wsManager 引用）
+    let existingKey = nextMap.has(sId) ? sId : null;
+    if (!existingKey) {
+      for (const [k, v] of nextMap.entries()) {
+        if (v.wsDeps.sendMessage === session.wsManager.sendMessage) {
+          existingKey = k;
+          break;
+        }
+      }
+    }
+
+    if (!existingKey) {
+      const instanceId = `fm-modal-${sId}`;
+      const wsDeps: WebSocketDependencies = {
+        sendMessage: session.wsManager.sendMessage,
+        onMessage: session.wsManager.onMessage,
+        isConnected: session.wsManager.isConnected,
+        isSftpReady: session.wsManager.isSftpReady,
+      };
+      nextMap.set(sId, {
+        sessionId: sId,
+        instanceId,
+        dbConnectionId: String(session.connectionId),
+        wsDeps,
+      });
+      hasChanged = true;
+      console.log(`%c[WorkspaceView] 移动端/弹窗后台自动预加载 SFTP 文件管理器: ${sId} (${session.connectionName})`, 'color: #3b82f6;');
+    } else if (existingKey !== sId) {
+      // 键控替换（如 matchedKey 变为 backendSID），平滑迁移原有 props
+      const existingProps = nextMap.get(existingKey)!;
+      nextMap.delete(existingKey);
+      nextMap.set(sId, {
+        ...existingProps,
+        sessionId: sId,
+        dbConnectionId: String(session.connectionId),
+      });
+      hasChanged = true;
+      console.log(`%c[WorkspaceView] 键控迁移: SFTP 文件管理器预加载实例已从 ${existingKey} 平滑切换至 ${sId}`, 'color: #3b82f6;');
+    } else {
+      const existingProps = nextMap.get(sId)!;
+      // 依赖已更新（如重连/实例更新），刷新 props
+      if (existingProps.dbConnectionId !== String(session.connectionId) || existingProps.wsDeps.sendMessage !== session.wsManager.sendMessage) {
+        const wsDeps: WebSocketDependencies = {
+          sendMessage: session.wsManager.sendMessage,
+          onMessage: session.wsManager.onMessage,
+          isConnected: session.wsManager.isConnected,
+          isSftpReady: session.wsManager.isSftpReady,
+        };
+        nextMap.set(sId, {
+          sessionId: sId,
+          instanceId: existingProps.instanceId || `fm-modal-${sId}`,
+          dbConnectionId: String(session.connectionId),
+          wsDeps,
+        });
+        hasChanged = true;
+        console.log(`%c[WorkspaceView] 更新会话 ${sId} 的移动端/弹窗 SFTP 文件管理器依赖`, 'color: #3b82f6;');
+      }
+    }
+  }
+
+  // 2. 清理已完全关闭或销毁的会话
+  for (const sId of nextMap.keys()) {
+    if (!activeSessionIds.has(sId)) {
+      nextMap.delete(sId);
+      hasChanged = true;
+      console.log(`%c[WorkspaceView] 卸载已关闭会话的 FileManager 预加载实例: ${sId}`, 'color: #94a3b8;');
+    }
+  }
+
+  if (hasChanged) {
+    fileManagerPropsMap.value = nextMap;
+  }
+};
+
+// 监听会话列表变化、活跃会话数量与预加载开关状态
+watch(
+  () => sessionTabsWithStatus.value,
+  () => {
+    syncFileManagerProps();
+  },
+  { deep: true }
+);
+
+watch(
+  () => sessionStore.sessions.size,
+  () => {
+    syncFileManagerProps();
+  }
+);
+
+watch(shouldPreloadFileManager, (shouldPreload) => {
+  if (shouldPreload) {
+    syncFileManagerProps();
+  }
+});
 
 // --- 文件传输进度模态框状态 ---
 const showTransferProgressModal = ref(false);
@@ -187,7 +327,41 @@ onMounted(() => {
   subscribeToWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
   subscribeToWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
   subscribeToWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
+
+  // 初始化工作区实时云端同步与多端互斥租约
+  workspaceSyncStore.initSync();
+  subscribeToWorkspaceEvents('workspace:takeoverKickout', (payload) => {
+    workspaceSyncStore.handleTakeoverKickout(payload.activeClientId);
+  });
+  subscribeToWorkspaceEvents('workspace:requestStateSave', () => {
+    workspaceSyncStore.triggerDebouncedSave();
+  });
 });
+
+// 监听会话、共享编辑器与所有会话独立编辑器的变化，自动向云端保存工作区
+const sessionEditorTabsSignature = computed(() => {
+  return Array.from(sessionStore.sessions.entries()).map(([id, s]) => {
+    const tabsCount = s.editorTabs?.value?.length || 0;
+    const activeTab = s.activeEditorTabId?.value || '';
+    const tabsKey = (s.editorTabs?.value || []).map(t => `${t.id}:${t.isModified}`).join('|');
+    return `${id}:${tabsCount}:${activeTab}:${tabsKey}`;
+  }).join(';');
+});
+
+watch(
+  [
+    activeSessionId,
+    () => sessionStore.sessions.size,
+    () => fileEditorStore.orderedTabs.length,
+    () => fileEditorStore.activeTabId,
+    sessionEditorTabsSignature,
+  ],
+  () => {
+    if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+      workspaceSyncStore.triggerDebouncedSave();
+    }
+  }
+);
 
 onBeforeUnmount(() => {
   console.log('[工作区视图] 组件即将卸载，清理所有会话...');
@@ -234,6 +408,12 @@ onBeforeUnmount(() => {
   unsubscribeFromWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 取消订阅文件管理器打开请求 +++
   unsubscribeFromWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
   unsubscribeFromWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
+  unsubscribeFromWorkspaceEvents('workspace:takeoverKickout', (payload) => {
+    workspaceSyncStore.handleTakeoverKickout(payload.activeClientId);
+  });
+  unsubscribeFromWorkspaceEvents('workspace:requestStateSave', () => {
+    workspaceSyncStore.triggerDebouncedSave();
+  });
 });
 
 const subscribeToWorkspaceEvents = useWorkspaceEventSubscriber(); // +++ 定义订阅和取消订阅函数 +++
@@ -314,6 +494,7 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
      if (commandToSend.length > 0 && command !== '\x03' && sessionToCommand.sessionId === activeSessionId.value) {
        commandHistoryStore.addCommand(commandToSend);
      }
+     workspaceSyncStore.triggerDebouncedSave(1500);
    } else {
      console.warn(`[WorkspaceView] Cannot send command for session ${sessionToCommand.sessionId}, terminal manager or sendData method not available.`);
    }
@@ -441,6 +622,8 @@ const handleClearTerminal = () => {
   if (terminalManager && terminalManager.terminalInstance?.value && typeof terminalManager.terminalInstance.value.clear === 'function') {
     console.log(`[WorkspaceView ${mode}] Clearing terminal for active session ${currentSession.sessionId}`);
     terminalManager.terminalInstance.value.clear();
+    // 立即触发云端同步保存，保存清空后的空终端缓冲区 (200ms 防抖)
+    workspaceSyncStore.triggerDebouncedSave(200);
   } else {
     console.warn(`[WorkspaceView ${mode}] Cannot clear terminal for session ${currentSession.sessionId}, terminal manager, instance, or clear method not available.`);
   }
@@ -473,6 +656,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot close editor tab: No active session in independent mode.');
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
 
  const handleActivateEditorTab = (tabId: string) => {
@@ -488,6 +672,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot activate editor tab: No active session in independent mode.');
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
 
  const handleUpdateEditorContent = (payload: { tabId: string; content: string }) => {
@@ -503,6 +688,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot update editor content: No active session in independent mode.');
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
 
  const handleSaveEditorTab = (tabId: string) => {
@@ -518,6 +704,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot save editor tab: No active session in independent mode.');
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
 
  // +++ 处理编辑器编码更改事件 +++
@@ -535,6 +722,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot change editor encoding: No active session in independent mode.');
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
  
  // +++ 处理编辑器滚动位置更新事件 (由 FileEditorContainer 发出) +++
@@ -551,6 +739,7 @@ const handleCloseEditorTab = (tabId: string) => {
        console.warn('[WorkspaceView] Cannot update editor scroll position: No active session in independent mode for tab:', tabId);
      }
    }
+   workspaceSyncStore.triggerDebouncedSave();
  };
 
  // --- 连接列表操作处理 (用于 WorkspaceConnectionList) ---
@@ -629,48 +818,40 @@ const handleFileManagerOpenRequest = (payload: { sessionId: string }) => {
     return;
   }
 
-  // 1. 获取 dbConnectionId
-  const dbConnectionId = session.connectionId;
-  if (!dbConnectionId) {
-    console.error(`[WorkspaceView] Cannot open file manager: Missing dbConnectionId for session ${sessionId}.`);
-    // TODO: Show error notification
-    return;
-  }
-
-  // 2. 获取 wsDeps (从 session.wsManager 获取)
-  if (!session.wsManager) {
-      console.error(`[WorkspaceView] Cannot open file manager: wsManager not found for session ${sessionId}.`);
-      // TODO: Show error notification
+  // 1. 获取或复用预加载好的 props
+  let currentProps = fileManagerPropsMap.value.get(sessionId);
+  if (!currentProps) {
+    const dbConnectionId = session.connectionId;
+    if (!dbConnectionId) {
+      console.error(`[WorkspaceView] Cannot open file manager: Missing dbConnectionId for session ${sessionId}.`);
       return;
-  }
-  const wsDeps: WebSocketDependencies = {
+    }
+
+    if (!session.wsManager) {
+      console.error(`[WorkspaceView] Cannot open file manager: wsManager not found for session ${sessionId}.`);
+      return;
+    }
+    const wsDeps: WebSocketDependencies = {
       sendMessage: session.wsManager.sendMessage,
       onMessage: session.wsManager.onMessage,
       isConnected: session.wsManager.isConnected,
       isSftpReady: session.wsManager.isSftpReady,
-  };
-
-  if (!wsDeps) {
-      // 如果 wsDeps 仍然为 null，则无法继续
-      console.error(`[WorkspaceView] Cannot open file manager: wsDeps are null after attempting retrieval for session ${sessionId}.`);
-      return;
+    };
+    const instanceId = `fm-modal-${sessionId}`;
+    currentProps = {
+      sessionId,
+      instanceId,
+      dbConnectionId: String(dbConnectionId),
+      wsDeps,
+    };
+    const nextMap = new Map(fileManagerPropsMap.value);
+    nextMap.set(sessionId, currentProps);
+    fileManagerPropsMap.value = nextMap;
   }
 
-  // 3. 生成或获取 instanceId
-  const currentProps = fileManagerPropsMap.value.get(sessionId);
-  const instanceId = currentProps ? currentProps.instanceId : `fm-modal-${sessionId}`;
-
-  // 4. 设置 props 并显示模态框
-  const newProps = {
-    sessionId,
-    instanceId,
-    dbConnectionId: String(dbConnectionId), // 确保是 string
-    wsDeps,
-  };
-  fileManagerPropsMap.value.set(sessionId, newProps);
   currentFileManagerSessionId.value = sessionId;
   showFileManagerModal.value = true;
-  console.log(`[WorkspaceView] Opening FileManager modal with props for session ${sessionId}:`, newProps);
+  console.log(`[WorkspaceView] Opening FileManager modal for session ${sessionId}:`, currentProps);
 };
 
 // --- 处理 quickCommand:executeProcessed 事件 ---
@@ -767,6 +948,9 @@ const closeFileManagerModal = () => {
       :initial-command="initialQuickCommandText"
       @close="() => { showQuickCommandAddModal = false; quickCommandToAddOrEdit = null; initialQuickCommandText = ''; }"
     />
+
+    <!-- 工作区多端/多标签互斥接管全局遮罩 -->
+    <WorkspaceTakeoverOverlay />
 
   </div>
 </template>

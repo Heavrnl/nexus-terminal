@@ -12,13 +12,23 @@ export interface UINotification {
 export const useUiNotificationsStore = defineStore('uiNotifications', () => {
   const notifications = ref<UINotification[]>([]);
   const lastNotificationTimestamps = new Map<string, number>();
+  const isSilenced = ref(false);
   let nextId = 0;
+
+  const setSilenced = (silenced: boolean) => {
+    isSilenced.value = silenced;
+  };
 
   /**
    * 添加一个新通知
    * @param notification - 通知对象 (至少包含 type 和 message)
    */
   const addNotification = (notification: Omit<UINotification, 'id'> & { timeout?: number }) => { // Ensure timeout is part of the input type for clarity
+    // 当处于静默模式时，拦截所有非 error 级别的提示（保证云端恢复过程完全沉浸无骚扰，仅暴露出错）
+    if (isSilenced.value && notification.type !== 'error') {
+      return;
+    }
+
     // 500ms 内相同类型与内容的通知自动去重，杜绝多实例/事件并发导致的双重甚至多重提示
     const dedupeKey = `${notification.type}:${notification.message}`;
     const now = Date.now();
@@ -67,6 +77,8 @@ export const useUiNotificationsStore = defineStore('uiNotifications', () => {
 
   return {
     notifications,
+    isSilenced,
+    setSilenced,
     addNotification,
     removeNotification,
     showError,

@@ -17,6 +17,7 @@ import { useFileManagerVirtualScroll } from '../composables/file-manager/useFile
 import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
@@ -117,6 +118,7 @@ const fileEditorStore = useFileEditorStore(); // 实例化 File Editor Store
 const settingsStore = useSettingsStore(); // 实例化 Settings Store
 const focusSwitcherStore = useFocusSwitcherStore(); // 实例化焦点切换 Store
 const uiNotificationsStore = useUiNotificationsStore(); // 实例化通知 store
+const workspaceSyncStore = useWorkspaceSyncStore(); // 实例化工作区同步 store
  
 // 从 Settings Store 获取共享设置
 const {
@@ -128,32 +130,47 @@ const {
   fileManagerDoubleClickToOpenBoolean,
 } = storeToRefs(settingsStore);
 
-// --- 纯目录树导航窗格状态 ---
+// --- 统一组件实例标识 (跨会话联动核心，避免跟随单独会话隔离) ---
+const effectiveInstanceId = computed(() => props.instanceId || 'default');
+const emitWorkspaceEvent = useWorkspaceEventEmitter();
+
+// --- 纯目录树导航窗格状态 (按组件实例统一存储与跨会话联动) ---
 const LS_SHOW_DIRECTORY_TREE_KEY = 'file_manager_show_directory_tree';
 const LS_DIRECTORY_TREE_WIDTH_KEY = 'file_manager_directory_tree_width';
 
-const showDirectoryTree = ref<boolean>(
-  typeof localStorage !== 'undefined'
-    ? localStorage.getItem(LS_SHOW_DIRECTORY_TREE_KEY) === 'true'
-    : false
-);
+const getInitialDirectoryTreeVisible = (instId: string): boolean => {
+  if (typeof localStorage === 'undefined') return false;
+  const specific = localStorage.getItem(`${LS_SHOW_DIRECTORY_TREE_KEY}:${instId}`);
+  if (specific !== null) return specific === 'true';
+  return localStorage.getItem(LS_SHOW_DIRECTORY_TREE_KEY) === 'true';
+};
 
-const directoryTreeWidth = ref<number>(
-  typeof localStorage !== 'undefined'
-    ? parseInt(localStorage.getItem(LS_DIRECTORY_TREE_WIDTH_KEY) || '220', 10) || 220
-    : 220
-);
+const getInitialDirectoryTreeWidth = (instId: string): number => {
+  if (typeof localStorage === 'undefined') return 220;
+  const specific = localStorage.getItem(`${LS_DIRECTORY_TREE_WIDTH_KEY}:${instId}`);
+  if (specific !== null) return parseInt(specific, 10) || 220;
+  return parseInt(localStorage.getItem(LS_DIRECTORY_TREE_WIDTH_KEY) || '220', 10) || 220;
+};
+
+const showDirectoryTree = ref<boolean>(getInitialDirectoryTreeVisible(effectiveInstanceId.value));
+const directoryTreeWidth = ref<number>(getInitialDirectoryTreeWidth(effectiveInstanceId.value));
 
 const isResizingTree = ref(false);
 
 const toggleDirectoryTree = () => {
-  showDirectoryTree.value = !showDirectoryTree.value;
+  const nextVal = !showDirectoryTree.value;
+  showDirectoryTree.value = nextVal;
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(LS_SHOW_DIRECTORY_TREE_KEY, String(showDirectoryTree.value));
+    localStorage.setItem(`${LS_SHOW_DIRECTORY_TREE_KEY}:${effectiveInstanceId.value}`, String(nextVal));
+    localStorage.setItem(LS_SHOW_DIRECTORY_TREE_KEY, String(nextVal));
   }
+  emitWorkspaceEvent('fileManager:setDirectoryTreeVisible', {
+    instanceId: effectiveInstanceId.value,
+    show: nextVal,
+  });
 };
 
-// --- 平铺与列表视图状态 (跟随唯一组件实例隔离 + 分端 + 后端持久化存储) ---
+// --- 平铺与列表视图状态 (跟随唯一组件实例隔离 + 分端 + 跨会话广播联动) ---
 const { isMobile: isMobileDevice } = useDeviceDetection();
 const isMobileComputed = computed(() => props.isMobile || isMobileDevice.value || (typeof window !== 'undefined' && window.innerWidth < 768));
 const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? 'mobile' : 'desktop');
@@ -161,7 +178,7 @@ const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? '
 const componentStateStore = useComponentStateStore();
 const layoutStore = useLayoutStore();
 
-const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${props.instanceId || 'default'}`);
+const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${effectiveInstanceId.value}`);
 
 const viewMode = ref<'list' | 'tile'>(
   componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, 'list')
@@ -179,6 +196,10 @@ const toggleViewMode = () => {
   const nextMode = viewMode.value === 'list' ? 'tile' : 'list';
   viewMode.value = nextMode;
   componentStateStore.setState(viewModeStorageKey.value, nextMode);
+  emitWorkspaceEvent('fileManager:setViewMode', {
+    instanceId: effectiveInstanceId.value,
+    viewMode: nextMode,
+  });
 };
 
 // 预定义返回上级目录虚拟项目
@@ -245,8 +266,13 @@ const startTreeResize = (e: MouseEvent) => {
   const onMouseUp = () => {
     isResizingTree.value = false;
     if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(`${LS_DIRECTORY_TREE_WIDTH_KEY}:${effectiveInstanceId.value}`, String(directoryTreeWidth.value));
       localStorage.setItem(LS_DIRECTORY_TREE_WIDTH_KEY, String(directoryTreeWidth.value));
     }
+    emitWorkspaceEvent('fileManager:setDirectoryTreeWidth', {
+      instanceId: effectiveInstanceId.value,
+      width: directoryTreeWidth.value,
+    });
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('mouseup', onMouseUp);
   };
@@ -271,13 +297,66 @@ const rowSizeMultiplier = ref(1.0); // 行大小乘数, 默认值会被 store �
 const tableRef = ref<HTMLTableElement | null>(null);
 const tableHeaderContainerRef = ref<HTMLDivElement | null>(null);
 
-// 表格内容滚动时同步表头的横向滚动偏移
+// 滚动位置管理与防干扰标记
+const isRestoringScroll = ref(false);
+const hasRestoredInitialScroll = ref(false);
+let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 表格内容滚动时同步表头的横向滚动偏移与云端工作区 (防抖记录，必须在初次恢复成功后才允许写回，杜绝任何过渡期 0 值误覆)
 const handleBodyScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   if (tableHeaderContainerRef.value && target) {
     tableHeaderContainerRef.value.scrollLeft = target.scrollLeft;
   }
+  // 核心守卫：必须在非程序化还原期间允许向 store 写回
+  if (target && !isRestoringScroll.value) {
+    // 若用户主动交互滚动（e.isTrusted），直接解除初始还原守卫，确保主动滚动立即生效
+    if (!hasRestoredInitialScroll.value && e.isTrusted) {
+      hasRestoredInitialScroll.value = true;
+    }
+    if (hasRestoredInitialScroll.value) {
+      const currentScrollTop = target.scrollTop;
+      const maxScroll = Math.max(0, target.scrollHeight - target.clientHeight);
+      let currentRatio = maxScroll > 0 ? (currentScrollTop / maxScroll) : 0;
+      // 边界智能吸附：距底部 6px 以内吸附至 1.0，距顶部 3px 以内吸附至 0.0
+      if (maxScroll > 0 && currentScrollTop >= maxScroll - 6) {
+        currentRatio = 1.0;
+      } else if (currentScrollTop <= 3) {
+        currentRatio = 0.0;
+      }
+      currentRatio = Math.max(0, Math.min(1, Number(currentRatio.toFixed(4))));
+
+      if (scrollSaveTimer) {
+        clearTimeout(scrollSaveTimer);
+      }
+      scrollSaveTimer = setTimeout(() => {
+        // 只有在非程序化还原中，且当前文件管理器容器在页面上真实可见（非后台 display:none 误触发 0）时，才同步更新 store
+        const isVisible = fileListContainerRef.value && (fileListContainerRef.value.offsetParent !== null || props.isMobile);
+        if (!isRestoringScroll.value && hasRestoredInitialScroll.value && isVisible) {
+          workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, {
+            scrollTop: currentScrollTop,
+            scrollRatio: currentRatio,
+          });
+        }
+      }, 150);
+    }
+  }
 };
+
+// 监听搜索状态与查询词，实时同步到云端工作区
+watch([isSearchActive, searchQuery], ([active, query]) => {
+  workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, {
+    isSearchActive: active,
+    searchQuery: query,
+  });
+});
+
+// 监听当前路径变更，实时同步到云端工作区（仅同步有效绝对路径，杜绝相对路径占位）
+watch(() => currentSftpManager.value?.currentPath.value, (newPath) => {
+  if (newPath && newPath.trim().startsWith('/')) {
+    workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, { currentPath: newPath });
+  }
+}, { immediate: true });
 
 // --- 列宽调整 Composable ---
 const {
@@ -847,12 +926,140 @@ const {
   topPadding,
   bottomPadding,
   scrollToIndex: virtualScrollToIndex,
+  setScrollTop: virtualSetScrollTop,
 } = useFileManagerVirtualScroll({
   items: filteredFileList,
   containerRef: fileListContainerRef,
   rowSizeMultiplier,
   hasParentLink,
 });
+
+// --- 滚动位置平稳还原 (支持虚拟列表切片与平铺视图，等待 DOM 完全撑开后对齐) ---
+const applySavedScrollPosition = (retryCount = 0) => {
+  const container = fileListContainerRef.value;
+  // 1. 如果容器不可见（后台非激活会话，display: none），暂缓至切回会话时执行
+  if (!container || container.offsetParent === null || container.clientHeight === 0) {
+    return;
+  }
+
+  // 2. 检查 SFTP 是否真正完成初次拉取并有文件列表渲染
+  const manager = currentSftpManager.value;
+  if (!manager || !manager.initialLoadDone.value || manager.isLoading.value || filteredFileList.value.length === 0) {
+    return;
+  }
+
+  const savedState = workspaceSyncStore.getSavedFileManagerInstanceState(props.sessionId, props.instanceId)
+    || (props.sessionId === sessionStore.activeSessionId ? workspaceSyncStore.fileManagerState : null);
+  const targetScrollTop = savedState?.scrollTop;
+  const targetScrollRatio = savedState?.scrollRatio;
+
+  const hasSavedScroll = (typeof targetScrollTop === 'number' && targetScrollTop > 0)
+    || (typeof targetScrollRatio === 'number' && targetScrollRatio > 0);
+
+  if (hasSavedScroll) {
+    const currentMaxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+
+    // 3. 检查容器是否真正排版并产生可滚动的 scrollHeight（若尚未展开则等待重试）
+    if (currentMaxScroll <= 10 && retryCount < 12) {
+      setTimeout(() => applySavedScrollPosition(retryCount + 1), 60);
+      return;
+    }
+
+    // 核心：自适应计算有效滚动位置 (兼容跨端与屏幕视口高差)
+    let effectiveScrollTop = targetScrollTop || 0;
+    if (typeof targetScrollRatio === 'number') {
+      if (targetScrollRatio >= 0.98) {
+        // 智能吸附：原端拉到底部，当前端精准吸附到当前设备的最大底部
+        effectiveScrollTop = currentMaxScroll;
+      } else if (targetScrollRatio <= 0.02) {
+        effectiveScrollTop = 0;
+      } else if (props.isMobile || targetScrollTop === undefined || targetScrollTop > currentMaxScroll) {
+        // 移动端或跨分辨率场景：按相对滚动比例映射当前容器最大高度
+        effectiveScrollTop = Math.round(targetScrollRatio * currentMaxScroll);
+      } else {
+        // 同分辨率桌面端：优先使用像素级精确位置，并以 currentMaxScroll 为上限
+        effectiveScrollTop = Math.min(targetScrollTop, currentMaxScroll);
+      }
+    } else {
+      effectiveScrollTop = Math.min(effectiveScrollTop, currentMaxScroll);
+    }
+
+    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 还原滚动位置: ${effectiveScrollTop}px (ratio: ${targetScrollRatio ?? 'none'}, 可滚高度: ${currentMaxScroll}px, 视口: ${container.clientHeight}px, 重试: ${retryCount})`);
+    isRestoringScroll.value = true;
+
+    // 同步虚拟滚动内部 slice
+    virtualSetScrollTop(effectiveScrollTop);
+
+    nextTick(() => {
+      if (!fileListContainerRef.value) return;
+      fileListContainerRef.value.scrollTop = effectiveScrollTop;
+
+      setTimeout(() => {
+        if (!fileListContainerRef.value) return;
+        const currentTop = fileListContainerRef.value.scrollTop;
+        if (Math.abs(currentTop - effectiveScrollTop) > 10 && retryCount < 12) {
+          virtualSetScrollTop(effectiveScrollTop);
+          fileListContainerRef.value.scrollTop = effectiveScrollTop;
+          setTimeout(() => {
+            applySavedScrollPosition(retryCount + 1);
+          }, 60);
+          return;
+        }
+
+        // 真实设置成功后，才标记初始还原完成
+        hasRestoredInitialScroll.value = true;
+        setTimeout(() => {
+          isRestoringScroll.value = false;
+        }, 150);
+      }, 50);
+    });
+  } else {
+    hasRestoredInitialScroll.value = true;
+  }
+};
+
+// 监听文件列表首次加载完成：当 SFTP 真正完成初始加载、不在 loading 且有真实文件数据时，可靠恢复历史滚动条位置
+watch(
+  [
+    () => currentSftpManager.value?.initialLoadDone.value,
+    () => currentSftpManager.value?.isLoading.value,
+    () => filteredFileList.value.length
+  ],
+  ([initDone, loading, len]) => {
+    if (initDone && !loading && len > 0 && !hasRestoredInitialScroll.value) {
+      nextTick(() => {
+        applySavedScrollPosition();
+      });
+    }
+  }
+);
+
+// 监听会话激活状态切换：当切回本会话时，防止因隐藏重现导致浏览器滚动条被归零，并保持窗格视图与目录树同步
+watch(
+  () => sessionStore.activeSessionId,
+  (activeId) => {
+    if (activeId === props.sessionId) {
+      // 1. 同步统一组件的最新视图模式与目录树状态
+      const latestViewMode = componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, viewMode.value);
+      if (viewMode.value !== latestViewMode) {
+        viewMode.value = latestViewMode;
+      }
+      const latestShowTree = getInitialDirectoryTreeVisible(effectiveInstanceId.value);
+      if (showDirectoryTree.value !== latestShowTree) {
+        showDirectoryTree.value = latestShowTree;
+      }
+      const latestTreeWidth = getInitialDirectoryTreeWidth(effectiveInstanceId.value);
+      if (directoryTreeWidth.value !== latestTreeWidth) {
+        directoryTreeWidth.value = latestTreeWidth;
+      }
+
+      // 2. 切回本会话，执行滚动条平稳还原（无论是初次切回还是后续切回）
+      nextTick(() => {
+        applySavedScrollPosition();
+      });
+    }
+  }
+);
 
 // --- 键盘导航逻辑 (使用 Composable) ---
 const {
@@ -893,7 +1100,7 @@ const {
 });
 
 
-// 监听 manager 的 currentPath：路径更换时自动重置选择和清空搜索栏
+// 监听 manager 的 currentPath：路径更换时自动重置选择、清空搜索栏并在切实发生用户主动切目录时重置滚动条
 watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
     selectedIndex.value = -1;
     clearSelection();
@@ -901,6 +1108,15 @@ watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
     if (newPath !== oldPath) {
         searchQuery.value = '';
         isSearchActive.value = false;
+        // 关键防护：只有在 initialLoadDone 为 true 且已完成过初始滚动还原之后，才判定为用户主动导航切目录，重置滚动条
+        const isUserNavigated = Boolean(currentSftpManager.value?.initialLoadDone.value && hasRestoredInitialScroll.value);
+        if (oldPath && isUserNavigated) {
+          hasRestoredInitialScroll.value = false;
+          if (fileListContainerRef.value) {
+            virtualSetScrollTop(0);
+          }
+          workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, { scrollTop: 0 });
+        }
     }
 });
 watch(searchQuery, () => {
@@ -929,6 +1145,16 @@ const saveLayoutSettings = () => {
 // --- 生命周期钩子 ---
 onMounted(() => {
   componentStateStore.initialize();
+  // 恢复云端工作区的搜索状态 (优先读取本会话专属实例状态)
+  if (workspaceSyncStore.syncEnabled) {
+    const savedState = workspaceSyncStore.getSavedFileManagerInstanceState(props.sessionId, props.instanceId) || workspaceSyncStore.fileManagerState;
+    if (savedState) {
+      if (savedState.isSearchActive) {
+        isSearchActive.value = true;
+        searchQuery.value = savedState.searchQuery || '';
+      }
+    }
+  }
 });
 
 // +++ 使用 watchEffect 响应式地加载和应用布局设置 +++
@@ -991,9 +1217,19 @@ watchEffect((onCleanup) => {
 
     onCleanup(cleanupListeners);
 
-    // 修改：添加 ?. 访问 isLoading, 检查 manager 的 initialLoadDone
-    // 只有在连接就绪、SFTP 就绪、管理器存在、未加载且 initialLoadDone 为 false 时才获取初始路径
+    // 优先检查是否有来自云端快照的有效绝对恢复路径 (仅当该会话明确拥有云端快照记录时优先恢复)
     if (currentSftpManager.value && props.wsDeps.isConnected.value && props.wsDeps.isSftpReady.value && !currentSftpManager.value.isLoading.value && !currentSftpManager.value.initialLoadDone.value) {
+        const isTargetValid = (p?: string | null): p is string => !!p && p.trim().startsWith('/');
+        const syncPath = workspaceSyncStore.getSavedFileManagerPath(props.sessionId, props.instanceId);
+
+        // 仅当明确存在专属快照路径时直接加载（新会话 syncPath 为 null，强制执行后续 realpath 获取默认家目录）
+        if (isTargetValid(syncPath)) {
+            console.log(`%c[WorkspaceSync] FileManager ${props.sessionId}-${props.instanceId} 检测到本会话专属云端快照路径: ${syncPath}，优先平稳加载并完成初始阶段`, 'color: #10b981;');
+            currentSftpManager.value.loadDirectory(syncPath!);
+            currentSftpManager.value.setInitialLoadDone(true);
+            return;
+        }
+
         console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Connection ready for manager, fetching initial path for the first time (isLoading: ${currentSftpManager.value.isLoading.value}, initialLoadDone: ${currentSftpManager.value.initialLoadDone.value}).`);
         // isFetchingInitialPath 状态移除, 使用 isLoading 状态
 
@@ -1004,12 +1240,21 @@ watchEffect((onCleanup) => {
 
         unregisterSuccess = wsOnMessage('sftp:realpath:success', (payload: any, message: WebSocketMessage) => { // message 已有类型
             if (message.requestId === requestId && payload.requestedPath === requestedPath) {
-                // 修改：检查 currentSftpManager 是否存在
                 if (!currentSftpManager.value) return;
-                const absolutePath = payload.absolutePath;
-                console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Received initial absolute path for '.': ${absolutePath}. Loading directory.`);
-                // 修改：添加 ?. 访问 loadDirectory 和 setInitialLoadDone
-                currentSftpManager.value?.loadDirectory(absolutePath);
+                // 如果当前路径已经被云端快照显式设置为其它有效路径，保持快照路径
+                const latestSyncPath = workspaceSyncStore.getSavedFileManagerPath(props.sessionId, props.instanceId);
+                if (isTargetValid(latestSyncPath) && latestSyncPath !== payload.absolutePath) {
+                    console.log(`%c[WorkspaceSync] FileManager ${props.sessionId}-${props.instanceId} 保持云端同步路径: ${latestSyncPath}，忽略默认 realpath: ${payload.absolutePath}`, 'color: #10b981;');
+                    currentSftpManager.value?.loadDirectory(latestSyncPath);
+                } else {
+                    const absolutePath = payload.absolutePath;
+                    console.log(`%c[WorkspaceSync] FileManager ${props.sessionId}-${props.instanceId} 收到默认初始绝对路径: ${absolutePath}，加载目录`, 'color: #10b981;');
+                    currentSftpManager.value?.loadDirectory(absolutePath);
+                    // 确保将此真实有效路径同步回 store (仅在非恢复状态下覆盖，避免冲刷云端快照路径)
+                    if (isTargetValid(absolutePath) && !workspaceSyncStore.isRestoring) {
+                        workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, { currentPath: absolutePath });
+                    }
+                }
                 currentSftpManager.value?.setInitialLoadDone(true); // 设置 manager 内部状态
                 cleanupListeners();
             }
@@ -1092,14 +1337,44 @@ watch(() => props.sessionId, (newSessionId, oldSessionId) => {
     }
 }, { immediate: false });
 
-// +++ 注册/注销自定义聚焦动作 +++
+// +++ 注册/注销自定义聚焦动作与跨会话联动事件 +++
 let unregisterSearchFocusAction: (() => void) | null = null;
 let unregisterPathFocusAction: (() => void) | null = null;
 
 let unregisterItemsMovedEvent: (() => void) | null = null;
 let unregisterNavigateToPathEvent: (() => void) | null = null;
+let unregisterSetDirectoryTreeVisibleEvent: (() => void) | null = null;
+let unregisterSetDirectoryTreeWidthEvent: (() => void) | null = null;
+let unregisterSetViewModeEvent: (() => void) | null = null;
 
 onMounted(() => {
+  // 同组件实例跨会话目录树显隐联动
+  const handleSetDirectoryTreeVisibleNotification = (payload: { instanceId: string; show: boolean }) => {
+    if (payload.instanceId === effectiveInstanceId.value && showDirectoryTree.value !== payload.show) {
+      showDirectoryTree.value = payload.show;
+    }
+  };
+  subscribeToWorkspaceEvent('fileManager:setDirectoryTreeVisible', handleSetDirectoryTreeVisibleNotification);
+  unregisterSetDirectoryTreeVisibleEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setDirectoryTreeVisible', handleSetDirectoryTreeVisibleNotification);
+
+  // 同组件实例跨会话目录树宽度联动
+  const handleSetDirectoryTreeWidthNotification = (payload: { instanceId: string; width: number }) => {
+    if (payload.instanceId === effectiveInstanceId.value && directoryTreeWidth.value !== payload.width) {
+      directoryTreeWidth.value = payload.width;
+    }
+  };
+  subscribeToWorkspaceEvent('fileManager:setDirectoryTreeWidth', handleSetDirectoryTreeWidthNotification);
+  unregisterSetDirectoryTreeWidthEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setDirectoryTreeWidth', handleSetDirectoryTreeWidthNotification);
+
+  // 同组件实例跨会话视图模式联动
+  const handleSetViewModeNotification = (payload: { instanceId: string; viewMode: 'list' | 'tile' }) => {
+    if (payload.instanceId === effectiveInstanceId.value && viewMode.value !== payload.viewMode) {
+      viewMode.value = payload.viewMode;
+    }
+  };
+  subscribeToWorkspaceEvent('fileManager:setViewMode', handleSetViewModeNotification);
+  unregisterSetViewModeEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setViewMode', handleSetViewModeNotification);
+
   const handleItemsMovedNotification = (payload: { sessionId: string; sourceDir: string; targetDir: string }) => {
     if (payload.sessionId === props.sessionId) {
       const current = currentSftpManager.value?.currentPath.value;
@@ -1112,12 +1387,19 @@ onMounted(() => {
   subscribeToWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
   unregisterItemsMovedEvent = () => unsubscribeFromWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
 
-  const handleNavigateToPathNotification = (payload: { path: string; sessionId?: string }) => {
-    if (!payload.sessionId || payload.sessionId === props.sessionId) {
-      if (payload.path && currentSftpManager.value) {
-        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到全局路径跳转通知: ${payload.path}`);
-        currentSftpManager.value.loadDirectory(payload.path);
-      }
+  const handleNavigateToPathNotification = (payload: { path: string; sessionId?: string; instanceId?: string }) => {
+    // 如果指定了 sessionId，必须与当前实例的 sessionId 匹配
+    if (payload.sessionId && payload.sessionId !== props.sessionId) {
+      return;
+    }
+    // 如果指定了 instanceId，必须与当前组件的 instanceId 匹配（避免多分屏实例互串）
+    if (payload.instanceId && payload.instanceId !== props.instanceId) {
+      return;
+    }
+    if (payload.path && currentSftpManager.value) {
+      console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到路径跳转通知: ${payload.path}`);
+      currentSftpManager.value.loadDirectory(payload.path);
+      currentSftpManager.value.setInitialLoadDone(true);
     }
   };
   subscribeToWorkspaceEvent('fileManager:navigateToPath', handleNavigateToPathNotification);
@@ -1142,6 +1424,18 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (unregisterSetDirectoryTreeVisibleEvent) {
+    unregisterSetDirectoryTreeVisibleEvent();
+    unregisterSetDirectoryTreeVisibleEvent = null;
+  }
+  if (unregisterSetDirectoryTreeWidthEvent) {
+    unregisterSetDirectoryTreeWidthEvent();
+    unregisterSetDirectoryTreeWidthEvent = null;
+  }
+  if (unregisterSetViewModeEvent) {
+    unregisterSetViewModeEvent();
+    unregisterSetViewModeEvent = null;
+  }
   if (unregisterItemsMovedEvent) {
     unregisterItemsMovedEvent();
     unregisterItemsMovedEvent = null;
@@ -1604,8 +1898,8 @@ defineExpose({ focusSearchInput, startPathEdit });
                       <col v-for="colKey in columnOrder" :key="colKey" :style="{ width: `${colWidths[colKey]}px` }">
                  </colgroup>
 
-          <!-- 首次冷启动加载状态 (仅在初次加载且列表完全为空时展示，避免闪烁) -->
-          <tbody v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0">
+          <!-- 首次冷启动加载状态 (在未完成加载或加载进行中且列表完全为空时展示，避免闪烁中间态) -->
+          <tbody v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value || currentSftpManager.isLoading.value) && filteredFileList.length === 0">
               <tr>
                   <td :colspan="columnOrder.length" class="px-4 py-16 text-center">
                     <div class="inline-flex flex-col items-center justify-center gap-2.5 text-text-secondary">
@@ -1657,8 +1951,8 @@ defineExpose({ focusSearchInput, startPathEdit });
               </template>
             </tr>
 
-            <!-- Empty Directory / No Search Results Row (空文件夹或搜索无结果时在 .. 之下展示提示) -->
-            <tr v-if="filteredFileList.length === 0">
+            <!-- Empty Directory / No Search Results Row (空文件夹或搜索无结果时在 .. 之下展示提示，严格确保在非加载状态下展示) -->
+            <tr v-if="!currentSftpManager?.isLoading.value && filteredFileList.length === 0">
               <td :colspan="columnOrder.length" class="px-4 py-8 text-center text-text-secondary italic">
                 {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}
               </td>
@@ -1741,9 +2035,9 @@ defineExpose({ focusSearchInput, startPathEdit });
           :class="{'pointer-events-none': showExternalDropOverlay}"
           @contextmenu.prevent
         >
-          <!-- 首次冷启动加载状态 -->
+          <!-- 首次冷启动加载状态 (在未完成加载或加载进行中且列表完全为空时展示，避免闪烁中间态) -->
           <div
-            v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value) && filteredFileList.length === 0"
+            v-if="(!currentSftpManager || !currentSftpManager.initialLoadDone.value || currentSftpManager.isLoading.value) && filteredFileList.length === 0"
             class="py-16 text-center"
           >
             <div class="inline-flex flex-col items-center justify-center gap-2.5 text-text-secondary">
@@ -1796,9 +2090,9 @@ defineExpose({ focusSearchInput, startPathEdit });
               </div>
             </div>
 
-            <!-- 空文件夹或无搜索结果提示 -->
+            <!-- 空文件夹或无搜索结果提示 (严格确保在非加载状态下展示) -->
             <div
-              v-if="filteredFileList.length === 0"
+              v-if="!currentSftpManager?.isLoading.value && filteredFileList.length === 0"
               class="col-span-full py-12 text-center text-text-secondary italic text-xs"
             >
               {{ searchQuery ? t('fileManager.noSearchResults') : t('fileManager.emptyDirectory') }}

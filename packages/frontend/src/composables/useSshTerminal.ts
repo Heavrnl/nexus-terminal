@@ -6,6 +6,7 @@ import type { Terminal } from 'xterm';
 import type { SearchAddon, ISearchOptions } from '@xterm/addon-search'; // *** 移除 ISearchResult 导入 ***
 import type { WebSocketMessage, MessagePayload } from '../types/websocket.types';
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -33,6 +34,22 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     // const currentSearchResultIndex = ref(-1);
     const terminalOutputBuffer = ref<(string | Uint8Array)[]>([]); // 缓冲 WebSocket 消息直到终端准备好
     const isSshConnected = ref(false); // 跟踪 SSH 连接状态
+
+    // 终端数据流防抖同步至云端工作区 (输出停歇 1.5s 后触发，命令执行中自动延后)
+    let terminalSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleTerminalSync = (delayMs: number = 1500) => {
+        if (terminalSyncTimer) clearTimeout(terminalSyncTimer);
+        terminalSyncTimer = setTimeout(() => {
+            try {
+                const workspaceSyncStore = useWorkspaceSyncStore();
+                if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+                    workspaceSyncStore.triggerDebouncedSave(0);
+                }
+            } catch {
+                // Pinia 上下文未就绪时安全忽略
+            }
+        }, delayMs);
+    };
 
     // 辅助函数：获取终端消息文本
     const getTerminalText = (key: string, params?: Record<string, any>): string => {
@@ -145,9 +162,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // --------------------
 
         if (terminalInstance.value) {
-            // console.log(`[会话 ${sessionId}][SSH前端] 终端实例存在，尝试写入...`);
             terminalInstance.value.write(highlightStore.highlight(outputData));
-            // console.log(`[会话 ${sessionId}][SSH前端] 写入完成。`);
+            // 终端数据输出写入后安排 1.5s 防抖同步至云端工作区
+            scheduleTerminalSync(1500);
         } else {
             // 如果终端还没准备好，先缓冲输出
             terminalOutputBuffer.value.push(outputData);
@@ -185,7 +202,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 清空可能存在的旧缓冲（虽然理论上此时应该已经 ready 了）
         if (terminalOutputBuffer.value.length > 0) {
              console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接时仍有缓冲数据，正在写入...`);
-             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(data));
+             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(highlightStore.highlight(data)));
              terminalOutputBuffer.value = [];
         }
     };
@@ -278,6 +295,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- 清理函数 ---
     const cleanup = () => {
+        if (terminalSyncTimer) {
+            clearTimeout(terminalSyncTimer);
+            terminalSyncTimer = null;
+        }
         unregisterAllSshHandlers();
         // terminalInstance.value?.dispose(); // 终端实例的销毁由 TerminalComponent 负责
         terminalInstance.value = null;

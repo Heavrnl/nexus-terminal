@@ -613,24 +613,34 @@ onBeforeUnmount(() => {
                        </div>
                    </div>
                </template>
-                 <!-- FileManager -->
-                 <template v-else-if="layoutNode.component === 'fileManager'">
+                  <!-- FileManager (支持多会话并行常驻渲染，切走时后台不间断初始化) -->
+                  <template v-else-if="layoutNode.component === 'fileManager'">
+                    <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
+                      <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
                         <component
-                          :is="currentMainComponent"
-                          :key="layoutNode.id"
-                          v-bind="componentProps"
+                          :is="componentMap.fileManager"
+                          v-show="sessionId === activeSessionId"
+                          :session-id="sessionId"
+                          :instance-id="layoutNode.id || 'main-fm'"
+                          :db-connection-id="String(sessionState.connectionId)"
+                          :ws-deps="{
+                            sendMessage: sessionState.wsManager.sendMessage,
+                            onMessage: sessionState.wsManager.onMessage,
+                            isConnected: sessionState.wsManager.isConnected,
+                            isSftpReady: sessionState.wsManager.isSftpReady
+                          }"
                           class="flex-grow min-h-0 overflow-auto"
-                          v-if="activeSession"
-                        >
-                        </component>
-                     <div v-if="!activeSession" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
-                      <div class="flex flex-col items-center justify-center p-8 w-full h-full">
-                        <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
-                        <span class="text-lg font-medium text-text-secondary mb-2">{{ t('layout.noActiveSession.title') }}</span>
-                        <div class="text-xs text-text-secondary mt-2">{{ t('layout.noActiveSession.message') }}</div>
+                        />
+                      </template>
+                      <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
+                        <div class="flex flex-col items-center justify-center p-8 w-full h-full">
+                          <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
+                          <span class="text-lg font-medium text-text-secondary mb-2">{{ t('layout.noActiveSession.title') }}</span>
+                          <div class="text-xs text-text-secondary mt-2">{{ t('layout.noActiveSession.message') }}</div>
+                        </div>
                       </div>
                     </div>
-                </template>
+                  </template>
                 <!-- StatusMonitor -->
                 <template v-else-if="layoutNode.component === 'statusMonitor'">
                      <keep-alive v-if="activeSessionId">
@@ -686,25 +696,43 @@ onBeforeUnmount(() => {
         <button class="absolute top-1 right-2 p-1 text-text-secondary hover:text-foreground cursor-pointer text-2xl leading-none z-10" @click="closeSidebars" title="Close Sidebar">&times;</button>
         <KeepAlive>
             <div :key="`left-sidebar-content-${activeLeftSidebarPane ?? 'none'}`" class="relative flex flex-col flex-grow overflow-hidden pt-10"> <!-- Added pt-10 -->
-                <component
-      
-                        v-if="currentLeftSidebarComponent && activeLeftSidebarPane && (activeLeftSidebarPane === 'statusMonitor' || activeLeftSidebarPane !== 'fileManager' || activeSession)"
-                        :is="currentLeftSidebarComponent"
-                        :key="`left-comp-${activeLeftSidebarPane}`"
-                        v-bind="sidebarProps(activeLeftSidebarPane, 'left')"
-                        class="flex flex-col flex-grow">
-                    </component>
-                     <!-- 'fileManager' 且无 activeSession 的提示 -->
-                    <div v-else-if="activeLeftSidebarPane === 'fileManager' && !activeSession" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                <!-- 侧边栏如果激活了 fileManager，多会话并行常驻 -->
+                <template v-if="activeLeftSidebarPane === 'fileManager'">
+                  <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
+                    <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                      <component
+                        :is="componentMap.fileManager"
+                        v-show="sessionId === activeSessionId"
+                        :session-id="sessionId"
+                        instance-id="sidebar-left"
+                        :db-connection-id="String(sessionState.connectionId)"
+                        :ws-deps="{
+                          sendMessage: sessionState.wsManager.sendMessage,
+                          onMessage: sessionState.wsManager.onMessage,
+                          isConnected: sessionState.wsManager.isConnected,
+                          isSftpReady: sessionState.wsManager.isSftpReady
+                        }"
+                        class="flex flex-col flex-grow min-h-0 overflow-auto"
+                      />
+                    </template>
+                    <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
                         <div class="text-xs mt-2">{{ t('layout.noActiveSession.fileManagerSidebar') }}</div>
                       </div>
                     </div>
-                    <!-- 移除 statusMonitor 的 v-else-if -->
-                 <div v-else class="flex flex-col flex-grow">
-                 </div>
+                  </div>
+                </template>
+                <component
+                  v-else-if="currentLeftSidebarComponent && activeLeftSidebarPane && (activeLeftSidebarPane === 'statusMonitor' || activeSession)"
+                  :is="currentLeftSidebarComponent"
+                  :key="`left-comp-${activeLeftSidebarPane}`"
+                  v-bind="sidebarProps(activeLeftSidebarPane, 'left')"
+                  class="flex flex-col flex-grow"
+                />
+                <div v-else class="flex flex-col flex-grow">
+                </div>
             </div>
         </KeepAlive>
     </div>
@@ -718,24 +746,43 @@ onBeforeUnmount(() => {
         <button class="absolute top-1 right-2 p-1 text-text-secondary hover:text-foreground cursor-pointer text-2xl leading-none z-10" @click="closeSidebars" title="Close Sidebar">&times;</button>
         <KeepAlive>
             <div :key="`right-sidebar-content-${activeRightSidebarPane ?? 'none'}`" class="relative flex flex-col flex-grow overflow-hidden pt-10"> <!-- Added pt-10 -->
-                <component
-                        v-if="currentRightSidebarComponent && activeRightSidebarPane && (activeRightSidebarPane === 'statusMonitor' || activeRightSidebarPane !== 'fileManager' || activeSession)"
-                        :is="currentRightSidebarComponent"
-                        :key="`right-comp-${activeRightSidebarPane}`"
-                        v-bind="sidebarProps(activeRightSidebarPane, 'right')"
-                        class="flex flex-col flex-grow">
-                    </component>
-                     <!-- 'fileManager' 且无 activeSession 的提示 -->
-                    <div v-else-if="activeRightSidebarPane === 'fileManager' && !activeSession" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                <!-- 侧边栏如果激活了 fileManager，多会话并行常驻 -->
+                <template v-if="activeRightSidebarPane === 'fileManager'">
+                  <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
+                    <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                      <component
+                        :is="componentMap.fileManager"
+                        v-show="sessionId === activeSessionId"
+                        :session-id="sessionId"
+                        instance-id="sidebar-right"
+                        :db-connection-id="String(sessionState.connectionId)"
+                        :ws-deps="{
+                          sendMessage: sessionState.wsManager.sendMessage,
+                          onMessage: sessionState.wsManager.onMessage,
+                          isConnected: sessionState.wsManager.isConnected,
+                          isSftpReady: sessionState.wsManager.isSftpReady
+                        }"
+                        class="flex flex-col flex-grow min-h-0 overflow-auto"
+                      />
+                    </template>
+                    <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
                         <div class="text-xs mt-2">{{ t('layout.noActiveSession.fileManagerSidebar') }}</div>
                       </div>
                     </div>
-                    <!-- 移除 statusMonitor 的 v-else-if -->
-                 <div v-else class="flex flex-col flex-grow">
-                 </div>
+                  </div>
+                </template>
+                <component
+                  v-else-if="currentRightSidebarComponent && activeRightSidebarPane && (activeRightSidebarPane === 'statusMonitor' || activeSession)"
+                  :is="currentRightSidebarComponent"
+                  :key="`right-comp-${activeRightSidebarPane}`"
+                  v-bind="sidebarProps(activeRightSidebarPane, 'right')"
+                  class="flex flex-col flex-grow"
+                />
+                <div v-else class="flex flex-col flex-grow">
+                </div>
             </div>
         </KeepAlive>
     </div>

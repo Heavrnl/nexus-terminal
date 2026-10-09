@@ -1,5 +1,6 @@
 import { ref, shallowRef, computed, readonly } from 'vue';
 import { useI18n } from 'vue-i18n'; // +++ Add import for useI18n +++
+import { workspaceEmitter } from './workspaceEvents';
 // 从 websocket.types.ts 导入并重新导出 ConnectionStatus
 import type { ConnectionStatus as WsConnectionStatusType, MessagePayload, WebSocketMessage, MessageHandler } from '../types/websocket.types';
 
@@ -180,6 +181,15 @@ export function createWebSocketConnectionManager(
             ws.value.onopen = () => {
                 reconnectAttempts = 0; // 连接成功，重置尝试次数
                 statusMessage.value = getStatusText('wsConnected');
+                // 绑定当前客户端唯一标识
+                try {
+                    const cid = sessionStorage.getItem('nexus_workspace_sync_client_id');
+                    if (cid) {
+                        sendMessage({ type: 'workspace:bind_client', payload: { clientId: cid } });
+                    }
+                } catch (e) {
+                    // ignore
+                }
                 // 状态保持 'connecting' 直到收到 ssh:connected
                 if (!isResumeFlow) {
                     // 对于普通连接，发送 ssh:connect 并等待 ssh:connected 来更新状态
@@ -196,6 +206,13 @@ export function createWebSocketConnectionManager(
                 try {
                     const rawData = event.data;
                     const message: WebSocketMessage = JSON.parse(rawData.toString());
+
+                    // --- 检查是否为工作区被接管踢出通知 ---
+                    if (message.type === 'workspace:takeover_kickout') {
+                        const targetActiveClientId = (message.payload as any)?.activeClientId;
+                        workspaceEmitter.emit('workspace:takeoverKickout', { activeClientId: targetActiveClientId });
+                        return;
+                    }
 
                     // --- 更新此实例的连接状态 ---
                     if (message.type === 'ssh:connected') {

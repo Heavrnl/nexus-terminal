@@ -32,6 +32,8 @@ export interface MobileBottomSheetProps {
   contentClass?: string;
   /** 是否渲染底部安全区内联垫片，默认 true */
   safeAreaBottom?: boolean;
+  /** 是否在关闭后保持 DOM 与组件实例 (使用 v-show 替代 v-if，杜绝内容被卸载重新加载)，默认 false */
+  keepAlive?: boolean;
 }
 
 const props = withDefaults(defineProps<MobileBottomSheetProps>(), {
@@ -48,6 +50,7 @@ const props = withDefaults(defineProps<MobileBottomSheetProps>(), {
   panelClass: '',
   contentClass: '',
   safeAreaBottom: true,
+  keepAlive: false,
 });
 
 const emit = defineEmits<{
@@ -116,7 +119,8 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="bottom-sheet" @after-leave="handleAfterLeave">
       <div
-        v-if="props.visible"
+        v-if="props.keepAlive || props.visible"
+        v-show="props.visible"
         class="bottom-sheet-overlay fixed inset-0 flex flex-col justify-end bg-black/60 backdrop-blur-xs select-none"
         :style="{ zIndex: props.zIndex } as StyleValue"
         @click.self="props.closeOnClickOverlay && handleClose()"

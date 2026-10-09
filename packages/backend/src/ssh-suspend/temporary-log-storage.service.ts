@@ -63,6 +63,23 @@ export class TemporaryLogStorageService {
   }
 
   /**
+   * 覆盖写入（或清空）指定挂起会话的日志文件。
+   * 用于实时同步对齐最新的屏幕历史或清空屏幕状态。
+   * @param suspendSessionId - 挂起会话的ID。
+   * @param data - 要覆盖写入的数据。
+   */
+  async overwriteLog(suspendSessionId: string, data: string): Promise<void> {
+    const filePath = this.getLogFilePath(suspendSessionId);
+    try {
+      await this.ensureLogDirectoryExists();
+      await fs.writeFile(filePath, data, 'utf8');
+    } catch (error) {
+      console.error(`覆盖写入日志文件 '${filePath}' 失败:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * 读取指定挂起会话的日志文件内容。
    * @param suspendSessionId - 挂起会话的ID。
    * @returns 返回日志文件的内容。如果文件不存在，则返回空字符串。

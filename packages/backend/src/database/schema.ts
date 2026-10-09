@@ -246,3 +246,13 @@ CREATE TABLE IF NOT EXISTS favorite_paths (
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 `;
+
+export const createWorkspaceSyncTableSQL = `
+CREATE TABLE IF NOT EXISTS workspace_sync (
+    user_id INTEGER PRIMARY KEY NOT NULL,
+    state TEXT NOT NULL DEFAULT '{}',
+    active_client_id TEXT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+`;

@@ -1824,5 +1824,22 @@
       "openFile": "打开文件",
       "saveQuickCommand": "保存为快捷命令"
     }
+  },
+  "workspaceSync": {
+    "title": "云端同步",
+    "enabledTooltip": "工作区实时云端同步 (已开启，点击可关闭)",
+    "syncingTooltip": "正在同步工作区到云端...",
+    "disabledTooltip": "工作区实时云端同步 (已关闭，点击开启)",
+    "enableSync": "工作区实时同步已关闭 (点击开启)",
+    "disableSync": "工作区实时同步已开启 (点击关闭)",
+    "syncing": "正在同步工作区...",
+    "takeoverTitle": "工作区已在其它设备接管",
+    "takeoverDesc": "检测到您的工作区已在新的浏览器标签页或设备中打开。为了保证终端和编辑内容的一致性，当前页面已进入挂起待机状态。",
+    "reclaimButton": "接管并同步工作区",
+    "refreshAndReclaim": "刷新并接管",
+    "reclaiming": "正在接管工作区...",
+    "reloading": "正在重新连接...",
+    "backToHome": "返回首页",
+    "safetyNote": "云端实时会话已安全保护，工作区无缝漫游中"
   }
 }

@@ -29,6 +29,7 @@ const title = computed(() => {
 <template>
   <MobileBottomSheet
     :visible="isModalVisible"
+    :keep-alive="true"
     :title="title"
     icon="fas fa-folder-open"
     height="h-[92vh]"

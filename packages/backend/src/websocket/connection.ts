@@ -27,6 +27,7 @@ import { SftpService } from '../sftp/sftp.service';
 import { cleanupClientConnection } from './utils';
 import { clientStates } from './state';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service'; 
+import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
 
 // Handlers
 import { handleRdpProxyConnection } from './handlers/rdp.handler';
@@ -61,6 +62,7 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
         if (isRdpProxy) {
             handleRdpProxyConnection(ws, request);
         } else {
+            workspaceSyncService.registerSocket(ws.userId || 1, ws);
             // Standard SSH/SFTP/Docker connection
             ws.on('message', async (message: RawData) => {
                 ws.isAlive = true;
@@ -448,10 +450,43 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                      activeSessionState.isMarkedForSuspend = true; // 保持标记状态
                                      // activeSessionState.suspendLogPath = logPathToDelete; // 如果需要，可以恢复路径，但删除失败更可能是问题
                                 }
-                                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_UNMARKED_FOR_SUSPEND_ACK', payload: { ...ackPayloadBase, success: false, error: error.message || '取消标记会话失败' } as SshUnmarkedForSuspendAck['payload'] }));
+                                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'SSH_UNMARKED_FOR_SUSPEND_ACK', payload: { ...ackPayloadBase, success: false, error: error.message || '取消标记会话失败' } as SshUnmarkedForSuspendAck['payload'] }));
                             }
                             break;
                         }
+
+                        // Workspace Sync Cases
+                        case 'workspace:bind_client': {
+                            const uId = ws.userId || 1;
+                            if (payload && payload.clientId) {
+                                workspaceSyncService.bindSocketClientId(uId, ws, payload.clientId);
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: 'workspace:bound_ack', payload: { clientId: payload.clientId } }));
+                                }
+                            }
+                            break;
+                        }
+                        case 'workspace:claim_lease': {
+                            const uId = ws.userId || 1;
+                            if (payload && payload.clientId) {
+                                await workspaceSyncService.claimLease(uId, payload.clientId);
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: 'workspace:claim_ack', payload: { activeClientId: payload.clientId } }));
+                                }
+                            }
+                            break;
+                        }
+                        case 'workspace:save_state': {
+                            const uId = ws.userId || 1;
+                            if (payload && payload.clientId && payload.state) {
+                                await workspaceSyncService.saveState(uId, payload.clientId, payload.state);
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({ type: 'workspace:save_ack', payload: { success: true } }));
+                                }
+                            }
+                            break;
+                        }
+
                         default:
                             console.warn(`WebSocket：收到来自 ${ws.username} (会话: ${sessionId}) 的未知消息类型: ${type}`);
                             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'error', payload: `不支持的消息类型: ${type}` }));
@@ -464,11 +499,13 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
             ws.on('close', (code, reason) => {
                 console.log(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 已断开连接。代码: ${code}, 原因: ${reason.toString()}`);
+                workspaceSyncService.unregisterSocket(ws.userId || 1, ws);
                 cleanupClientConnection(ws.sessionId);
             });
 
             ws.on('error', (error) => {
                 console.error(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 发生错误:`, error);
+                workspaceSyncService.unregisterSocket(ws.userId || 1, ws);
                 cleanupClientConnection(ws.sessionId); // Ensure cleanup on error too
             });
         }

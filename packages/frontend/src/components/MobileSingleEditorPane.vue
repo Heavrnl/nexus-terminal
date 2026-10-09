@@ -369,7 +369,10 @@ defineExpose({
         v-model="localContent"
         :language="activeTab.language"
         class="editor-instance"
+        :initial-scroll-top="activeTab.scrollTop ?? 0"
+        :initial-scroll-left="activeTab.scrollLeft ?? 0"
         @request-save="handleSave"
+        @update:scroll-position="handleEditorScroll"
       />
 
       <!-- 空白占位 -->

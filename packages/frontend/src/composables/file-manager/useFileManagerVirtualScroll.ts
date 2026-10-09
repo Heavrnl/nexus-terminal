@@ -132,6 +132,16 @@ export function useFileManagerVirtualScroll(options: UseFileManagerVirtualScroll
     }
   };
 
+  /**
+   * 直接设置滚动条位置并即时同步虚拟切片（用于快照恢复与会话切回）
+   */
+  const setScrollTop = (val: number) => {
+    scrollTop.value = val;
+    if (containerRef.value) {
+      containerRef.value.scrollTop = val;
+    }
+  };
+
   return {
     itemHeight,
     visibleItems,
@@ -140,5 +150,6 @@ export function useFileManagerVirtualScroll(options: UseFileManagerVirtualScroll
     startIndex,
     endIndex,
     scrollToIndex,
+    setScrollTop,
   };
 }

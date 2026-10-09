@@ -204,6 +204,7 @@ export class SshSuspendService extends EventEmitter {
         customSuspendName: details.customSuspendName,
         backendSshStatus: details.backendSshStatus,
         disconnectionTimestamp: details.disconnectionTimestamp,
+        originalSessionId: details.originalSessionId,
       });
     }
     // TODO: 增强此方法以从日志目录恢复 'disconnected_by_backend' 的会话状态，

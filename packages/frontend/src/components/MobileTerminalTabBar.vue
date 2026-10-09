@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import draggable from 'vuedraggable';
 import MobileServerSelectionDrawer from './MobileServerSelectionDrawer.vue';
 import { useSessionStore } from '../stores/session.store';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
@@ -19,6 +20,20 @@ const connectionsStore = useConnectionsStore();
 
 const showConnectionListPopup = ref(false);
 const mobileTabsContainerRef = ref<HTMLElement | null>(null);
+const draggableSessions = ref<SessionTabInfoWithStatus[]>([]);
+
+watch(
+  () => props.sessions,
+  (newSessions) => {
+    draggableSessions.value = [...newSessions];
+  },
+  { immediate: true, deep: true }
+);
+
+const handleSessionsUpdate = (newSessions: SessionTabInfoWithStatus[]) => {
+  const newOrder = newSessions.map(s => s.sessionId);
+  sessionStore.setSessionOrder(newOrder);
+};
 
 const togglePopup = () => {
   showConnectionListPopup.value = !showConnectionListPopup.value;
@@ -62,30 +77,56 @@ const handleRequestEditFromPopup = (connection: ConnectionInfo) => {
   emitWorkspaceEvent('connection:requestEdit', { connectionInfo: connection });
 };
 
-// 触屏长按会话触发待挂起/取消挂起
+// 触屏长按会话触发待挂起/取消挂起（与拖拽排序精准解耦）
 let touchTimeout: number | null = null;
 const touchDuration = 800;
 let touchedSessionId: string | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+let isTouchMoved = false;
 
 const handleTouchStart = (event: TouchEvent, sessionId: string) => {
+  if (event.touches.length > 0) {
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+  }
+  isTouchMoved = false;
   touchedSessionId = sessionId;
   if (touchTimeout) {
     clearTimeout(touchTimeout);
   }
   touchTimeout = window.setTimeout(() => {
-    if (touchedSessionId === sessionId) {
+    if (touchedSessionId === sessionId && !isTouchMoved) {
       const sessionState = sessionStore.sessions.get(sessionId);
       if (sessionState && sessionState.isMarkedForSuspend) {
         sessionStore.requestUnmarkSshSuspend(sessionId);
       } else if (sessionState) {
         sessionStore.requestStartSshSuspend(sessionId);
       }
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(40);
+      }
     }
     touchTimeout = null;
   }, touchDuration);
 };
 
-const handleTouchEnd = (event: TouchEvent) => {
+const handleTouchMove = (event: TouchEvent) => {
+  if (!touchTimeout) return;
+  if (event.touches.length > 0) {
+    const dx = Math.abs(event.touches[0].clientX - touchStartX);
+    const dy = Math.abs(event.touches[0].clientY - touchStartY);
+    // 超过 8 像素的位移立即判定为滑动/拖拽，取消长按挂起定时器
+    if (dx > 8 || dy > 8) {
+      isTouchMoved = true;
+      clearTimeout(touchTimeout);
+      touchTimeout = null;
+      touchedSessionId = null;
+    }
+  }
+};
+
+const handleTouchEnd = () => {
   if (touchTimeout) {
     clearTimeout(touchTimeout);
     touchTimeout = null;
@@ -141,59 +182,76 @@ watch(() => props.activeSessionId, async (newId) => {
     <!-- 纵向分割微线 -->
     <div class="h-3.5 w-[1px] bg-border/40 mr-1.5 flex-shrink-0"></div>
 
-    <!-- 会话胶囊标签横向滚动列表 (无滚动条，支持横向平滑滑动) -->
+    <!-- 会话胶囊标签横向滚动列表 (无滚动条，支持横向平滑滑动与触屏拖拽排序) -->
     <div
       ref="mobileTabsContainerRef"
-      class="mobile-tabs-scroll-container flex items-center gap-1.5 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
+      class="mobile-tabs-scroll-container flex items-center overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth flex-grow h-full py-0.5 min-w-0"
       style="-webkit-touch-callout: none;"
       @contextmenu.prevent
     >
-      <div
-        v-for="session in props.sessions"
-        :key="session.sessionId"
-        :data-tab-id="session.sessionId"
-        class="flex items-center px-2.5 h-6.5 rounded-md cursor-pointer flex-shrink-0 transition-colors duration-150 select-none max-w-[150px] font-medium border"
-        :class="session.sessionId === props.activeSessionId
-          ? 'bg-background text-primary border-primary/40 shadow-xs'
-          : 'bg-background/30 text-text-secondary border-border/40 hover:bg-background/50 hover:text-foreground active:bg-background/70'"
-        @click="activateSession(session.sessionId)"
-        @contextmenu.prevent
-        @touchstart="handleTouchStart($event, session.sessionId)"
-        @touchend="handleTouchEnd($event)"
-        :title="session.connectionName"
-        style="-webkit-touch-callout: none;"
+      <draggable
+        v-model="draggableSessions"
+        item-key="sessionId"
+        tag="div"
+        class="flex items-center gap-1.5 h-full flex-shrink-0"
+        @update:modelValue="handleSessionsUpdate"
+        ghost-class="opacity-50"
+        drag-class="opacity-75"
+        animation="150"
+        :delay="120"
+        :delay-on-touch-only="true"
+        :touch-action="'pan-x'"
       >
-        <!-- 状态指示灯 -->
-        <span
-          :class="[
-            'w-2 h-2 rounded-full mr-1.5 flex-shrink-0 transition-colors',
-            session.isMarkedForSuspend ? 'bg-blue-400' :
-            session.status === 'connected' ? (session.sessionId === props.activeSessionId ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-emerald-500/70') :
-            session.status === 'connecting' ? 'bg-yellow-400 animate-pulse' :
-            session.status === 'disconnected' ? 'bg-rose-500/80' : 'bg-gray-400/80'
-          ]"
-        ></span>
+        <template #item="{ element: session }">
+          <div
+            :key="session.sessionId"
+            :data-tab-id="session.sessionId"
+            class="flex items-center px-2.5 h-6.5 rounded-md cursor-pointer flex-shrink-0 transition-colors duration-150 select-none max-w-[150px] font-medium border"
+            :class="session.sessionId === props.activeSessionId
+              ? 'bg-background text-primary border-primary/40 shadow-xs'
+              : 'bg-background/30 text-text-secondary border-border/40 hover:bg-background/50 hover:text-foreground active:bg-background/70'"
+            @click="activateSession(session.sessionId)"
+            @contextmenu.prevent
+            @touchstart="handleTouchStart($event, session.sessionId)"
+            @touchmove="handleTouchMove($event)"
+            @touchend="handleTouchEnd"
+            @touchcancel="handleTouchEnd"
+            :title="session.connectionName"
+            style="-webkit-touch-callout: none;"
+          >
+            <!-- 状态指示灯 -->
+            <span
+              :class="[
+                'w-2 h-2 rounded-full mr-1.5 flex-shrink-0 transition-colors',
+                session.isMarkedForSuspend ? 'bg-blue-400' :
+                session.status === 'connected' ? (session.sessionId === props.activeSessionId ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]' : 'bg-emerald-500/70') :
+                session.status === 'connecting' ? 'bg-yellow-400 animate-pulse' :
+                session.status === 'disconnected' ? 'bg-rose-500/80' : 'bg-gray-400/80'
+              ]"
+            ></span>
 
-        <!-- 会话名称 -->
-        <span class="truncate text-xs tracking-tight flex-grow min-w-0">
-          {{ session.connectionName }}
-        </span>
+            <!-- 会话名称 -->
+            <span class="truncate text-xs tracking-tight flex-grow min-w-0">
+              {{ session.connectionName }}
+            </span>
 
-        <!-- 关闭小叉号 (常驻占位，通过透明度显隐，彻底杜绝切换时 Tab 尺寸伸缩互挤) -->
-        <button
-          class="ml-1.5 -mr-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-opacity duration-150 flex-shrink-0 cursor-pointer"
-          :class="session.sessionId === props.activeSessionId
-            ? 'opacity-100 pointer-events-auto text-primary/70 hover:text-primary hover:bg-primary/20 active:bg-primary/30'
-            : 'opacity-0 pointer-events-none'"
-          @click.stop="closeSession($event, session.sessionId)"
-          :title="t('tabs.closeTabTooltip')"
-          tabindex="-1"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+            <!-- 关闭小叉号 (常驻占位，通过透明度显隐，彻底杜绝切换时 Tab 尺寸伸缩互挤) -->
+            <button
+              class="ml-1.5 -mr-0.5 w-4 h-4 rounded-full flex items-center justify-center transition-opacity duration-150 flex-shrink-0 cursor-pointer"
+              :class="session.sessionId === props.activeSessionId
+                ? 'opacity-100 pointer-events-auto text-primary/70 hover:text-primary hover:bg-primary/20 active:bg-primary/30'
+                : 'opacity-0 pointer-events-none'"
+              @click.stop="closeSession($event, session.sessionId)"
+              :title="t('tabs.closeTabTooltip')"
+              tabindex="-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </template>
+      </draggable>
     </div>
 
     <!-- 移动端专属选择服务器抽屉 -->

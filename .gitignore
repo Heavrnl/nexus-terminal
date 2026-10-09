@@ -169,4 +169,6 @@ electron-app/dist_electron/
 /doc/PILOT_GUIDE.md
 /doc/PROJECT_PROGRESS.md
 /doc/architecture/
-/doc/api/
+/doc/api/
+activeContext.md
+TASK_PLAN.md

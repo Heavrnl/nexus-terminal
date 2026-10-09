@@ -114,4 +114,8 @@ export const tableDefinitions: TableDefinition[] = [
         sql: schemaSql.createAppearanceSettingsTableSQL,
         init: initAppearanceSettingsTable
      }, // Depends on terminal_themes
+    {
+        name: 'workspace_sync',
+        sql: schemaSql.createWorkspaceSyncTableSQL
+    },
 ];

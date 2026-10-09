@@ -3,6 +3,8 @@ import { SftpService } from '../sftp/sftp.service';
 import { StatusMonitorService } from '../services/status-monitor.service';
 import { clientStates, sftpService, statusMonitorService } from './state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
+import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
+import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
 
 // --- 解析 Ports 字符串的辅助函数 ---
 export function parsePortsString(portsString: string | undefined | null): PortInfo[] {
@@ -81,6 +83,39 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         if (sftpService) sftpService.cleanupSftpSession(sessionId);
 
         // 3. 处理 SSH 连接 (核心修改点)
+        if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
+            try {
+                const syncRecord = await workspaceSyncService.getState(state.ws.userId);
+                if (syncRecord.state && syncRecord.state.syncEnabled) {
+                    console.log(`WebSocket: 用户 ${state.ws.userId} 已启用工作区实时同步，断开时自动挂起会话 ${sessionId}...`);
+                    state.isMarkedForSuspend = true;
+                    if (!state.suspendLogPath) {
+                        state.suspendLogPath = sessionId;
+                    }
+
+                    // 如果快照中存有该会话最新的终端屏幕缓冲区，预写入到挂起日志，供恢复时回放
+                    if (syncRecord.state.sessions && Array.isArray(syncRecord.state.sessions)) {
+                        const matchedSync = syncRecord.state.sessions.find(
+                            (s: any) => String(s.connectionId) === String(state.dbConnectionId) || s.sessionId === sessionId
+                        );
+                        if (matchedSync && matchedSync.terminalBuffer) {
+                            try {
+                                console.log(`WebSocket: 为自动挂起写入终端屏幕历史 (会话 ${sessionId}, 字符数: ${matchedSync.terminalBuffer.length})...`);
+                                await temporaryLogStorageService.ensureLogDirectoryExists();
+                                const normalized = matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n');
+                                const formatted = normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`;
+                                await temporaryLogStorageService.writeToLog(state.suspendLogPath, formatted);
+                            } catch (logErr) {
+                                console.warn(`[cleanupClientConnection] 写入终端历史日志失败:`, logErr);
+                            }
+                        }
+                    }
+                }
+            } catch (err: any) {
+                console.warn(`[cleanupClientConnection] 检查工作区同步配置失败:`, err.message);
+            }
+        }
+
         if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.suspendLogPath && state.ws.userId !== undefined) {
             console.log(`WebSocket: 会话 ${sessionId} 已被标记为待挂起，尝试移交给 SshSuspendService...`);
             try {

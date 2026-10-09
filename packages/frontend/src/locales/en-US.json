@@ -1819,5 +1819,22 @@
       "openFile": "Open File",
       "saveQuickCommand": "Save as Quick Command"
     }
+  },
+  "workspaceSync": {
+    "title": "Cloud Sync",
+    "enabledTooltip": "Workspace Real-time Cloud Sync (Active, click to disable)",
+    "syncingTooltip": "Syncing workspace to cloud...",
+    "disabledTooltip": "Workspace Real-time Cloud Sync (Disabled, click to enable)",
+    "enableSync": "Workspace Cloud Sync is disabled (click to enable)",
+    "disableSync": "Workspace Cloud Sync is enabled (click to disable)",
+    "syncing": "Syncing workspace...",
+    "takeoverTitle": "Workspace Active in Another Device",
+    "takeoverDesc": "Your workspace has been taken over by another browser tab or device. Current tab is suspended to prevent conflicting changes.",
+    "reclaimButton": "Take Over & Sync Workspace",
+    "refreshAndReclaim": "Refresh and Take Over",
+    "reclaiming": "Taking over workspace...",
+    "reloading": "Reconnecting...",
+    "backToHome": "Back to Home",
+    "safetyNote": "Cloud sessions kept alive securely with seamless roaming"
   }
 }

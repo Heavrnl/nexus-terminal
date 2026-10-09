@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useLayoutStore } from '../stores/layout.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useMobileToolbarConfig } from '../composables/useMobileToolbarConfig';
 import { useFileEditorStore } from '../stores/fileEditor.store';
@@ -35,8 +36,18 @@ const sessionStore = useSessionStore();
 const layoutStore = useLayoutStore();
 const focusSwitcherStore = useFocusSwitcherStore();
 const fileEditorStore = useFileEditorStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
 const { activeSessionId } = storeToRefs(sessionStore);
+const { syncEnabled, isSyncing } = storeToRefs(workspaceSyncStore);
+const { toggleSyncEnabled } = workspaceSyncStore;
+
+const syncButtonTitle = computed(() => {
+  if (isSyncing.value) return t('workspaceSync.syncing', '正在同步工作区...');
+  return syncEnabled.value
+    ? t('workspaceSync.disableSync', '工作区实时同步已开启 (点击关闭)')
+    : t('workspaceSync.enableSync', '工作区实时同步已关闭 (点击开启)');
+});
 
 const { activeItemIds } = useMobileToolbarConfig();
 
@@ -199,6 +210,31 @@ const getBarButtonClass = (isActive: boolean = false) => [
           :title="isMobileMultiLineOpen ? t('commandInputBar.closeMultiLine', '收起多行命令输入框') : t('commandInputBar.openMultiLine', '展开多行命令输入框')"
         >
           <i class="fas fa-terminal text-base"></i>
+        </button>
+
+        <!-- 云端同步 -->
+        <button
+          v-else-if="itemId === 'workspaceSync'"
+          @click="toggleSyncEnabled()"
+          :class="getBarButtonClass(syncEnabled)"
+          :title="syncButtonTitle"
+        >
+          <span class="relative inline-flex items-center justify-center">
+            <i class="fas fa-cloud text-base" :class="syncEnabled ? 'text-emerald-500' : 'text-text-secondary'"></i>
+            <!-- 开启状态：右下角绿色实心圆点 -->
+            <span
+              v-if="syncEnabled"
+              class="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-header shadow-sm"
+            ></span>
+            <!-- 关闭状态：带留白的对角斜杠横穿云朵图标 -->
+            <span
+              v-else
+              class="absolute inset-0 flex items-center justify-center pointer-events-none"
+            >
+              <span class="absolute w-[150%] h-[3px] bg-header rotate-45 transform origin-center"></span>
+              <span class="absolute w-[135%] h-[1.5px] bg-text-secondary rotate-45 transform origin-center rounded-full"></span>
+            </span>
+          </span>
         </button>
 
         <!-- 挂起会话 -->

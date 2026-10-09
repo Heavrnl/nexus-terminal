@@ -44,6 +44,7 @@ export interface SessionState {
   createdAt: number; // 记录会话创建的时间戳，用于排序
   disposables?: (() => void)[]; // 用于存储清理函数，例如取消注册消息处理器
   pendingOutput?: string[]; // 用于暂存恢复会话时，在终端实例准备好之前收到的输出
+  shouldActivateOnResume?: boolean; // 标记从挂起恢复就绪后是否激活此会话（默认为 true，若为 false 则保持静默后台恢复）
 }
 
 // 为标签栏定义包含状态的类型
