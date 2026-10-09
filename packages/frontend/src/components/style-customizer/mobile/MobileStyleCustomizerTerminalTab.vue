@@ -32,6 +32,7 @@ import {
   findMatchingPreset,
   cleanFontName,
 } from '../../../constants/terminalFonts';
+import MobileTerminalFontSelector from './MobileTerminalFontSelector.vue';
 
 // 本地状态
 const editableTerminalFontFamily = ref('');
@@ -210,6 +211,15 @@ const removeCustomFont = (font: string) => {
   notificationsStore.addNotification({ type: 'info', message: '已移除该自定义字体' });
 };
 
+// 来自移动端字体选择抽屉的新增自定义字体处理
+const handleAddCustomFontFromSelector = (font: string) => {
+  if (!font) return;
+  if (!customFonts.value.includes(font) && !DEFAULT_PRESET_FONTS.includes(font)) {
+    customFonts.value.push(font);
+    saveCustomFonts();
+  }
+};
+
 // 过滤后的主题清单
 const filteredThemes = computed(() => {
   const q = themeSearchTerm.value.trim().toLowerCase();
@@ -306,32 +316,17 @@ const updateShadow = async () => {
             </button>
           </div>
 
-          <!-- 预设下拉选择器 -->
+          <!-- 移动端专属字体选择下拉抽屉组件 (解决原生 select 无法预览字形、描述截断、操作不顺手的问题) -->
           <div class="space-y-1">
-            <div class="text-[10px] text-text-secondary/70">精选字体下拉选择：</div>
-            <select
-              id="mobileTerminalFontSelect"
-              v-model="selectedFontPresetId"
-              @change="handleSelectPreset(selectedFontPresetId)"
-              class="w-full px-2.5 py-1.5 text-xs rounded-xl bg-background border border-border/70 text-foreground font-mono focus:outline-none focus:border-primary transition-colors cursor-pointer"
-            >
-              <optgroup
-                v-for="cat in TERMINAL_FONT_CATEGORIES"
-                :key="cat.key"
-                :label="cat.label"
-              >
-                <option
-                  v-for="font in TERMINAL_FONT_PRESETS.filter(p => p.category === cat.key)"
-                  :key="font.id"
-                  :value="font.id"
-                >
-                  {{ font.name }} - {{ font.description }}
-                </option>
-              </optgroup>
-              <optgroup label="⚙️ 其他">
-                <option value="custom">✏️ 自定义输入字体...</option>
-              </optgroup>
-            </select>
+            <div class="text-[10px] text-text-secondary/70">精选字体选择与字形预览：</div>
+            <MobileTerminalFontSelector
+              v-model="editableTerminalFontFamily"
+              :custom-fonts="customFonts"
+              :z-index="1100"
+              @select="selectFont"
+              @add-custom="handleAddCustomFontFromSelector"
+              @remove-custom="removeCustomFont"
+            />
           </div>
 
           <!-- 自定义输入并保存应用 -->
