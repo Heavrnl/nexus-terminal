@@ -28,7 +28,7 @@
       "i18next": "^25.0.0",
       "i18next-fs-backend": "^2.6.8",
       "iconv-lite": "^0.6.3",
-      "ipaddr.js": "^1.9.1",
+      "ipaddr.js": "^2.5.0",
       "jschardet": "^3.1.4",
       "multer": "^2.1.0",
       "nodemailer": "^10.0.15",
