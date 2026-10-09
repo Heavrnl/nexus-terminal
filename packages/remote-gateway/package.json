@@ -13,8 +13,8 @@
   "license": "ISC",
   "description": "Unified Remote Desktop Gateway for Nexus Terminal",
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.2",
     "@types/ws": "^8.18.1",
     "nodemon": "^3.1.10",
@@ -22,8 +22,8 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "guacamole-lite": "^0.7.3",
     "ws": "^8.18.1"
   }
