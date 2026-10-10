@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
+  "productName": "Nexus Terminal",
+  "version": "0.9.4",
+  "identifier": "com.nexus.terminal",
+  "build": {
+    "beforeDevCommand": "npm run build:sidecar",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build:sidecar",
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Nexus Terminal",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 550,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "theme": "Dark"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/nexus-server"
+    ],
+    "resources": [
+      "resources/**/*"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}

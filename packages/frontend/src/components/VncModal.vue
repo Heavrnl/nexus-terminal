@@ -98,18 +98,13 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let hasDragged = false;
 
-let remoteDesktopWsBaseUrl: string; // Renamed for clarity
-const LOCAL_BACKEND_URL_FOR_PROXY = 'ws://localhost:3001'; // Main backend's WebSocket for proxying
-
-if (window.location.hostname === 'localhost') {
-  // For local development, VNC will also go through the main backend's proxy
-  remoteDesktopWsBaseUrl = `${LOCAL_BACKEND_URL_FOR_PROXY}/ws/rdp-proxy`; // Use the same RDP proxy path
-} else {
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsHostAndPort = window.location.host;
-  // For deployed environments, assume the proxy is at /ws/rdp-proxy relative to the main backend
-  remoteDesktopWsBaseUrl = `${wsProtocol}//${wsHostAndPort}/ws/rdp-proxy`;
-}
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsHostAndPort = window.location.host;
+// 仅在 Vite 前端独立开发模式 (端口为 5173) 时回退到默认后端 3001，其余环境（桌面端、Docker、反代等）自适应同源 host
+const isViteDev = window.location.port === '5173';
+const remoteDesktopWsBaseUrl = isViteDev
+  ? 'ws://localhost:3001/ws/rdp-proxy'
+  : `${wsProtocol}//${wsHostAndPort}/ws/rdp-proxy`;
 
 const handleConnection = async () => {
   if (!props.connection || !vncDisplayRef.value) {

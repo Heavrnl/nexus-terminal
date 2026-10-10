@@ -5,10 +5,11 @@ import type { ITheme } from 'xterm';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import { getTempUploadsDir } from '../services/storage-path.service';
 
 // 配置 multer 用于处理 JSON 文件上传 (导入)
 const upload = multer({
-    dest: path.join(__dirname, '../../temp-uploads/'), // 临时存储目录
+    dest: getTempUploadsDir(), // 统一收归至 data/temp-uploads 目录
     fileFilter: (req, file, cb) => {
         if (file.mimetype === 'application/json' || file.originalname.endsWith('.json')) {
             cb(null, true);

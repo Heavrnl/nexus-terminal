@@ -19,6 +19,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      NEXUS_DATA_DIR: /app/data
       # REMOTE_GATEWAY_API_BASE: http://remote-gateway:9090
     volumes:
       - ./data:/app/data

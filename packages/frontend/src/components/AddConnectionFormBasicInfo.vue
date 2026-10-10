@@ -2,6 +2,7 @@
 import { ref, nextTick, Teleport } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { PRESET_COLORS, generateRandomColor, hexToRgba } from '../utils/colorUtils';
+import { isRemoteDesktopSupported } from '../utils/platform';
 
 // Define Props. formData is expected to be a reactive object from the parent composable.
 const props = defineProps<{
@@ -104,16 +105,18 @@ const handleHostIconMouseLeave = () => {
                 @click="props.formData.type = 'SSH'"
                 :class="['flex-1 px-3 py-2 border border-border text-sm font-medium focus:outline-none',
                          props.formData.type === 'SSH' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border',
-                         'rounded-l-md']">
+                         isRemoteDesktopSupported() ? 'rounded-l-md' : 'rounded-md']">
           {{ t('connections.form.typeSsh', 'SSH') }}
         </button>
-        <button type="button"
+        <button v-if="isRemoteDesktopSupported()"
+                type="button"
                 @click="props.formData.type = 'RDP'"
                 :class="['flex-1 px-3 py-2 border-t border-b border-r border-border text-sm font-medium focus:outline-none -ml-px',
                          props.formData.type === 'RDP' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border']">
           {{ t('connections.form.typeRdp', 'RDP') }}
         </button>
-        <button type="button"
+        <button v-if="isRemoteDesktopSupported()"
+                type="button"
                 @click="props.formData.type = 'VNC'"
                 :class="['flex-1 px-3 py-2 border border-border text-sm font-medium focus:outline-none -ml-px',
                          props.formData.type === 'VNC' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border',

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
+  "identifier": "default",
+  "description": "Default permissions for Nexus Terminal desktop app",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
+  "permissions": [
+    "core:default",
+    "shell:default",
+    "shell:allow-execute",
+    "process:default"
+  ]
+}

@@ -5,11 +5,12 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs'; // Keep fs for sync operations if needed, add promises for async
 import fsp from 'fs/promises'; // Use fs.promises for async file operations
+import { getDataPath } from '../services/storage-path.service';
 
-// --- 背景图片上传配置 (保持不变) ---
+// --- 背景图片上传配置 (便携式存储优先) ---
 const backgroundStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const uploadPath = path.join(__dirname, '../../data/background/');
+        const uploadPath = getDataPath('background');
         // 确保目录存在
         fs.mkdirSync(uploadPath, { recursive: true });
         cb(null, uploadPath);
@@ -133,8 +134,8 @@ export const getBackgroundFileController = async (req: Request, res: Response): 
     }
 
     try {
-        // 构建文件的绝对路径 (基于 multer 的保存位置)
-        const absolutePath = path.join(__dirname, '../../data/background/', filename);
+        // 构建文件的绝对路径 (基于便携数据目录)
+        const absolutePath = path.join(getDataPath('background'), filename);
 
         // 检查文件是否存在且可读
         await fsp.access(absolutePath, fs.constants.R_OK);

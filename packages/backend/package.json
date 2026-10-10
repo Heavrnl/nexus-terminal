@@ -4,7 +4,7 @@
    "private": true,
    "main": "dist/index.js",
    "scripts": {
-      "build": "tsc && copyfiles -u 1 \"src/locales/**/*.json\" dist/src",
+      "build": "tsc && copyfiles -u 1 \"src/locales/**/*.json\" dist/src && copyfiles -u 0 \"html-presets/**/*\" dist",
       "start": "node dist/index.js",
       "dev": "cross-env NODE_ENV=development npx ts-node-dev --respawn --transpile-only src/index.ts"
    },

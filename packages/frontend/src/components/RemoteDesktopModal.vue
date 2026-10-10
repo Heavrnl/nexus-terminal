@@ -56,17 +56,13 @@ const MIN_MODAL_WIDTH = 1024;
 const MIN_MODAL_HEIGHT = 768;
 
 // Dynamically construct WebSocket URL based on environment
-let backendBaseUrl: string;
-const LOCAL_BACKEND_URL = 'ws://localhost:3001'; // For RDP proxy via main backend
-
-// Determine WebSocket URL based on hostname for RDP
-if (window.location.hostname === 'localhost') {
-  backendBaseUrl = LOCAL_BACKEND_URL;
-} else {
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsHostAndPort = window.location.host;
-  backendBaseUrl = `${wsProtocol}//${wsHostAndPort}/ws`; // Assuming RDP proxy is at /ws path
-}
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsHostAndPort = window.location.host;
+// 仅在 Vite 前端独立开发模式 (端口为 5173) 时回退到默认后端 3001，其余环境（桌面端、Docker、反代等）自适应同源 host
+const isViteDev = window.location.port === '5173';
+const backendBaseUrl = isViteDev
+  ? 'ws://localhost:3001/ws'
+  : `${wsProtocol}//${wsHostAndPort}/ws`;
 
 const handleConnection = async () => {
   if (!props.connection || !rdpDisplayRef.value) {

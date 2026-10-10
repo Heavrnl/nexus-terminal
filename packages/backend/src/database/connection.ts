@@ -4,20 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import { tableDefinitions } from './schema.registry';
 import { runMigrations } from './migrations'; // +++ Import runMigrations +++
+import { getDbPath, getDataDir } from '../services/storage-path.service';
 
-const dbDir = path.join(__dirname, '..', '..', 'data');
-const dbFilename = 'nexus-terminal.db';
-const dbPath = path.join(dbDir, dbFilename);
-
-if (!fs.existsSync(dbDir)) {
-    try {
-        fs.mkdirSync(dbDir, { recursive: true });
-    } catch (mkdirErr: any) {
-        console.error(`[数据库文件系统] 创建目录 ${dbDir} 失败:`, mkdirErr.message);
-        throw new Error(`创建数据库目录失败: ${mkdirErr.message}`);
-    }
-} else {
-}
+const dbPath = getDbPath();
+console.log(`[数据库连接] 当前数据存储根目录: ${getDataDir()}, 数据库文件: ${dbPath}`);
 
 const verboseSqlite3 = sqlite3.verbose();
 let dbInstancePromise: Promise<sqlite3.Database> | null = null;

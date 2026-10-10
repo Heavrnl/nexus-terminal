@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { PRESET_COLORS, generateRandomColor, hexToRgba } from '../../../utils/colorUtils';
+import { isRemoteDesktopSupported } from '../../../utils/platform';
 
 // 定义表单数据 Props
 const props = defineProps<{
@@ -77,7 +78,8 @@ const selectPresetColor = (color: string) => {
       <label class="block text-xs font-medium text-text-secondary">
         {{ t('connections.form.connectionType', '协议类型') }}
       </label>
-      <div class="grid grid-cols-3 gap-1.5 p-1 bg-header/40 border border-border/60 rounded-xl">
+      <div class="grid gap-1.5 p-1 bg-header/40 border border-border/60 rounded-xl"
+           :class="isRemoteDesktopSupported() ? 'grid-cols-3' : 'grid-cols-1'">
         <button
           type="button"
           @click="setConnectionType('SSH')"
@@ -91,6 +93,7 @@ const selectPresetColor = (color: string) => {
         </button>
 
         <button
+          v-if="isRemoteDesktopSupported()"
           type="button"
           @click="setConnectionType('RDP')"
           class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1"
@@ -103,6 +106,7 @@ const selectPresetColor = (color: string) => {
         </button>
 
         <button
+          v-if="isRemoteDesktopSupported()"
           type="button"
           @click="setConnectionType('VNC')"
           class="h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1"

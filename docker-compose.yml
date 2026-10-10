@@ -18,6 +18,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      NEXUS_DATA_DIR: /app/data
     volumes:
       - ./data:/app/data
     networks:

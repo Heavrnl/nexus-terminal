@@ -172,3 +172,11 @@ electron-app/dist_electron/
 /doc/api/
 activeContext.md
 TASK_PLAN.md
+
+# Desktop app build and packaging artifacts
+dist-desktop/
+packages/desktop/node_modules/
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/binaries/
+packages/desktop/src-tauri/resources/
+packages/desktop/src-tauri/gen/

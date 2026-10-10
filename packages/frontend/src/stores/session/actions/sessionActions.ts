@@ -14,6 +14,8 @@ import { createSshTerminalManager, type SshTerminalDependencies } from '../../..
 import { createStatusMonitorManager, type StatusMonitorDependencies } from '../../../composables/useStatusMonitor';
 import { createDockerManager, type DockerManagerDependencies } from '../../../composables/useDockerManager';
 import { registerSshSuspendHandlers } from './sshSuspendActions'; 
+import { isRemoteDesktopSupported } from '../../../utils/platform';
+import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 
 
 // --- 辅助函数 (特定于此模块的 actions) ---
@@ -306,8 +308,22 @@ export const handleConnectRequest = (
   const { connectionsStore, router, openRdpModalAction, openVncModalAction, t } = dependencies;
 
   if (connection.type === 'RDP') {
+    if (!isRemoteDesktopSupported()) {
+      useUiNotificationsStore().addNotification({
+        type: 'warning',
+        message: '当前桌面客户端暂不支持 RDP 远程桌面，请使用 Web 端或 Docker 部署环境访问。'
+      });
+      return;
+    }
     openRdpModalAction(connection);
   } else if (connection.type === 'VNC') {
+    if (!isRemoteDesktopSupported()) {
+      useUiNotificationsStore().addNotification({
+        type: 'warning',
+        message: '当前桌面客户端暂不支持 VNC 远程桌面，请使用 Web 端或 Docker 部署环境访问。'
+      });
+      return;
+    }
     openVncModalAction(connection);
   } else {
     const connIdStr = String(connection.id);

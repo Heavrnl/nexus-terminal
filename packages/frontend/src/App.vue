@@ -20,6 +20,7 @@ import FocusSwitcherConfigurator from './components/FocusSwitcherConfigurator.vu
 import RemoteDesktopModal from './components/RemoteDesktopModal.vue';
 import VncModal from './components/VncModal.vue';
 import ConfirmDialog from './components/common/ConfirmDialog.vue';
+import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import { useDialogStore } from './stores/dialog.store';
 
 const { t } = useI18n();
@@ -375,6 +376,9 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
           @cancel="dialogStore.handleCancel"
           @update:visible="(val: boolean) => dialogStore.state.visible = val"
         />
+
+    <!-- +++ 桌面客户端关闭主窗口确认模态框 +++ -->
+    <CloseConfirmModal />
 
   </div>
 </template>
