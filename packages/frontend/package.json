@@ -62,7 +62,7 @@
       "vite-plugin-monaco-editor": "^1.1.0",
       "vue": "^3.5.44",
       "vue-chartjs": "^5.3.4",
-      "vue-i18n": "^9.14.5",
+      "vue-i18n": "^11.4.16",
       "vue-recaptcha-v3": "^2.0.1",
       "vue-router": "^4.5.0",
       "vue3-recaptcha2": "^1.8.0",
