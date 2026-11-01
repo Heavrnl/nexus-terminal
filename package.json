@@ -37,7 +37,7 @@
   "homepage": "https://github.com/Heavrnl/nexus-terminal#readme",
   "description": "",
   "dependencies": {
-    "axios": "^1.8.4",
+    "axios": "^1.21.0",
     "element-plus": "^2.9.11",
     "fs-extra": "^11.4.1",
     "monaco-editor": "0.52.2",
