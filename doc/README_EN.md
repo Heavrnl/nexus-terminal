@@ -22,6 +22,7 @@
 *   Support remote access to desktops via RDP/VNC protocol
 *   Utilizes Monaco Editor for online file editing
 *   Integrated multi-factor login security mechanisms, including human verification (hCaptcha, Google reCAPTCHA) and two-factor authentication (2FA)
+*   OIDC single sign-on with multiple configurable identity providers (Keycloak, Authentik, Google, ...), with bind/unbind available at any time for existing accounts
 *   Highly customizable interface themes and layout styles
 *   Built-in simple Docker container management panel for easy container operations
 *   Supports IP whitelisting and blacklisting, with automatic banning for abnormal access
@@ -177,6 +178,38 @@ You can right-click in the SSH tab to select "Suspend Session" (long-press on mo
 
 1. **On mobile devices, you can zoom in or out on the terminal font using a two-finger gesture.**
 2. To enable Passkey login, set the `RP_ID` and `RP_ORIGIN` environment variables in the `.env` file.
+
+### OIDC Single Sign-On
+
+OIDC providers are configured in **Settings → Security → OIDC Login** — no `.env` changes are needed, and you can
+configure several providers at once. Each provider takes:
+
+| Field | Description |
+| --- | --- |
+| Name | Label shown on the login page button |
+| Issuer URL | The provider issuer, e.g. `https://keycloak.example.com/realms/myrealm` (its `/.well-known/openid-configuration` is fetched automatically) |
+| Client ID / Client Secret | Credentials of a confidential client created on the provider side |
+| Scopes | Defaults to `openid profile email`; usually no change needed |
+| Auto-create users | When enabled, an unlinked OIDC user is provisioned on first login (with no local password) |
+| Allowed email domains | Optional, comma-separated; once set, only those domains may auto-provision |
+
+**Redirect URI to register on the provider side:**
+
+```
+https://<your-domain>/api/v1/auth/oidc/providers/<providerId>/callback
+```
+
+> `<providerId>` is a UUID generated when the provider is saved and is visible on the OIDC settings page. Since each
+> provider has its own ID, register the exact callback per provider. Keycloak 26 only supports a **trailing** wildcard,
+> so `https://<your-domain>/api/v1/auth/oidc/providers/*` covers every provider at once; a wildcard in the middle
+> (e.g. `.../providers/*/callback`) is rejected.
+
+**Binding and unbinding:** a signed-in user can bind an additional provider or remove an existing binding under
+**Settings → Security → OIDC Login → Linked accounts**. Once bound, that provider can sign the account in; after
+unbinding it no longer can (the local password is unaffected).
+
+> Note: when the issuer is plain HTTP (e.g. a local `http://127.0.0.1:8080` for debugging), the backend allows the
+> non-HTTPS discovery request. This is only recommended on a trusted internal network.
 
 
 

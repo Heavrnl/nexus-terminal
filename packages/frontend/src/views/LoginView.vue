@@ -2,16 +2,22 @@
 import { reactive, ref, onMounted } from 'vue'; // computed 不再直接使用，移除
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuthStore } from '../stores/auth.store';
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import { useOidcNotice } from '../composables/useOidcNotice';
 import VueHcaptcha from '@hcaptcha/vue3-hcaptcha';
 import VueRecaptcha from 'vue3-recaptcha2'; // 使用默认导入
 import { isDesktopApp } from '../utils/platform';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
+const uiNotificationsStore = useUiNotificationsStore();
+const route = useRoute();
+const router = useRouter();
 // 获取 loginRequires2FA 状态
-const { isLoading, error, loginRequires2FA, publicCaptchaConfig, hasPasskeysAvailable } = storeToRefs(authStore); // Get publicCaptchaConfig and hasPasskeysAvailable
+const { isLoading, error, loginRequires2FA, publicCaptchaConfig, hasPasskeysAvailable, oidcProviders } = storeToRefs(authStore); // Get publicCaptchaConfig and hasPasskeysAvailable
 
 // 表单数据
 const credentials = reactive({
@@ -102,7 +108,18 @@ onMounted(async () => {
   // Check if passkeys are available for login (uses the new public endpoint)
   // Optionally pass username if needed: await authStore.checkHasPasskeysConfigured(credentials.username);
   await authStore.checkHasPasskeysConfigured();
+  // OIDC：拉取可用的提供商（仅 enabled），失败时静默降级为不显示按钮
+  authStore.fetchOidcProviders();
 });
+
+// 回调失败提示（?oidc_error=xxx）在挂载时弹 toast 并清理 query
+useOidcNotice();
+
+// --- OIDC Login Handler ---
+// OIDC 是整页跳转（契约 §5），不是 fetch：浏览器直接离开当前页面到 IdP
+const handleOidcLogin = (providerId: string) => {
+  authStore.startOidcLogin(providerId);
+};
 
 // --- Passkey Login Handler ---
 const handlePasskeyLogin = async () => {
@@ -256,6 +273,22 @@ const handlePasskeyLogin = async () => {
                    class="w-full py-3 px-4 bg-secondary text-black border-none rounded-lg text-base font-semibold cursor-pointer shadow-md transition-colors duration-200 ease-in-out hover:bg-secondary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-70 flex items-center justify-center">
               <i class="fas fa-key mr-2"></i>
               <span>{{ isLoading ? t('login.loggingIn') : t('login.loginWithPasskey') }}</span>
+           </button>
+         </div>
+
+         <!-- OIDC Login Buttons（契约 §5：在 passkey 按钮下方逐个渲染 enabled 的提供商） -->
+         <div v-if="oidcProviders && oidcProviders.length > 0" class="mt-4 space-y-3">
+           <div class="relative flex items-center">
+             <div class="flex-grow border-t border-border/50"></div>
+             <span class="flex-shrink mx-3 text-xs text-text-secondary">{{ t('login.oidcOr') }}</span>
+             <div class="flex-grow border-t border-border/50"></div>
+           </div>
+           <button v-for="provider in oidcProviders" :key="provider.id" type="button"
+                   @click="handleOidcLogin(provider.id)" :disabled="isLoading"
+                   class="w-full py-3 px-4 bg-background text-foreground border border-border rounded-lg text-base font-semibold cursor-pointer shadow-sm transition-colors duration-200 ease-in-out hover:bg-header/40 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-70 flex items-center justify-center">
+             <img v-if="provider.iconUrl" :src="provider.iconUrl" alt="" class="h-5 w-5 mr-2 object-contain" />
+             <i v-else class="fas fa-right-to-bracket mr-2"></i>
+             <span>{{ t('login.oidcLoginWith', { name: provider.name }) }}</span>
            </button>
          </div>
         </form>

@@ -277,7 +277,20 @@
       "passkeyAuthOptionsFailed": "Failed to get passkey authentication options from the server.",
       "passkeyAuthFailed": "Passkey authentication failed. Please try again or use your password."
     },
-    "recaptchaV3Notice": "This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply."
+    "recaptchaV3Notice": "This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.",
+    "oidcOr": "or",
+    "oidcLoginWith": "Login with {name}",
+    "oidcError": {
+      "stateMismatch": "The login session could not be verified (state mismatch). Please start the login again.",
+      "tokenExchangeFailed": "Failed to exchange the token with the identity provider. Please try again later.",
+      "invalidIdToken": "The identity provider returned an invalid ID token.",
+      "providerNotFound": "That single sign-on provider does not exist.",
+      "providerDisabled": "That single sign-on provider is disabled.",
+      "notLinked": "That single sign-on account is not linked to any local user.",
+      "conflict": "That single sign-on account is already linked to another user.",
+      "serverError": "Internal server error. Please try again later.",
+      "unknown": "Single sign-on failed. Please try again or use your password."
+    }
   },
   "connections": {
     "script": {
@@ -1438,6 +1451,56 @@
         "hcaptchaKeysRequired": "hCaptcha Site Key and Secret Key are required for verification.",
         "recaptchaKeysRequired": "reCAPTCHA Site Key and Secret Key are required for verification.",
         "verificationFailed": "CAPTCHA credential verification failed. Please check your Site Key and Secret Key."
+      }
+    },
+    "oidc": {
+      "title": "Single Sign-On (OIDC)",
+      "description": "Configure OpenID Connect providers to let users sign in with an external identity, or link an existing account to one.",
+      "providersTitle": "Identity Providers",
+      "addProvider": "Add Provider",
+      "noProviders": "No identity providers configured yet.",
+      "newProviderBadge": "New (not saved yet)",
+      "nameLabel": "Display Name",
+      "issuerUrlLabel": "Issuer URL",
+      "clientIdLabel": "Client ID",
+      "clientSecretLabel": "Client Secret",
+      "clientSecretConfigured": "Secret configured",
+      "clientSecretNotConfigured": "No secret configured",
+      "clientSecretHint": "Leave blank to keep the existing secret unchanged.",
+      "scopesLabel": "Scopes",
+      "iconUrlLabel": "Icon URL",
+      "iconUrlPlaceholder": "Optional, shown on the login button",
+      "allowedEmailDomainsLabel": "Allowed Email Domains",
+      "allowedEmailDomainsPlaceholder": "Optional, comma separated, e.g. example.com,corp.example.com",
+      "enabledLabel": "Enabled",
+      "autoCreateUserLabel": "Auto-create user",
+      "saveButton": "Save OIDC Settings",
+      "linksTitle": "Linked Accounts",
+      "linksDescription": "These external identities are linked to your local account.",
+      "noLinks": "No external accounts linked yet.",
+      "boundAt": "Linked",
+      "lastLoginAt": "Last login",
+      "unlinkButton": "Unlink",
+      "bindNewLabel": "Link a new account:",
+      "bindButton": "Link {name}",
+      "bindNeedsProvider": "Save at least one identity provider before linking an account.",
+      "never": "Never",
+      "notice": {
+        "bound": "Account linked successfully.",
+        "conflict": "That external account is already linked to another user."
+      },
+      "success": {
+        "saved": "OIDC settings saved.",
+        "unlinked": "Account unlinked."
+      },
+      "error": {
+        "loadFailed": "Failed to load OIDC settings.",
+        "saveFailed": "Failed to save OIDC settings.",
+        "unlinkFailed": "Failed to unlink the account.",
+        "nameRequired": "Display name is required.",
+        "issuerRequired": "Issuer URL is required.",
+        "clientIdRequired": "Client ID is required.",
+        "clientSecretRequired": "Client Secret is required for a new provider."
       }
     },
     "commandInputSync": {

@@ -23,6 +23,7 @@
 *   支持 PWA
 *   采用 Monaco Editor，支持在线编辑文件  
 *   集成多重登录安全机制，包括人机验证（hCaptcha、Google reCAPTCHA）与双因素认证（2FA）  
+*   支持 OIDC 单点登录（可配置多个身份提供商，如 Keycloak、Authentik、Google 等），已有账号可随时绑定/解绑
 *   高度可定制的界面主题与布局风格
 *   内置简易 Docker 容器管理面板，便于容器运维  
 *   支持 IP 白名单与黑名单，异常访问自动封禁  
@@ -170,6 +171,36 @@ docker compose up -d
 ### 其他
 1. **移动端可以通过双指手势放大缩小终端字体**
 2. 如需启用 Passkey 登录，请在 `.env` 文件中设置 `RP_ID` 和 `RP_ORIGIN` 环境变量。
+
+### OIDC 单点登录
+
+OIDC 提供商在 **设置 → 安全 → OIDC 登录** 中配置，无需改 `.env`，可同时配置多个提供商。每个提供商需要填写：
+
+| 字段 | 说明 |
+| --- | --- |
+| 名称 | 登录页按钮上显示的名字 |
+| Issuer URL | 提供商的 issuer，例如 `https://keycloak.example.com/realms/myrealm`（自动读取其 `/.well-known/openid-configuration`） |
+| Client ID / Client Secret | 在提供商侧创建的 confidential client 凭据 |
+| Scopes | 默认 `openid profile email`，一般无需修改 |
+| 自动创建用户 | 开启后，未绑定过的 OIDC 用户首次登录会自动建号（无本地密码） |
+| 允许的邮箱域名 | 可选，逗号分隔；填了之后只有这些域名的邮箱才能自动建号 |
+
+**在提供商侧需要登记的回调地址（Redirect URI）**：
+
+```
+https://<你的域名>/api/v1/auth/oidc/providers/<providerId>/callback
+```
+
+> `<providerId>` 是保存提供商后由系统生成的 UUID，可在 OIDC 设置页看到。由于每个提供商 ID 不同，
+> 建议按提供商分别精确登记回调地址。Keycloak 26 只支持**结尾**通配，可填
+> `https://<你的域名>/api/v1/auth/oidc/providers/*` 一次覆盖全部提供商；中段通配（如
+> `.../providers/*/callback`）会被拒绝。
+
+**绑定与解绑**：已登录用户可在 **设置 → 安全 → OIDC 登录 → 已绑定账号** 中绑定新提供商或解绑已有绑定。
+绑定成功后即可用该提供商登录；解绑后该提供商不再能登录此账号（本地密码不受影响）。
+
+> 提示：配置明文 HTTP 的 issuer（如本地调试用的 `http://127.0.0.1:8080`）时，后端会放行非 HTTPS 的
+> 发现请求，仅建议在受信任的内网环境中这样做。
 
 ## ⚠️ 注意事项
 
