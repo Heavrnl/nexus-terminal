@@ -1101,6 +1101,31 @@ const definedMigrations: Migration[] = [
             await addColumn('encrypted_sudo_password', 'encrypted_sudo_password TEXT NULL');
             console.log('[Migrations] Migration 31: connections 启动命令 / SFTP sudo 提权字段迁移完成。');
         }
+    },
+    {
+        id: 32,
+        name: 'Create user_oidc_links table for OIDC account binding',
+        check: async (db: Database): Promise<boolean> => {
+            return !(await tableExists(db, 'user_oidc_links'));
+        },
+        sql: `
+            CREATE TABLE IF NOT EXISTS user_oidc_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                provider_id TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                email TEXT,
+                issuer TEXT,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                last_login_at INTEGER,
+                UNIQUE (provider_id, subject),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_oidc_links_user ON user_oidc_links(user_id);
+        `,
+        execute: async (): Promise<void> => {
+            console.log('[Migrations] Migration 32: user_oidc_links 表已就绪（OIDC 账号绑定）。');
+        }
     }
 
 ];

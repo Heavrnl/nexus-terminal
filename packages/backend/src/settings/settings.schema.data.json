@@ -47,6 +47,7 @@
     "markdownDefaultViewMode": { "type": "string", "default": "split", "writable": true },
     "markdownDefaultViewModeMobile": { "type": "string", "default": "preview", "writable": true },
     "rememberLastRoute": { "type": "boolean", "writable": true, "desc": "不给默认值：前端优先读 localStorage" },
-    "componentInstanceStates": { "type": "json", "writable": true, "desc": "由 /settings/component-instance-states 专用接口写入，保留在通用白名单里兼容旧客户端" }
+    "componentInstanceStates": { "type": "json", "writable": true, "desc": "由 /settings/component-instance-states 专用接口写入，保留在通用白名单里兼容旧客户端" },
+    "oidcProviders": { "type": "json", "writable": false, "desc": "OIDC 登录提供商列表（JSON 数组）。只经 /auth/oidc/settings 读写：通用 GET 会脱敏、通用 PUT 会拒绝，避免密文 clientSecret 被回传后再写回覆盖" }
   }
 }

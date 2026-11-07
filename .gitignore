@@ -195,4 +195,3 @@ doc/CUSTOM_PANEL_PLAN.md
 tools/mock-ssh-server.mjs
 /tools
 /packages/frontend/dist.tmp
-/packages/backend/tests
