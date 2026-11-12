@@ -11,7 +11,7 @@ import { settingsService } from '../settings/settings.service';
 import { passkeyService } from '../passkey/passkey.service'; // +++ Passkey Service
 import { passkeyRepository } from '../passkey/passkey.repository'; // +++ Passkey Repository
 import { userRepository } from '../user/user.repository'; // For passkey auth success
-import { isPasswordSet, isLocalRequest, isDesktopRuntime, shouldPersistSession, DESKTOP_SESSION_MAX_AGE_MS, NO_PASSWORD } from './desktop-bootstrap';
+import { isPasswordSet, isLocalRequest, isDesktopRuntime, getSessionMaxAgeMs, DESKTOP_SESSION_MAX_AGE_MS, NO_PASSWORD } from './desktop-bootstrap';
 
 const notificationService = new NotificationService();
 const auditLogService = new AuditLogService();
@@ -184,11 +184,9 @@ export const verifyPasskeyAuthenticationHandler = async (req: Request, res: Resp
             req.session.username = user.username;
             req.session.requiresTwoFactor = false; // Passkey implies 2FA characteristics
 
-            if (rememberMe) {
-                req.session.cookie.maxAge = 315360000000; // 10 years
-            } else {
-                req.session.cookie.maxAge = undefined; // Session cookie
-            }
+            // Passkey 登录同样走统一策略：以前这里是硬编码的 maxAge，
+            // 而且 rememberMe 为假时会退化成会话 cookie（Web 端关浏览器即掉登录）。
+            req.session.cookie.maxAge = getSessionMaxAgeMs(req, rememberMe);
             
             delete req.session.currentChallenge;
             delete req.session.passkeyUserHandle;
@@ -435,9 +433,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             req.session.userId = user.id;
             req.session.username = user.username;
             req.session.requiresTwoFactor = false;
-            req.session.cookie.maxAge = (rememberMe || shouldPersistSession(req))
-                ? DESKTOP_SESSION_MAX_AGE_MS
-                : undefined;
+            req.session.cookie.maxAge = getSessionMaxAgeMs(req, rememberMe);
             res.status(200).json({
                 message: '登录成功。',
                 user: { id: user.id, username: user.username, isTwoFactorEnabled: false },
@@ -474,12 +470,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             req.session.username = user.username;
             req.session.requiresTwoFactor = false; 
 
-            // 桌面端本机默认写持久 cookie：关掉应用再打开不该重新登录
-            if (rememberMe || shouldPersistSession(req)) {
-                req.session.cookie.maxAge = DESKTOP_SESSION_MAX_AGE_MS;
-            } else {
-                req.session.cookie.maxAge = undefined;
-            }
+            // 统一持久会话策略：桌面端本机 / 勾了「记住我」= 1 年，Web 端默认 180 天。
+            // 这里以前在未勾选时写 `maxAge = undefined`，正是 Web 端反复要重新登录的原因。
+            req.session.cookie.maxAge = getSessionMaxAgeMs(req, rememberMe);
 
             res.status(200).json({
                 message: '登录成功。',
@@ -576,11 +569,9 @@ export const verifyLogin2FA = async (req: Request, res: Response): Promise<void>
             req.session.username = user.username;
             req.session.requiresTwoFactor = false; 
 
-            if (req.session.rememberMe || shouldPersistSession(req)) {
-                req.session.cookie.maxAge = DESKTOP_SESSION_MAX_AGE_MS;
-            } else {
-                req.session.cookie.maxAge = undefined; 
-            }
+            // 走完 2FA 才算真正登录成功，此时才按统一策略落持久 cookie。
+            // rememberMe 是登录第一步（密码校验）时存进 session 的，这里取出来用。
+            req.session.cookie.maxAge = getSessionMaxAgeMs(req, req.session.rememberMe);
             delete req.session.rememberMe;
 
             res.status(200).json({
@@ -997,8 +988,27 @@ export const logout = (req: Request, res: Response): void => {
             console.error(`销毁用户 ${userId} (${username}) 的会话时出错:`, err);
             res.status(500).json({ message: '登出时发生服务器内部错误。' });
         } else {
+            /**
+             * 关键：把 req.session 置空，否则 express-session 会在响应收尾时把会话写回去。
+             *
+             * `req.session.destroy()` 只负责删 store 里的记录；它**没有**被 express-session
+             * 包装（只包装了 reload/save），所以 destroy 之后 `req.session` 仍然指向那个对象，
+             * `shouldDestroy()` 依然是 false。响应收尾时 `shouldTouch()` 判定为真 ——
+             * 而 session-file-store 实现了 `touch`（读出来再写回去）—— 刚删掉的会话文件
+             * 就被原样复活了。
+             *
+             * 表现：cookie 清掉了，但旧 cookie（另一个标签页、被复制走的、没清干净的）
+             * 依然能 200 通过认证。配合 index.ts 里的 `unset: 'destroy'`，
+             * 这里置空后 express-session 才会真正走 destroy 分支。
+             */
+            (req as any).session = null;
             console.log(`用户 ${userId} (${username}) 已成功登出。`);
-            res.clearCookie('connect.sid'); 
+            /**
+             * 清除 cookie 必须带上与会话中间件**完全一致**的 path/同站属性，
+             * 否则浏览器认为这是另一个 cookie，旧的 connect.sid 会原地留着 ——
+             * 表现为「点了登出，刷新一下又进去了」。
+             */
+            res.clearCookie('connect.sid', { path: '/', httpOnly: true, sameSite: 'lax' });
             if (userId) { 
                  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
                  auditLogService.logAction('LOGOUT', { userId, username, ip: clientIp });

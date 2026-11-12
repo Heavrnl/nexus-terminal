@@ -1,6 +1,6 @@
-import type { Request } from 'express';
 import { getDbInstance, runDb, getDb } from '../database/connection';
 import { AuditLogService } from '../audit/audit.service';
+import { NO_PASSWORD, isDesktopRuntime } from './session-policy';
 
 /**
  * 桌面端「开机即用」：首次启动自动建一个 admin，密码为空。
@@ -12,49 +12,21 @@ import { AuditLogService } from '../audit/audit.service';
  * 「密码为空」的存储方式：hashed_password 存空串。不用 bcrypt('') 是因为那样
  * 空密码会变成一个合法的密码值——任何人输空密码都能过。存空串让「没设置密码」
  * 成为一个可判定的状态，比「碰巧等于空密码的哈希」安全得多。
- */
-
-/** hashed_password 为空串 == 该账号没有设置密码 */
-export const NO_PASSWORD = '';
-
-/**
- * 桌面端本机会话的有效期：1 年。
- * 桌面端应该「常驻登录」——关掉应用再打开不该重新登录一遍。
- */
-export const DESKTOP_SESSION_MAX_AGE_MS = 315360000000;
-
-/**
- * 当前登录是否要写成持久 cookie（关掉 WebView 也保留）。
- * 桌面端 + 本机请求：默认持久；其他部署仍然尊重「记住我」勾选项。
- */
-export function shouldPersistSession(req: Request): boolean {
-    return isDesktopRuntime() && isLocalRequest(req);
-}
-
-export function isPasswordSet(hashedPassword: string | null | undefined): boolean {
-    return typeof hashedPassword === 'string' && hashedPassword.length > 0;
-}
-
-/** 后端是否跑在桌面客户端里（由 Tauri 启动 sidecar 时注入） */
-export function isDesktopRuntime(): boolean {
-    const raw = (process.env.NEXUS_DESKTOP || '').trim().toLowerCase();
-    return raw === '1' || raw === 'true' || raw === 'yes';
-}
-
-/**
- * 请求是否来自本机。
  *
- * ⚠️ 必须用 socket.remoteAddress，不能用 req.ip：index.ts 里 `app.set('trust proxy', true)`，
- * req.ip 会采信客户端自己发来的 X-Forwarded-For，任何远程请求都能伪造成 127.0.0.1。
- * socket 上的对端地址无法伪造。
+ * 注：会话持久化策略（含 Web 端 180 天持久 cookie 的修复）在 ./session-policy.ts，
+ * 那边是纯函数、可在不拉起数据库的情况下单测；这里统一转出去，保持既有 import 路径可用。
  */
-export function isLocalRequest(req: Request): boolean {
-    const addr = req.socket?.remoteAddress || '';
-    if (addr === '::1') return true;
-    // IPv4-mapped IPv6：::ffff:127.0.0.1
-    const v4 = addr.startsWith('::ffff:') ? addr.slice(7) : addr;
-    return /^127\./.test(v4);
-}
+
+export {
+    NO_PASSWORD,
+    DESKTOP_SESSION_MAX_AGE_MS,
+    WEB_SESSION_MAX_AGE_MS,
+    getSessionMaxAgeMs,
+    shouldPersistSession,
+    isPasswordSet,
+    isDesktopRuntime,
+    isLocalRequest,
+} from './session-policy';
 
 /**
  * 桌面端首次启动时创建默认账号。已经存在任何用户就什么都不做。

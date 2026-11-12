@@ -299,20 +299,61 @@ const startServer = () => {
     // --- 会话中间件配置 ---
     const FileStore = sessionFileStore(session);
     const sessionsPath = getSessionsDir();
+    /**
+     * session-file-store 的 `ttl`（秒）是**服务端**的回收期限，和 cookie 的 maxAge 是两回事：
+     * 它按 `session.cookie.originalMaxAge ?? ttl*1000` 判定过期（见 session-file-helpers.isExpired）。
+     * 也就是说 Web 端登录时 `maxAge = undefined` → 落到这里的 `ttl`。
+     *
+     * 以前这里是 1 年，而 cookie 又是会话 cookie —— 用户关掉浏览器，cookie 没了，
+     * 服务端那个会话文件却还留着一年，纯粹是垃圾；反过来不关浏览器的用户，
+     * 服务端一年后也会把会话回收掉。现在统一按 180 天（和 WEB_SESSION_MAX_AGE_MS 一致），
+     * 让「cookie 寿命」和「服务端文件寿命」对得上。
+     */
+    const SESSION_TTL_SECONDS = 180 * 24 * 60 * 60; // 180 天
     const sessionMiddleware = session({
         store: new FileStore({
             path: sessionsPath,
-            ttl: 31536000, // 1 year
-            // logFn: console.log // 可选：启用详细日志
+            ttl: SESSION_TTL_SECONDS,
+            // 回收间隔默认 1 小时，按 ttl 同步放大到 1 天，减少无谓的目录扫描
+            reapInterval: 24 * 60 * 60,
         }),
         // 直接从 process.env 读取，initializeEnvironment 已确保其存在
         secret: process.env.SESSION_SECRET as string,
         resave: false,
         saveUninitialized: false,
+        /**
+         * rolling: true —— 每次请求都重新下发 cookie 并刷新过期时间。
+         *
+         * 没有它的话，maxAge 是从「登录那一刻」开始算的固定截止时间：
+         * 用户天天在用，第 180 天照样被踢出去重新登录。开启后只要还在活动，
+         * 过期时间就一路往后滚，真正体现「记住登录状态」。
+         */
+        rolling: true,
+        /**
+         * unset: 'destroy' —— 登出必须真的把会话从 store 里删掉。
+         *
+         * express-session 默认 `unset: 'keep'`，于是 `shouldDestroy()` **恒为 false**
+         * （它要求 `opts.unset === 'destroy'`）。控制器里 `req.session.destroy()` 确实
+         * 删了会话文件，但紧接着 express-session 在响应收尾时又走到
+         * `shouldTouch()` → `store.touch()`，而 session-file-store **实现了 touch**
+         * （touch = 读出来再写回去），于是刚删掉的会话文件被原样写了回来。
+         *
+         * 后果不是"偶尔多留一个文件"，而是**登出形同虚设**：cookie 虽然被清了，
+         * 但只要旧 cookie 还在（另一个标签页、被复制、浏览器没清干净），
+         * 带着它请求依然 200，用户会以为"退了但没退干净"。
+         *
+         * 已用 scripts/verify-web-session.cjs 复现并锁死这个行为。
+         */
+        unset: 'destroy',
         proxy: true, // 信任反向代理设置的 X-Forwarded-Proto 头
         cookie: {
             httpOnly: true,
-        }
+            // 同一站点（含反代下的 https）下才发送；不使用 SameSite=None 以保持 http 直连部署可用
+            sameSite: 'lax',
+            // 不写 secure：部署方式可能是 http 直连（如 http://ip:18111），
+            // 写了 secure 浏览器会直接丢弃 cookie，反而变成"永远登录不上"。
+            path: '/',
+        },
     });
     app.use(sessionMiddleware);
     // --- 结束会话中间件配置 ---
