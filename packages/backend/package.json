@@ -1,6 +1,6 @@
 {
    "name": "@nexus-terminal/backend",
-   "version": "0.9.19",
+   "version": "0.9.20",
    "private": true,
    "main": "dist/index.js",
    "scripts": {
