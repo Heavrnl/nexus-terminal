@@ -8,6 +8,7 @@ import MobileSingleEditorPane from './MobileSingleEditorPane.vue';
 import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import type { FileTab } from '../stores/fileEditor.store';
+import { useSessionStore } from '../stores/session.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
 import { isImageFilePath } from '../constants/fileTypes';
@@ -72,11 +73,22 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const sessionStore = useSessionStore();
 
 // 活动标签
 const activeTab = computed((): FileTab | null => {
   if (!props.activeTabId) return null;
   return props.tabs.find(tab => tab.id === props.activeTabId) ?? null;
+});
+
+// 当前活动标签所属会话的显示名称（避免切换终端会话时误显示新会话的主机名）
+const activeTabSessionName = computed(() => {
+  const tab = activeTab.value;
+  if (tab?.sessionId) {
+    const liveName = sessionStore.sessions.get(tab.sessionId)?.connectionName;
+    if (liveName) return liveName;
+  }
+  return tab?.sessionName || props.sessionName || null;
 });
 
 // 读取进度百分比（只在大文件读取时出现，total 未知则不显示）
@@ -303,7 +315,7 @@ defineExpose({
     <div v-if="activeTab" class="editor-header">
       <div class="file-info-title">
         <span class="file-path-text" :title="activeTab.filePath">
-          {{ t('fileManager.editingFile') }}<template v-if="props.sessionName">({{ props.sessionName }})</template>: {{ activeTab.filePath }}
+          {{ t('fileManager.editingFile') }}<template v-if="activeTabSessionName">({{ activeTabSessionName }})</template>: {{ activeTab.filePath }}
         </span>
         <span v-if="activeTab.isModified" class="modified-indicator">*</span>
       </div>

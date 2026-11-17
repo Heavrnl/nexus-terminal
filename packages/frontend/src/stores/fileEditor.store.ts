@@ -18,6 +18,7 @@ export interface FileInfo {
 export interface FileTab {
     id: string;
     sessionId: string;
+    sessionName?: string; // 所属会话的显示名称（用于标题展示与会话关闭后兜底）
     filePath: string;
     filename: string;
     content: string; // 当前解码后的内容 (前端解码)
@@ -195,6 +196,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
         const newTab: FileTab = {
             id: tabId,
             sessionId: sessionId,
+            sessionName: sessionStore.sessions.get(sessionId)?.connectionName,
             filePath: targetFilePath,
             filename: getFilenameFromPath(targetFilePath),
             content: '', // 将在加载后由前端解码填充
@@ -685,6 +687,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
         const newTab: FileTab = {
             id: tabId,
             sessionId: tabSnapshot.sessionId,
+            sessionName: sessionStore.sessions.get(tabSnapshot.sessionId)?.connectionName,
             filePath: tabSnapshot.filePath,
             filename: tabSnapshot.filename || getFilenameFromPath(tabSnapshot.filePath),
             content: tabSnapshot.content ?? '',
