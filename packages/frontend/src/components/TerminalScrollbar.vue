@@ -85,6 +85,13 @@ const beginDrag = (clientY: number) => {
 
 const handleTouchStart = (event: TouchEvent) => {
   if (event.touches.length > 0) {
+    // 移动端拖动滚动条时，若终端隐藏 textarea 仍处于聚焦状态（例如用户按返回键收起了输入法但焦点未失），
+    // 主动将其 blur，防止 Android 浏览器/WebView 在触摸交互结束时自动重新拉起软键盘。
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl && activeEl.classList.contains('xterm-helper-textarea')) {
+      activeEl.blur();
+    }
+
     isDragging.value = true;
     beginDrag(event.touches[0].clientY);
   }
