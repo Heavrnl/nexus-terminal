@@ -11,8 +11,48 @@ import type { QuickCommandFE } from '../../stores/quickCommands.store';
  * 2. 算出来的 `undefinedVariables` 从来没被读过（死代码），已删除。
  */
 
+/** 在 variables 对象中存放“已标记为非变量（原样发送）”列表的保留键 */
+export const IGNORED_VARS_KEY = '__nexus_ignored_vars__';
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 从 variables 对象中解析出已标记为“非变量”的占位符名称列表 */
+export function getIgnoredVariableNames(
+  savedVariables: Record<string, string> | null | undefined
+): string[] {
+  const raw = savedVariables?.[IGNORED_VARS_KEY];
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.length > 0 && !seen.has(item)) {
+        seen.add(item);
+        result.push(item);
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/** 将指定占位符名称加入 variables 的忽略列表，返回新对象 */
+export function withIgnoredVariable(
+  savedVariables: Record<string, string> | null | undefined,
+  name: string
+): Record<string, string> {
+  const next: Record<string, string> = { ...(savedVariables || {}) };
+  const current = getIgnoredVariableNames(next);
+  if (!current.includes(name)) {
+    current.push(name);
+  }
+  next[IGNORED_VARS_KEY] = JSON.stringify(current);
+  return next;
 }
 
 /**
@@ -29,6 +69,7 @@ export function resolveCommandVariables(
   const vars = savedVariables || {};
   let result = template;
   for (const varName of Object.keys(vars)) {
+    if (varName === IGNORED_VARS_KEY) continue;
     const value = vars[varName];
     if (value === undefined || value === null) continue;
     const placeholder = new RegExp(`\\$\\{${escapeRegExp(varName)}\\}`, 'g');
@@ -65,7 +106,9 @@ export function getMissingVariableNames(
   savedVariables: Record<string, string> | null | undefined
 ): string[] {
   const vars = savedVariables || {};
+  const ignoredSet = new Set(getIgnoredVariableNames(vars));
   return extractVariableNames(template).filter((name) => {
+    if (ignoredSet.has(name)) return false;
     if (!Object.prototype.hasOwnProperty.call(vars, name)) return true;
     const value = vars[name];
     return typeof value !== 'string' || value.trim() === '';

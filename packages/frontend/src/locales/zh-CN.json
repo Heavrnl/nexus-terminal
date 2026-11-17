@@ -1933,7 +1933,7 @@
       "noVariables": "暂无变量。点击下方按钮添加。",
       "variableNamePlaceholder": "变量名",
       "variableValuePlaceholder": "变量值",
-      "addVariable": "+ 添加变量",
+      "addVariable": "添加变量",
       "execute": "执行",
       "warningUndefinedVariables": "警告：指令模板中存在未定义的变量: {variables}",
       "errorNoActiveSession": "没有活动的SSH会话可执行指令。",

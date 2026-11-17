@@ -1027,7 +1027,7 @@
       "noVariables": "変数はまだありません。下のボタンをクリックして追加してください。",
       "variableNamePlaceholder": "変数名",
       "variableValuePlaceholder": "変数値",
-      "addVariable": "+ 変数を追加",
+      "addVariable": "変数を追加",
       "execute": "実行",
       "warningUndefinedVariables": "警告：コマンドテンプレートに未定義の変数があります: {variables}",
       "errorNoActiveSession": "コマンドを実行するためのアクティブなSSHセッションがありません。",

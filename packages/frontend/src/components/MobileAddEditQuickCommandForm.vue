@@ -35,6 +35,8 @@ const {
   isEditing,
   formData,
   localVariables,
+  ignoredVariables,
+  detectedUnignoredPlaceholders,
   commandError,
   selectedFolderId,
   toggleCustomColor,
@@ -46,6 +48,8 @@ const {
   closeForm,
   addVariable,
   deleteVariable,
+  ignoreVariablePlaceholder,
+  unignoreVariablePlaceholder,
   handleExecute,
 } = useQuickCommandForm(props, emit);
 
@@ -264,6 +268,53 @@ onMounted(() => {
                     rows="2"
                     class="w-full px-2.5 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-xs font-mono shadow-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
                   ></textarea>
+                </div>
+              </div>
+
+              <!-- 忽略的非变量占位符设置 -->
+              <div
+                v-if="detectedUnignoredPlaceholders.length > 0 || ignoredVariables.length > 0"
+                class="mt-3 pt-2.5 border-t border-border/40 space-y-2"
+              >
+                <div v-if="detectedUnignoredPlaceholders.length > 0" class="space-y-1">
+                  <span class="block text-[11px] font-medium text-text-secondary">
+                    {{ t('quickCommands.form.detectedPlaceholders', '未定义占位符（点击设为非变量）') }}
+                  </span>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button
+                      v-for="name in detectedUnignoredPlaceholders"
+                      :key="`m-detect-${name}`"
+                      type="button"
+                      @click="ignoreVariablePlaceholder(name)"
+                      class="px-2 py-1 text-[11px] font-mono rounded-lg border border-border/60 bg-input/40 text-text-secondary active:scale-95 transition-all inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{{ '${' + name + '}' }}</span>
+                      <span class="text-[10px] text-primary">{{ t('quickCommands.form.markAsNotVar', '忽略') }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="ignoredVariables.length > 0" class="space-y-1">
+                  <span class="block text-[11px] font-medium text-text-secondary">
+                    {{ t('quickCommands.form.ignoredVariablesTitle', '已忽略（按原样发送，不弹窗）') }}
+                  </span>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="name in ignoredVariables"
+                      :key="`m-ignored-${name}`"
+                      class="inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-mono rounded-lg border border-border/60 bg-header/40 text-text-secondary"
+                    >
+                      <span>{{ '${' + name + '}' }}</span>
+                      <button
+                        type="button"
+                        @click="unignoreVariablePlaceholder(name)"
+                        class="text-text-tertiary hover:text-error transition-colors cursor-pointer leading-none"
+                        :title="t('quickCommands.form.restoreVariable', '取消忽略')"
+                      >
+                        <i class="fas fa-times text-[10px]"></i>
+                      </button>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

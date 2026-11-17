@@ -1934,7 +1934,7 @@
       "noVariables": "No variables yet. Click the button below to add one.",
       "variableNamePlaceholder": "Variable Name",
       "variableValuePlaceholder": "Variable Value",
-      "addVariable": "+ Add Variable",
+      "addVariable": "Add Variable",
       "execute": "Execute",
       "warningUndefinedVariables": "Warning: Undefined variables in command template: {variables}",
       "errorNoActiveSession": "No active SSH session to execute the command.",

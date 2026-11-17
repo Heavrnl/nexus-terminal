@@ -8,7 +8,12 @@ import { useWorkspaceEventEmitter } from '../workspaceEvents';
 import { useConfirmDialog } from '../useConfirmDialog';
 import { useAlertDialog } from '../useAlertDialog';
 import { generateRandomColor } from '../../utils/colorUtils';
-import { extractVariableNames, resolveCommandVariables } from './useQuickCommandExecution';
+import {
+  extractVariableNames,
+  getIgnoredVariableNames,
+  IGNORED_VARS_KEY,
+  resolveCommandVariables,
+} from './useQuickCommandExecution';
 
 /**
  * 「新增/编辑快捷指令」表单的逻辑（桌面 / 移动共 247 行逐字相同）。
@@ -58,6 +63,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
   });
 
   const localVariables = ref<LocalVariable[]>([]);
+  const ignoredVariables = ref<string[]>([]);
   const commandError = ref<string | null>(null);
 
   const toggleCustomColor = () => {
@@ -103,13 +109,16 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
         formData.background_color = '#3b82f6';
       }
       if (props.commandToEdit.variables) {
-        localVariables.value = Object.entries(props.commandToEdit.variables).map(
-          ([name, value]) => ({ name, value: String(value ?? ''), id: newVariableId() })
-        );
+        ignoredVariables.value = getIgnoredVariableNames(props.commandToEdit.variables);
+        localVariables.value = Object.entries(props.commandToEdit.variables)
+          .filter(([name]) => name !== IGNORED_VARS_KEY)
+          .map(([name, value]) => ({ name, value: String(value ?? ''), id: newVariableId() }));
       } else {
+        ignoredVariables.value = [];
         localVariables.value = [];
       }
     } else {
+      ignoredVariables.value = [];
       if (props.initialCommand) {
         formData.command = props.initialCommand;
       }
@@ -150,17 +159,23 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     }
   };
 
-  const collectVariables = (): Record<string, string> =>
-    localVariables.value.reduce(
-      (acc, curr) => {
-        // 只保留填了名字的行
-        if (curr.name.trim()) {
-          acc[curr.name.trim()] = curr.value;
+  const collectVariables = (): Record<string, string> => {
+    const acc = localVariables.value.reduce(
+      (map, curr) => {
+        // 只保留填了名字的行（且跳过内部保留键）
+        const trimmedName = curr.name.trim();
+        if (trimmedName && trimmedName !== IGNORED_VARS_KEY) {
+          map[trimmedName] = curr.value;
         }
-        return acc;
+        return map;
       },
       {} as Record<string, string>
     );
+    if (ignoredVariables.value.length > 0) {
+      acc[IGNORED_VARS_KEY] = JSON.stringify(ignoredVariables.value);
+    }
+    return acc;
+  };
 
   const handleSubmit = async () => {
     if (commandError.value) return;
@@ -215,14 +230,36 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     localVariables.value = localVariables.value.filter((v) => v.id !== variableId);
   };
 
+  /** 从指令内容中检测到的、尚未定义也尚未标记忽略的 `${...}` 占位符 */
+  const detectedUnignoredPlaceholders = computed(() => {
+    const definedNames = new Set(
+      localVariables.value.map((v) => v.name.trim()).filter((n) => n.length > 0)
+    );
+    const ignoredSet = new Set(ignoredVariables.value);
+    return extractVariableNames(formData.command).filter(
+      (name) => !definedNames.has(name) && !ignoredSet.has(name)
+    );
+  });
+
+  const ignoreVariablePlaceholder = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || ignoredVariables.value.includes(trimmed)) return;
+    ignoredVariables.value = [...ignoredVariables.value, trimmed];
+  };
+
+  const unignoreVariablePlaceholder = (name: string) => {
+    ignoredVariables.value = ignoredVariables.value.filter((item) => item !== name);
+  };
+
   /** 不保存直接执行（用弹窗里当前填的变量） */
   const handleExecute = () => {
     const currentVariables = collectVariables();
     const processedCommand = resolveCommandVariables(formData.command, currentVariables);
 
-    // 提示还没填值的占位符（保留原样，不静默清空）
+    // 提示还没填值的占位符（已忽略的非变量除外，保留原样不静默清空）
+    const ignoredSet = new Set(ignoredVariables.value);
     const missing = extractVariableNames(formData.command).filter(
-      (name) => !Object.prototype.hasOwnProperty.call(currentVariables, name)
+      (name) => !ignoredSet.has(name) && !Object.prototype.hasOwnProperty.call(currentVariables, name)
     );
     if (missing.length > 0) {
       uiNotificationsStore.showWarning(
@@ -251,6 +288,8 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     isEditing,
     formData,
     localVariables,
+    ignoredVariables,
+    detectedUnignoredPlaceholders,
     commandError,
     selectedFolderId,
     toggleCustomColor,
@@ -262,6 +301,8 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     closeForm,
     addVariable,
     deleteVariable,
+    ignoreVariablePlaceholder,
+    unignoreVariablePlaceholder,
     handleExecute,
   };
 }

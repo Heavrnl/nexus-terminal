@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import {
   cancelQuickCommandVariablePrompt,
+  ignoreQuickCommandVariable,
   quickCommandVariablePromptState,
   submitQuickCommandVariables,
 } from '../composables/quickCommands/useQuickCommandVariablePrompt';
@@ -62,6 +63,10 @@ const submit = () => {
 };
 
 const cancel = () => cancelQuickCommandVariablePrompt();
+
+const markAsNotVariable = (name: string) => {
+  void ignoreQuickCommandVariable(name, draft.value);
+};
 
 /** 模板里 ${name} 这种写法不方便直接写在模板里，统一由它产出 */
 const varToken = (name: string) => '${' + name + '}';
@@ -158,9 +163,19 @@ const previewHtml = computed(() => {
           <!-- 变量输入区（可滚动，变量多时也不会把按钮顶出屏幕） -->
           <div class="px-5 pb-2 overflow-y-auto flex-1 min-h-0 flex flex-col gap-3">
             <div v-for="(name, index) in missing" :key="name" class="flex flex-col gap-1">
-              <label :for="`qc-var-${index}`" class="text-[11px] font-semibold text-text-secondary tracking-wide">
-                <code class="px-1.5 py-0.5 rounded bg-muted/60 text-primary font-mono">{{ varToken(name) }}</code>
-              </label>
+              <div class="flex items-center justify-between gap-2">
+                <label :for="`qc-var-${index}`" class="text-[11px] font-semibold text-text-secondary tracking-wide">
+                  <code class="px-1.5 py-0.5 rounded bg-muted/60 text-primary font-mono">{{ varToken(name) }}</code>
+                </label>
+                <button
+                  type="button"
+                  class="px-2 py-0.5 rounded-md text-[11px] text-text-secondary hover:text-foreground hover:bg-muted/60 border border-border/50 transition-colors cursor-pointer shrink-0"
+                  :title="t('quickCommands.variablePrompt.notVariableHint', '按字面量原样发送，下次不再提示填写')"
+                  @click="markAsNotVariable(name)"
+                >
+                  {{ t('quickCommands.variablePrompt.notVariable', '这不是变量') }}
+                </button>
+              </div>
               <input
                 :id="`qc-var-${index}`"
                 :ref="(el) => (inputRefs[name] = el as HTMLInputElement | null)"

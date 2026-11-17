@@ -1,6 +1,6 @@
 import { ref } from 'vue';
-import type { QuickCommandFE } from '../../stores/quickCommands.store';
-import { getMissingVariableNames } from './useQuickCommandExecution';
+import { useQuickCommandsStore, type QuickCommandFE } from '../../stores/quickCommands.store';
+import { getMissingVariableNames, withIgnoredVariable } from './useQuickCommandExecution';
 
 /**
  * 快捷指令「变量补填」弹窗的全局单例状态。
@@ -12,6 +12,8 @@ import { getMissingVariableNames } from './useQuickCommandExecution';
  */
 
 export interface QuickCommandVariablePromptState {
+  /** 原快捷指令对象（用于“这不是变量”时持久化更新忽略列表） */
+  command: QuickCommandFE;
   /** 指令名（可能为空，用于标题） */
   commandName: string;
   /** 原始模板，用于预览 */
@@ -51,12 +53,52 @@ export function promptQuickCommandVariables(cmd: QuickCommandFE): Promise<Record
   return new Promise((resolve) => {
     pendingResolver = resolve;
     quickCommandVariablePromptState.value = {
+      command: cmd,
       commandName: cmd.name || '',
       template: cmd.command || '',
       missing,
       values: { ...values },
     };
   });
+}
+
+/** 将指定占位符标记为“这不是变量”（持久化到快捷指令，不再弹窗询问） */
+export async function ignoreQuickCommandVariable(name: string, currentDraft: Record<string, string> = {}) {
+  const state = quickCommandVariablePromptState.value;
+  if (!state) return;
+
+  const nextValues = withIgnoredVariable(state.values, name);
+  const nextMissing = state.missing.filter((item) => item !== name);
+  const cmd = state.command;
+
+  // 持久化保存忽略配置，确保下次执行不再弹窗
+  if (cmd.id > 0) {
+    try {
+      const quickCommandsStore = useQuickCommandsStore();
+      await quickCommandsStore.updateQuickCommand(
+        cmd.id,
+        cmd.name,
+        cmd.command,
+        cmd.folderIds,
+        nextValues,
+        cmd.background_color
+      );
+    } catch (err) {
+      console.error('[QuickCommandVariablePrompt] 保存非变量标记失败:', err);
+    }
+  }
+
+  // 若已没有需要填写的剩余变量，直接关闭弹窗并发送指令
+  if (nextMissing.length === 0) {
+    settle(nextValues);
+    return;
+  }
+
+  quickCommandVariablePromptState.value = {
+    ...state,
+    missing: nextMissing,
+    values: { ...nextValues, ...currentDraft },
+  };
 }
 
 /** 弹窗点「发送」 */
