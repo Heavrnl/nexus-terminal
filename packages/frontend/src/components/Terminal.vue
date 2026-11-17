@@ -1231,7 +1231,12 @@ watch(() => terminalManagerInstance.value?.terminalPanes?.value?.get(props.paneI
 });
 
 // 用户主动点击终端画面时通知布局管理器更新活动窗格并聚焦
-const handleTerminalClick = () => {
+const handleTerminalClick = (event?: MouseEvent) => {
+  // 拖动或点击右侧滚动条时不重新聚焦终端，避免移动端收起输入法后误触发拉起软键盘
+  const target = event?.target as HTMLElement | null;
+  if (target?.closest('.terminal-scrollbar-track')) {
+    return;
+  }
   emit('focus');
   if (terminal) {
     terminal.focus();

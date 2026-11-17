@@ -134,6 +134,10 @@ const handleMouseDown = (event: MouseEvent) => {
     @touchend.stop.prevent="handleTouchEnd"
     @touchcancel.stop.prevent="handleTouchEnd"
     @mousedown.stop.prevent="handleMouseDown"
+    @mouseup.stop
+    @pointerdown.stop
+    @pointerup.stop
+    @click.stop.prevent
   >
     <!--
       搜索命中标记：画在滚动条轨道上，让"哪些位置有命中"一眼可见。
