@@ -857,7 +857,20 @@
     "title": "ユーザーログイン",
     "twoFactorPrompt": "2段階認証コードを入力してください:",
     "username": "ユーザー名",
-    "verifyButton": "検証"
+    "verifyButton": "検証",
+    "oidcOr": "または",
+    "oidcLoginWith": "{name} でログイン",
+    "oidcError": {
+      "stateMismatch": "ログインセッションを検証できませんでした（state の不一致）。もう一度ログインしてください。",
+      "tokenExchangeFailed": "ID プロバイダーとのトークン交換に失敗しました。しばらくしてから再試行してください。",
+      "invalidIdToken": "ID プロバイダーが返した ID トークンが無効です。",
+      "providerNotFound": "そのシングルサインオンプロバイダーは存在しません。",
+      "providerDisabled": "そのシングルサインオンプロバイダーは無効化されています。",
+      "notLinked": "そのシングルサインオンアカウントはどのローカルユーザーにも連携されていません。",
+      "conflict": "そのシングルサインオンアカウントは既に別のユーザーに連携されています。",
+      "serverError": "サーバー内部エラーです。しばらくしてから再試行してください。",
+      "unknown": "シングルサインオンに失敗しました。再試行するか、パスワードでログインしてください。"
+    }
   },
   "nav": {
     "auditLogs": "監査ログ",
@@ -1197,6 +1210,56 @@
         "saved": "CAPTCHA 設定を保存しました。"
       },
       "title": "CAPTCHA 設定"
+    },
+    "oidc": {
+      "title": "シングルサインオン (OIDC)",
+      "description": "OpenID Connect プロバイダーを設定し、外部 ID でのログインや既存アカウントとの連携を可能にします。",
+      "providersTitle": "ID プロバイダー",
+      "addProvider": "プロバイダーを追加",
+      "noProviders": "ID プロバイダーがまだ設定されていません。",
+      "newProviderBadge": "新規（未保存）",
+      "nameLabel": "表示名",
+      "issuerUrlLabel": "Issuer URL",
+      "clientIdLabel": "Client ID",
+      "clientSecretLabel": "Client Secret",
+      "clientSecretConfigured": "シークレット設定済み",
+      "clientSecretNotConfigured": "シークレット未設定",
+      "clientSecretHint": "空欄のままにすると既存のシークレットを保持します。",
+      "scopesLabel": "Scopes",
+      "iconUrlLabel": "アイコン URL",
+      "iconUrlPlaceholder": "任意。ログインボタンに表示されます",
+      "allowedEmailDomainsLabel": "許可するメールドメイン",
+      "allowedEmailDomainsPlaceholder": "任意。カンマ区切り 例: example.com,corp.example.com",
+      "enabledLabel": "有効",
+      "autoCreateUserLabel": "ユーザーを自動作成",
+      "saveButton": "OIDC 設定を保存",
+      "linksTitle": "連携済みアカウント",
+      "linksDescription": "これらの外部 ID はあなたのローカルアカウントに連携されています。",
+      "noLinks": "連携済みの外部アカウントはありません。",
+      "boundAt": "連携日時",
+      "lastLoginAt": "最終ログイン",
+      "unlinkButton": "連携解除",
+      "bindNewLabel": "新しいアカウントを連携:",
+      "bindButton": "{name} を連携",
+      "bindNeedsProvider": "アカウントを連携する前に、ID プロバイダーを少なくとも 1 つ保存してください。",
+      "never": "なし",
+      "notice": {
+        "bound": "アカウントの連携に成功しました。",
+        "conflict": "その外部アカウントは既に別のユーザーに連携されています。"
+      },
+      "success": {
+        "saved": "OIDC 設定を保存しました。",
+        "unlinked": "連携を解除しました。"
+      },
+      "error": {
+        "loadFailed": "OIDC 設定の読み込みに失敗しました。",
+        "saveFailed": "OIDC 設定の保存に失敗しました。",
+        "unlinkFailed": "連携の解除に失敗しました。",
+        "nameRequired": "表示名を入力してください。",
+        "issuerRequired": "Issuer URL を入力してください。",
+        "clientIdRequired": "Client ID を入力してください。",
+        "clientSecretRequired": "新規プロバイダーには Client Secret が必要です。"
+      }
     },
     "category": {
       "appearance": "外観設定",

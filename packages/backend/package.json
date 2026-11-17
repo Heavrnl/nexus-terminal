@@ -9,7 +9,7 @@
       "start": "node dist/index.js",
       "dev": "cross-env NODE_ENV=development npx ts-node-dev --respawn --transpile-only src/index.ts",
       "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+      "test": "node --experimental-strip-types --test tests/*.test.ts"
    },
    "dependencies": {
       "@simplewebauthn/server": "^13.3.3",
@@ -34,6 +34,7 @@
       "jschardet": "^3.1.4",
       "multer": "^2.5.0",
       "nodemailer": "^10.3.1",
+      "openid-client": "^6.8.9",
       "qrcode": "^1.5.4",
       "sanitize-filename": "^1.6.4",
       "session-file-store": "^1.5.0",

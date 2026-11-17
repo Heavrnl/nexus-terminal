@@ -40,6 +40,13 @@ interface LoginPayload {
     rememberMe?: boolean; // 可选的“记住我”标志
 }
 
+// OIDC 登录页用的最小 provider 信息（契约 §1.1 / §2 第 1 条）
+export interface OidcProviderSummary {
+    id: string;
+    name: string;
+    iconUrl: string;
+}
+
 // Public CAPTCHA Config Interface (mirrors backend public config)
 interface PublicCaptchaConfig {
     enabled: boolean;
@@ -76,6 +83,7 @@ interface AuthState {
     passkeys: PasskeyInfo[] | null; 
     passkeysLoading: boolean; 
     hasPasskeysAvailable: boolean; 
+    oidcProviders: OidcProviderSummary[]; // 登录页可用的 OIDC 提供商（仅 enabled）
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -91,6 +99,7 @@ export const useAuthStore = defineStore('auth', {
         passkeys: null, // Initialize passkeys as null
         passkeysLoading: false, // Initialize passkeysLoading as false
         hasPasskeysAvailable: false, // Initialize as false
+        oidcProviders: [], // Initialize OIDC providers as empty
     }),
     getters: {
         // 可以添加一些 getter，例如获取用户名
@@ -569,6 +578,34 @@ export const useAuthStore = defineStore('auth', {
                 this.hasPasskeysAvailable = false; // Default to false on error
                 return false;
             }
+        },
+
+        // --- OIDC Actions ---
+        /**
+         * 拉取登录页可用的 OIDC 提供商（公开接口，仅返回 enabled 的）。
+         * 兼容两种响应信封：裸数组 或 { providers: [...] }。
+         */
+        async fetchOidcProviders() {
+            // 这是登录页的后台快速拉取，不设置 isLoading，避免影响登录按钮状态
+            try {
+                const response = await apiClient.get<OidcProviderSummary[] | { providers: OidcProviderSummary[] }>('/auth/oidc/providers');
+                const data: any = response.data;
+                const list: OidcProviderSummary[] = Array.isArray(data) ? data : (data?.providers ?? []);
+                this.oidcProviders = Array.isArray(list) ? list : [];
+                console.log('[AuthStore] OIDC providers fetched:', this.oidcProviders);
+                return this.oidcProviders;
+            } catch (error: any) {
+                console.error('Failed to fetch OIDC providers:', error.response?.data?.message || error.message);
+                this.oidcProviders = []; // Default to empty on error (登录页不显示 OIDC 按钮)
+                return this.oidcProviders;
+            }
+        },
+
+        /**
+         * 发起 OIDC 登录：整页跳转到后端 authorize 端点（契约 §5，非 fetch）。
+         */
+        startOidcLogin(providerId: string) {
+            window.location.href = `/api/v1/auth/oidc/providers/${encodeURIComponent(providerId)}/authorize?mode=login`;
         },
     },
     persist: true, // Revert to simple persistence to fix TS error for now

@@ -276,7 +276,20 @@
       "passkeyAuthOptionsFailed": "从服务器获取 Passkey 认证选项失败。",
       "passkeyAuthFailed": "Passkey 认证失败。请重试或使用密码登录。"
     },
-    "recaptchaV3Notice": "此网站受 reCAPTCHA 保护，并适用 Google 隐私政策和服务条款。"
+    "recaptchaV3Notice": "此网站受 reCAPTCHA 保护，并适用 Google 隐私政策和服务条款。",
+    "oidcOr": "或",
+    "oidcLoginWith": "使用 {name} 登录",
+    "oidcError": {
+      "stateMismatch": "登录会话校验失败（state 不匹配），请重新发起登录。",
+      "tokenExchangeFailed": "与身份提供商交换令牌失败，请稍后重试。",
+      "invalidIdToken": "身份提供商返回的 ID Token 无效。",
+      "providerNotFound": "该单点登录提供商不存在。",
+      "providerDisabled": "该单点登录提供商已被停用。",
+      "notLinked": "该单点登录账号尚未绑定到任何本地用户。",
+      "conflict": "该单点登录账号已绑定到其他用户。",
+      "serverError": "服务器内部错误，请稍后重试。",
+      "unknown": "单点登录失败，请重试或使用密码登录。"
+    }
   },
   "connections": {
     "script": {
@@ -1352,6 +1365,56 @@
         "hcaptchaKeysRequired": "hCaptcha Site Key 和 Secret Key 是必填项，以便进行验证。",
         "recaptchaKeysRequired": "reCAPTCHA Site Key 和 Secret Key 是必填项，以便进行验证。",
         "verificationFailed": "CAPTCHA 凭据验证失败。请检查您输入的 Site Key 和 Secret Key 是否正确。"
+      }
+    },
+    "oidc": {
+      "title": "单点登录 (OIDC)",
+      "description": "配置 OpenID Connect 身份提供商，允许用户通过外部身份源登录，或将已有账号与其绑定。",
+      "providersTitle": "身份提供商",
+      "addProvider": "添加提供商",
+      "noProviders": "尚未配置任何身份提供商。",
+      "newProviderBadge": "新增（尚未保存）",
+      "nameLabel": "显示名称",
+      "issuerUrlLabel": "Issuer URL",
+      "clientIdLabel": "Client ID",
+      "clientSecretLabel": "Client Secret",
+      "clientSecretConfigured": "已配置密钥",
+      "clientSecretNotConfigured": "未配置密钥",
+      "clientSecretHint": "留空表示保持原密钥不变。",
+      "scopesLabel": "Scopes",
+      "iconUrlLabel": "图标 URL",
+      "iconUrlPlaceholder": "可选，登录页按钮图标",
+      "allowedEmailDomainsLabel": "允许的邮箱域名",
+      "allowedEmailDomainsPlaceholder": "可选，逗号分隔，如 example.com,corp.example.com",
+      "enabledLabel": "启用",
+      "autoCreateUserLabel": "自动创建用户",
+      "saveButton": "保存 OIDC 设置",
+      "linksTitle": "已绑定的账号",
+      "linksDescription": "这些外部身份已与你的本地账号绑定。",
+      "noLinks": "尚未绑定任何外部账号。",
+      "boundAt": "绑定于",
+      "lastLoginAt": "上次登录",
+      "unlinkButton": "解绑",
+      "bindNewLabel": "绑定新的账号：",
+      "bindButton": "绑定 {name}",
+      "bindNeedsProvider": "请先保存至少一个身份提供商，然后才能绑定账号。",
+      "never": "从未",
+      "notice": {
+        "bound": "账号绑定成功。",
+        "conflict": "该外部账号已绑定到其他用户，无法绑定。"
+      },
+      "success": {
+        "saved": "OIDC 设置已保存。",
+        "unlinked": "已解除绑定。"
+      },
+      "error": {
+        "loadFailed": "加载 OIDC 设置失败。",
+        "saveFailed": "保存 OIDC 设置失败。",
+        "unlinkFailed": "解除绑定失败。",
+        "nameRequired": "请填写显示名称。",
+        "issuerRequired": "请填写 Issuer URL。",
+        "clientIdRequired": "请填写 Client ID。",
+        "clientSecretRequired": "新建提供商时必须填写 Client Secret。"
       }
     },
     "commandInputSync": {

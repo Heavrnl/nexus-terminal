@@ -25,6 +25,7 @@ import {
 } from './auth.controller';
 import { isAuthenticated } from './auth.middleware';
 import { ipBlacklistCheckMiddleware } from './ipBlacklistCheck.middleware';
+import oidcRouter from '../oidc/oidc.routes';
 
 const router = Router();
 
@@ -93,6 +94,10 @@ router.delete('/user/passkeys/:credentialID', isAuthenticated, deleteUserPasskey
 router.put('/user/passkeys/:credentialID/name', isAuthenticated, updateUserPasskeyNameHandler);
  
  
+// --- OIDC Routes ---
+// 挂载到 /api/v1/auth/oidc，公开/受保护边界由 oidc.routes.ts 内部控制（见契约 §2）
+router.use('/oidc', oidcRouter);
+
 // POST /api/v1/auth/logout - 用户登出接口 (公开访问)
 router.post('/logout', logout);
 

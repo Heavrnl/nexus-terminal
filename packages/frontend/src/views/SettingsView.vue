@@ -36,6 +36,8 @@
               <TwoFactorAuthSettings />
               <hr class="border-border/50">
               <CaptchaSettingsForm />
+              <hr class="border-border/50">
+              <OidcSettingsForm />
             </div>
           </div>
           <div v-else class="p-4 text-center text-muted-foreground">{{ $t('settings.loading', '加载中...') }}</div>
@@ -88,6 +90,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'; 
+import { useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useAppearanceStore } from '../stores/appearance.store'; 
@@ -98,6 +101,8 @@ import ChangePasswordForm from '../components/settings/ChangePasswordForm.vue';
 import PasskeyManagement from '../components/settings/PasskeyManagement.vue';
 import TwoFactorAuthSettings from '../components/settings/TwoFactorAuthSettings.vue';
 import CaptchaSettingsForm from '../components/settings/CaptchaSettingsForm.vue';
+import OidcSettingsForm from '../components/settings/OidcSettingsForm.vue';
+import { useOidcNotice } from '../composables/useOidcNotice';
 import IpWhitelistSettings from '../components/settings/IpWhitelistSettings.vue';
 import IpBlacklistSettings from '../components/settings/IpBlacklistSettings.vue';
 import AboutSection from '../components/settings/AboutSection.vue';
@@ -127,6 +132,15 @@ const tabs = ref([
   { key: 'about', label: t('settings.tabs.about', '关于') },
 ]);
 const activeTab = ref(tabs.value[0].key);
+
+// OIDC 绑定回调落点：/settings?tab=security&oidc=bound|conflict（契约 §3.1）
+// 先把 tab 切到 security（该 query 目前无人处理），再挂通用 notice 逻辑弹 toast 并清 query。
+const route = useRoute();
+const initialTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab;
+if (typeof initialTab === 'string' && tabs.value.some((tab) => tab.key === initialTab)) {
+  activeTab.value = initialTab;
+}
+useOidcNotice();
 
 // --- Reactive state from store ---
 // 使用 storeToRefs 获取响应式 getter，包括 language

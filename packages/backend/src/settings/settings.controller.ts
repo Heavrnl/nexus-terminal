@@ -13,6 +13,13 @@ import { isWritableSettingKey } from './settings.schema';
 const auditLogService = new AuditLogService();
 const notificationService = new NotificationService(); 
 
+/**
+ * OIDC 提供商列表在 settings 表里的键。
+ * 该键的值含加密后的 client_secret，只能经 /auth/oidc/settings 专用接口进出，
+ * 通用 GET /settings 必须剥掉、通用 PUT /settings 必须拒绝（见 settings.schema.data.json 的 writable:false）。
+ */
+const OIDC_PROVIDERS_KEY = 'oidcProviders';
+
 export const settingsController = {
 /**
    * 获取外观设置
@@ -56,6 +63,12 @@ export const settingsController = {
   async getAllSettings(req: Request, res: Response): Promise<void> {
     try {
       const settings = await settingsService.getAllSettings();
+      // oidcProviders 里存的是加密后的 client_secret 密文，属于服务端凭据，
+      // 不能经通用设置接口回传（前端拿到密文后会原样写回，也会把密文暴露给
+      // 任何能读设置的浏览器上下文）。它有自己的脱敏接口：
+      //   GET /api/v1/auth/oidc/settings  → clientSecret 被替换为 hasClientSecret
+      //   PUT /api/v1/auth/oidc/settings  → 唯一写入入口（schema 里已标 writable:false）
+      delete (settings as Record<string, unknown>)[OIDC_PROVIDERS_KEY];
       res.json(settings);
     } catch (error: any) {
       console.error('获取所有设置时出错:', error);

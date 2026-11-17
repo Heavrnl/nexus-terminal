@@ -59,6 +59,7 @@ export const SETTINGS_SCHEMA = {
   markdownDefaultViewModeMobile: { type: 'string', default: 'preview' },
   rememberLastRoute: { type: 'boolean' },
   componentInstanceStates: { type: 'json' },
+  oidcProviders: { type: 'json', writable: false },
 } as const satisfies Record<string, SettingSchemaEntry>;
 
 export type SettingKey = keyof typeof SETTINGS_SCHEMA;

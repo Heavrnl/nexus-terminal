@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSettingsStore } from '../stores/settings.store';
@@ -12,6 +12,7 @@ import ChangePasswordForm from '../components/settings/ChangePasswordForm.vue';
 import PasskeyManagement from '../components/settings/PasskeyManagement.vue';
 import TwoFactorAuthSettings from '../components/settings/TwoFactorAuthSettings.vue';
 import CaptchaSettingsForm from '../components/settings/CaptchaSettingsForm.vue';
+import OidcSettingsForm from '../components/settings/OidcSettingsForm.vue';
 import IpWhitelistSettings from '../components/settings/IpWhitelistSettings.vue';
 import IpBlacklistSettings from '../components/settings/IpBlacklistSettings.vue';
 import DataManagementSection from '../components/settings/DataManagementSection.vue';
@@ -40,6 +41,13 @@ const tabs = [
 ];
 
 const activeTab = ref<typeof tabs[number]['key']>('workspace');
+
+// OIDC 绑定回调落点带 ?tab=security（契约 §3.1）：移动端同样要切到安全分类
+const route = useRoute();
+const initialTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab;
+if (typeof initialTab === 'string' && tabs.some((tab) => tab.key === initialTab)) {
+  activeTab.value = initialTab as typeof tabs[number]['key'];
+}
 
 // 返回工作区
 const handleGoBack = () => {
@@ -138,6 +146,9 @@ onMounted(async () => {
             </div>
             <div class="bg-background border border-border/60 rounded-2xl p-4 shadow-2xs">
               <CaptchaSettingsForm />
+            </div>
+            <div class="bg-background border border-border/60 rounded-2xl p-4 shadow-2xs">
+              <OidcSettingsForm />
             </div>
           </div>
           <div v-else class="py-12 text-center text-xs text-text-secondary">{{ t('common.loading', '加载中...') }}</div>
