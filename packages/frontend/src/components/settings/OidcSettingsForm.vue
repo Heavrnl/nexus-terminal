@@ -132,7 +132,7 @@
           <div class="flex flex-wrap gap-2">
             <button v-for="provider in savedProviders" :key="provider.id" type="button"
                     @click="bindProvider(provider.id!)"
-                    class="px-3 py-1.5 bg-secondary text-black rounded-md text-xs font-medium hover:bg-secondary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition duration-150 ease-in-out">
+                    class="px-3 py-1.5 bg-button text-button-text rounded-md shadow-sm text-xs font-medium hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out">
               {{ $t('settings.oidc.bindButton', { name: provider.name }) }}
             </button>
           </div>

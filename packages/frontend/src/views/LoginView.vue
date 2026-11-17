@@ -270,7 +270,7 @@ const handlePasskeyLogin = async () => {
           <!-- Passkey Login Button -->
           <div v-if="hasPasskeysAvailable" class="mt-4 text-center">
            <button type="button" @click="handlePasskeyLogin" :disabled="isLoading"
-                   class="w-full py-3 px-4 bg-secondary text-black border-none rounded-lg text-base font-semibold cursor-pointer shadow-md transition-colors duration-200 ease-in-out hover:bg-secondary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-70 flex items-center justify-center">
+                   class="w-full py-3 px-4 bg-background text-foreground border border-border rounded-lg text-base font-semibold cursor-pointer shadow-sm transition-colors duration-200 ease-in-out hover:bg-header/40 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-70 flex items-center justify-center">
               <i class="fas fa-key mr-2"></i>
               <span>{{ isLoading ? t('login.loggingIn') : t('login.loginWithPasskey') }}</span>
            </button>
