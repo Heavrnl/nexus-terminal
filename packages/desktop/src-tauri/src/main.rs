@@ -104,9 +104,15 @@ fn get_saved_last_route(data_dir: &Path) -> String {
     "/workspace".to_string() // 桌面端默认直达工作区！
 }
 
-/// 保存当前窗口大小、坐标与最大化状态
+/// 保存当前窗口大小、坐标与最大化/全屏状态
 fn save_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
+    // 窗口已隐藏（如最小化到托盘后从托盘退出）或处于最小化状态时，保留隐藏/最小化前已记录的状态，避免被无效坐标或状态覆盖
+    if !window.is_visible().unwrap_or(true) || window.is_minimized().unwrap_or(false) {
+        return;
+    }
+
     let is_maximized = window.is_maximized().unwrap_or(false);
+    let is_fullscreen = window.is_fullscreen().unwrap_or(false);
     let scale_factor = window.scale_factor().unwrap_or(1.0);
     let size = window.inner_size().unwrap_or_default();
     let position = window.outer_position().unwrap_or_default();
@@ -126,8 +132,9 @@ fn save_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
 
     let mut ws = serde_json::Map::new();
     ws.insert("isMaximized".to_string(), serde_json::Value::Bool(is_maximized));
-    if !is_maximized {
-        // 未最大化时更新实际宽度、高度与屏幕坐标
+    ws.insert("isFullscreen".to_string(), serde_json::Value::Bool(is_fullscreen));
+    if !is_maximized && !is_fullscreen {
+        // 未最大化且未全屏时更新实际宽度、高度与屏幕坐标
         if logical_size.width >= 400.0 && logical_size.height >= 300.0 {
             ws.insert("width".to_string(), serde_json::json!(logical_size.width));
             ws.insert("height".to_string(), serde_json::json!(logical_size.height));
@@ -135,7 +142,7 @@ fn save_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
         ws.insert("x".to_string(), serde_json::json!(logical_pos.x));
         ws.insert("y".to_string(), serde_json::json!(logical_pos.y));
     } else if let Some(serde_json::Value::Object(old_ws)) = map.get("windowState") {
-        // 最大化时保留先前的普通窗口尺寸
+        // 最大化或全屏时保留先前的普通窗口尺寸
         if let Some(w) = old_ws.get("width") { ws.insert("width".to_string(), w.clone()); }
         if let Some(h) = old_ws.get("height") { ws.insert("height".to_string(), h.clone()); }
         if let Some(x) = old_ws.get("x") { ws.insert("x".to_string(), x.clone()); }
@@ -148,8 +155,10 @@ fn save_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
     }
 }
 
-/// 启动时恢复窗口大小、坐标与最大化状态
-fn restore_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
+/// 启动时恢复窗口大小、坐标与最大化/全屏状态
+/// apply_maximize_state 为 false 时仅恢复普通尺寸与位置（用于窗口尚未 show 时）；
+/// 窗口 show 之后再传入 true，避免 Windows 下对隐藏窗口调用 maximize() 后被 show() 重置。
+fn restore_window_state(data_dir: &Path, window: &tauri::WebviewWindow, apply_maximize_state: bool) {
     let config_path = data_dir.join("desktop-settings.json");
     if !config_path.exists() {
         return;
@@ -159,26 +168,31 @@ fn restore_window_state(data_dir: &Path, window: &tauri::WebviewWindow) {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(ws) = val.get("windowState") {
                 let is_maximized = ws.get("isMaximized").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_fullscreen = ws.get("isFullscreen").and_then(|v| v.as_bool()).unwrap_or(false);
                 let width = ws.get("width").and_then(|v| v.as_f64());
                 let height = ws.get("height").and_then(|v| v.as_f64());
                 let x = ws.get("x").and_then(|v| v.as_f64());
                 let y = ws.get("y").and_then(|v| v.as_f64());
 
-                if let (Some(w), Some(h)) = (width, height) {
-                    if w >= 600.0 && h >= 400.0 {
-                        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
+                if !apply_maximize_state {
+                    if let (Some(w), Some(h)) = (width, height) {
+                        if w >= 600.0 && h >= 400.0 {
+                            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(w, h)));
+                        }
                     }
-                }
 
-                if let (Some(pos_x), Some(pos_y)) = (x, y) {
-                    // 仅当坐标不是异常负值且在合理屏幕范围内时还原
-                    if pos_x >= -500.0 && pos_y >= 0.0 {
-                        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(pos_x, pos_y)));
+                    if let (Some(pos_x), Some(pos_y)) = (x, y) {
+                        // 仅当坐标不是异常负值且在合理屏幕范围内时还原
+                        if pos_x >= -500.0 && pos_y >= 0.0 {
+                            let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(pos_x, pos_y)));
+                        }
                     }
-                }
-
-                if is_maximized {
-                    let _ = window.maximize();
+                } else {
+                    if is_fullscreen {
+                        let _ = window.set_fullscreen(true);
+                    } else if is_maximized && !window.is_maximized().unwrap_or(false) {
+                        let _ = window.maximize();
+                    }
                 }
             }
         }
@@ -451,9 +465,9 @@ fn main() {
             let native_child = native_child_for_setup;
             let native_child_clone = native_child.clone();
 
-            // 1. 恢复主窗口上次记录的尺寸与位置
+            // 1. 恢复主窗口上次记录的普通尺寸与位置（最大化/全屏状态待窗口 show 后再应用）
             if let Some(main_window) = app.get_webview_window("main") {
-                restore_window_state(&portable_data_dir, &main_window);
+                restore_window_state(&portable_data_dir, &main_window, false);
             }
 
             let mut server_started = false;
@@ -640,13 +654,27 @@ fn main() {
                                 println!("🌐 [Nexus Desktop] 正在将主窗口无缝直达目标页面: {}", url_str);
                                 let _ = window.navigate(target_url);
                             }
-                            // 短暂缓冲 120ms 等待 WebView 同步首帧渲染，然后瞬时呈现并置顶聚焦
+                            // 短暂缓冲 120ms 等待 WebView 同步首帧渲染，然后在主线程呈现窗口并恢复最大化/全屏状态
                             std::thread::sleep(std::time::Duration::from_millis(120));
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            let handle_for_show = handle_for_nav.clone();
+                            let data_dir_for_show = data_dir_for_nav.clone();
+                            let _ = handle_for_nav.run_on_main_thread(move || {
+                                if let Some(win) = handle_for_show.get_webview_window("main") {
+                                    let _ = win.show();
+                                    restore_window_state(&data_dir_for_show, &win, true);
+                                    let _ = win.set_focus();
+                                }
+                            });
                         } else {
                             eprintln!("❌ [Nexus Desktop] 后端服务就绪超时 (15秒内未响应端口 {})", port);
-                            let _ = window.show();
+                            let handle_for_show = handle_for_nav.clone();
+                            let data_dir_for_show = data_dir_for_nav.clone();
+                            let _ = handle_for_nav.run_on_main_thread(move || {
+                                if let Some(win) = handle_for_show.get_webview_window("main") {
+                                    let _ = win.show();
+                                    restore_window_state(&data_dir_for_show, &win, true);
+                                }
+                            });
                         }
                     }
                 });
