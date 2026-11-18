@@ -958,6 +958,7 @@ onBeforeUnmount(() => {
                            <keep-alive>
                                <component
                                    :is="componentMap.terminal"
+                                   :key="`${activeSessionId}-${layoutNode.id}`"
                                    :session-id="activeSessionId"
                                    :pane-id="layoutNode.id"
                                     :auto-exec-config="layoutNode.terminalAutoExec"

@@ -135,10 +135,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- 终端事件处理 ---
 
-    const handleTerminalReady = (payload: { terminal: Terminal; searchAddon: SearchAddon | null; serializeAddon?: SerializeAddon | null; paneId?: string }) => {
+    const handleTerminalReady = (payload: { sessionId?: string; terminal: Terminal; searchAddon: SearchAddon | null; serializeAddon?: SerializeAddon | null; paneId?: string }) => {
         const { terminal: term, searchAddon: addon, serializeAddon: sAddon, paneId } = payload;
         const effectivePaneId = paneId || 'primary';
-        console.log(`[会话 ${sessionId}][SSH终端模块] 终端实例已就绪 (paneId: ${effectivePaneId})。SearchAddon: ${addon ? '存在' : '不存在'}, SerializeAddon: ${sAddon ? '存在' : '不存在'}`);
+        const activeSid = payload.sessionId || sessionId;
+        console.log(`[会话 ${activeSid}][SSH终端模块] 终端实例已就绪 (paneId: ${effectivePaneId})。SearchAddon: ${addon ? '存在' : '不存在'}, SerializeAddon: ${sAddon ? '存在' : '不存在'}`);
 
         const entry: PaneTerminalInstance = {
             paneId: effectivePaneId,
@@ -153,16 +154,24 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 这里先强制切回主屏，避免刷新后 Ctrl+C 退出 TUI 时回到一个空的备用屏、整块变黑。
         restoreMainScreenBuffer(term);
 
-        const currentSessionState = globalSessionsRef.value.get(sessionId);
+        const currentSessionState = globalSessionsRef.value.get(activeSid) ?? globalSessionsRef.value.get(sessionId);
 
         // --- 主终端锁定 ---
-        // 必须用"当前实际渲染的树"（桌面端为活动会话的专属树）：
-        // 其 paneId 与主布局树不是同一套，用错树会锁定一个不存在于 terminalPanes 的
-        // paneId，导致 terminalInstance 永远不赋值、主通道判定失效。
+        // 优先取本会话专属布局树的终端顺序（即使本会话此刻在后台静默分批挂载，也能拿到自己的树）；
+        // 其次才回退到当前活动布局树，且必须校验树里确实包含 effectivePaneId，
+        // 避免后台挂载非活动会话时把「前台活动会话的 paneId」误锁成自己的主终端。
         let treeTerminalIds: string[] = [];
         try {
             const layoutStore = useLayoutStore();
-            treeTerminalIds = getTerminalPaneIdsInLayout(layoutStore.getActiveLayoutTree());
+            const ownOrder = layoutStore.getSessionTerminalPaneOrder(activeSid);
+            if (ownOrder.length > 0 && ownOrder.includes(effectivePaneId)) {
+                treeTerminalIds = ownOrder;
+            } else {
+                const activeTreeIds = getTerminalPaneIdsInLayout(layoutStore.getActiveLayoutTree());
+                if (activeTreeIds.includes(effectivePaneId)) {
+                    treeTerminalIds = activeTreeIds;
+                }
+            }
         } catch {
             // 忽略 store 异常
         }

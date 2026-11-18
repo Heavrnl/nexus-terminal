@@ -154,7 +154,8 @@ watch(() => props.isPaneFocused, (focused) => {
         ae.tagName === 'TEXTAREA' ||
         ae.isContentEditable
       );
-      if (!userTypingElsewhere && terminal) {
+      // 移动端不自动聚焦，避免切换会话更新聚焦 paneId 时拉起系统软键盘
+      if (!userTypingElsewhere && !isMobile.value && terminal) {
         terminal.focus();
       }
     });
