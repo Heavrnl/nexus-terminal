@@ -1,6 +1,6 @@
 import { ref, readonly, toRaw, type Ref, ComputedRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { sessions as globalSessionsRef } from '../stores/session/state'; // +++ 导入全局 sessions state +++
+import { sessions as globalSessionsRef, activeSessionId as activeSessionIdRef } from '../stores/session/state'; // +++ 导入全局 sessions state +++
 // import { useWebSocketConnection } from './useWebSocketConnection'; // 移除全局导入
 import type { Terminal } from 'xterm';
 import type { SearchAddon, ISearchOptions } from '@xterm/addon-search'; // *** 移除 ISearchResult 导入 ***
@@ -9,6 +9,7 @@ import type { WebSocketMessage, MessagePayload } from '../types/websocket.types'
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useLayoutStore, getTerminalPaneIdsInLayout } from '../stores/layout.store';
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useWorkspaceEventEmitter } from './workspaceEvents';
 import {
     scanSearchBuffer,
@@ -39,6 +40,41 @@ export interface PaneTerminalInstance {
     serializeAddon?: SerializeAddon | null;
     isReady: boolean;
 }
+
+/**
+ * 会话重连成功的顶部浮窗通知聚合器。
+ *
+ * 手机息屏亮屏或网络抖动恢复时，多个会话会在短时间内陆续收到 `ssh:connected`。
+ * 不再往终端屏幕内写入绿色恢复提示（会破坏 TUI 画面与光标并污染快照），
+ * 统一改为顶部浮窗通知，并在短窗口内聚合多会话同时恢复事件，避免刷屏。
+ */
+const RECONNECT_TOAST_AGGREGATE_MS = 250;
+let reconnectToastTimer: ReturnType<typeof setTimeout> | null = null;
+const pendingReconnectEntries = new Map<string, { name: string; isActive: boolean; message: string }>();
+
+const enqueueReconnectedToast = (sid: string, name: string, isActive: boolean, reconnectedText: string) => {
+    pendingReconnectEntries.set(sid, { name, isActive, message: reconnectedText });
+    if (reconnectToastTimer) return;
+    reconnectToastTimer = setTimeout(() => {
+        reconnectToastTimer = null;
+        const entries = Array.from(pendingReconnectEntries.values());
+        pendingReconnectEntries.clear();
+        if (entries.length === 0) return;
+
+        // 优先展示当前正在查看的活动会话名称
+        entries.sort((a, b) => Number(b.isActive) - Number(a.isActive));
+        const primary = entries[0];
+        const toastText = entries.length === 1
+            ? (primary.name ? `${primary.name} · ${primary.message}` : primary.message)
+            : (primary.name ? `${primary.name} (+${entries.length - 1}) · ${primary.message}` : `${primary.message} (${entries.length})`);
+
+        try {
+            useUiNotificationsStore().showSuccess(toastText);
+        } catch (err) {
+            console.warn('[SSH终端模块] 投递重连成功浮窗通知失败:', err);
+        }
+    }, RECONNECT_TOAST_AGGREGATE_MS);
+};
 
 /**
  * 创建一个 SSH 终端管理器实例
@@ -514,13 +550,24 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             terminalInstance.value?.focus();
         }
 
-        if (terminalInstance.value) {
-            // 如果之前连接过且断开后重新连上，输出一条醒目的重连成功分割线，完整保留原有历史
-            if (hasConnectedBefore.value) {
-                terminalInstance.value.writeln(`\r\n\x1b[32m--- [${getTerminalText('reconnectedMsg')}] ---\x1b[0m\r\n`);
-            }
-            hasConnectedBefore.value = true;
+        const isReconnected = hasConnectedBefore.value;
+        hasConnectedBefore.value = true;
 
+        // 之前已连接过且重新连上时，通过顶部浮窗通知提示，不再向终端缓冲区写入绿色文字
+        if (isReconnected) {
+            const activeSid = incomingSessionId || sessionId;
+            const currentSessionState = globalSessionsRef.value.get(activeSid) ?? globalSessionsRef.value.get(sessionId);
+            if (!currentSessionState?.headless) {
+                enqueueReconnectedToast(
+                    activeSid,
+                    currentSessionState?.connectionName || '',
+                    activeSessionIdRef.value === activeSid,
+                    getTerminalText('reconnectedMsg')
+                );
+            }
+        }
+
+        if (terminalInstance.value) {
             const currentDimensions = { cols: terminalInstance.value.cols, rows: terminalInstance.value.rows };
             // 检查尺寸是否有效
             if (currentDimensions.cols > 0 && currentDimensions.rows > 0) {
@@ -530,7 +577,6 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接成功，但获取到的初始尺寸无效，跳过发送 resize:`, currentDimensions);
             }
         } else {
-             hasConnectedBefore.value = true;
              console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接成功，但 terminalInstance 不可用，无法发送初始 resize。`);
         }
 
