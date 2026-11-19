@@ -13,8 +13,12 @@ import { ClientState } from '../websocket/types';
 import { BackendTerminalEmulator } from '../websocket/terminal-emulator';
 import { shouldPruneTakeoverSuspend } from '../workspace-sync/workspace-sync.pure';
 
-/** 挂起态单会话内存缓冲上限（4MB），防止后台日志洪流导致后端 OOM */
-const MAX_SUSPEND_MEMORY_BYTES = 4 * 1024 * 1024;
+/**
+ * 挂起态单会话 delta 内存缓冲上限（512KB）。
+ * 完整屏幕历史已由 Headless VT 托管，这里仅缓存断线期间的增量供 WS 短暂抖动就地接回（delta 模式），
+ * 将单挂起会话的冗余内存从 4MB 压缩 87.5%。
+ */
+const MAX_SUSPEND_MEMORY_BYTES = 512 * 1024;
 
 /**
  * 将一段文本追加到挂起会话的内存环形缓冲，并在超出上限时按块从头部安全淘汰。
@@ -204,12 +208,10 @@ export class SshSuspendService extends EventEmitter {
       takeoverRound,
     };
 
-    if (initialBuffer) {
-      appendToSuspendMemory(sessionDetails, initialBuffer);
-      sessionDetails.historyChunks = sessionDetails.inMemoryBuffer?.length || 0;
-    }
+    // Headless VT 已承载完整屏幕历史，inMemoryBuffer 仅保存挂起后新产生的 delta 增量，
+    // 避免把 initialBuffer 再复制一份在内存里造成双份占用。
+    sessionDetails.historyChunks = 0;
     if (deltaBuffer) {
-      // 断线后、异步写盘期间新到达的输出属于 delta，必须排在 historyChunks 之后
       appendToSuspendMemory(sessionDetails, deltaBuffer);
     }
 
@@ -457,7 +459,8 @@ export class SshSuspendService extends EventEmitter {
     let fullLogData = '';
     let deltaLogData = '';
     const historyChunks = session.historyChunks ?? 0;
-    if (session.inMemoryBuffer && session.inMemoryBuffer.length > 0) {
+    // inMemoryBuffer 在挂起接管时总是已初始化且实时承载断线期 delta，直接从内存切片零磁盘 I/O
+    if (Array.isArray(session.inMemoryBuffer)) {
       deltaLogData = session.inMemoryBuffer.slice(historyChunks).join('');
     } else {
       try {

@@ -5,6 +5,55 @@ import { buildDockerExecCommand, buildShellProbeCommand, parseShellProbeOutput }
 import WebSocket from 'ws';
 
 const DEFAULT_DOCKER_STATUS_INTERVAL_SECONDS = 2;
+/** 单次 Docker SSH exec 超时（毫秒），防止远端 dockerd 挂起导致通道与内存泄漏 */
+const DOCKER_EXEC_TIMEOUT_MS = 10000;
+
+function execDockerSshCommand(state: ClientState, command: string, timeoutMs: number = DOCKER_EXEC_TIMEOUT_MS): Promise<{ stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+        if (!state.sshClient) {
+            return reject(new Error('SSH client disconnected before command execution.'));
+        }
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+        let activeStream: any = null;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try { activeStream?.close?.(); } catch {}
+            try { activeStream?.destroy?.(); } catch {}
+            reject(new Error(`Docker command timed out (${timeoutMs}ms)`));
+        }, timeoutMs);
+        timer.unref?.();
+
+        state.sshClient.exec(command, { pty: false }, (err, stream) => {
+            if (settled) {
+                try { stream?.close?.(); } catch {}
+                return;
+            }
+            if (err) {
+                settled = true;
+                clearTimeout(timer);
+                return reject(err);
+            }
+            activeStream = stream;
+            stream.on('data', (data: Buffer) => { stdout += data.toString(); });
+            stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+            stream.on('close', () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve({ stdout, stderr });
+            });
+            stream.on('error', (execErr: Error) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                reject(execErr);
+            });
+        });
+    });
+}
 
 export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ available: boolean; containers: DockerContainer[] }> {
     if (!state || !state.sshClient) {
@@ -18,20 +67,7 @@ export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ ava
     try {
         // 直接执行 docker ps 命令，单次 exec 完成可用性探测与容器数据拉取，极大降低 SSH 通道占用与竞争
         const psCommand = "docker ps -a --no-trunc --format '{{json .}}'";
-        const { stdout: psStdout, stderr: psStderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-            let stdout = '';
-            let stderr = '';
-            if (!state.sshClient) {
-                return reject(new Error('SSH client disconnected before command execution.'));
-            }
-            state.sshClient.exec(psCommand, { pty: false }, (err, stream) => {
-                if (err) return reject(err);
-                stream.on('data', (data: Buffer) => { stdout += data.toString(); });
-                stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-                stream.on('close', () => resolve({ stdout, stderr }));
-                stream.on('error', (execErr: Error) => reject(execErr));
-            });
-        });
+        const { stdout: psStdout, stderr: psStderr } = await execDockerSshCommand(state, psCommand);
 
         const isExplicitlyUnavailable = 
             psStderr.includes('command not found') ||
@@ -83,20 +119,7 @@ export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ ava
     if (runningContainerIds.length > 0) {
         try {
             const statsCommand = `docker stats ${runningContainerIds.join(' ')} --no-stream --format '{{json .}}'`;
-            const { stdout: statsStdout, stderr: statsStderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-                let stdout = '';
-                let stderr = '';
-                if (!state.sshClient) {
-                    return reject(new Error('SSH client disconnected before command execution.'));
-                }
-                state.sshClient.exec(statsCommand, { pty: false }, (err, stream) => {
-                    if (err) return reject(err);
-                    stream.on('data', (data: Buffer) => { stdout += data.toString(); });
-                    stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-                    stream.on('close', () => resolve({ stdout, stderr }));
-                    stream.on('error', (execErr: Error) => reject(execErr));
-                });
-            });
+            const { stdout: statsStdout, stderr: statsStderr } = await execDockerSshCommand(state, statsCommand);
 
             if (statsStderr) {
                 console.warn(`[fetchRemoteDockerStatus] Docker stats command stderr on session ${state.ws.sessionId}: ${statsStderr.trim()}`);
@@ -382,67 +405,91 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
          console.error(`[Docker Polling] Error fetching interval setting for session ${sessionId}. Using default ${dockerPollIntervalMs}ms:`, settingError);
     }
 
-    // Clear existing interval if any, to prevent multiple pollers for the same session
+    // Clear existing timer if any, to prevent multiple pollers for the same session
     if (state.dockerStatusIntervalId) {
-        clearInterval(state.dockerStatusIntervalId);
-        console.log(`[Docker Polling] Cleared existing Docker status interval for session ${sessionId}.`);
+        clearTimeout(state.dockerStatusIntervalId);
+        delete state.dockerStatusIntervalId;
+        console.log(`[Docker Polling] Cleared existing Docker status timer for session ${sessionId}.`);
     }
 
-    const dockerIntervalId = setInterval(async () => {
-        const currentState = clientStates.get(sessionId); // Re-fetch state in case it changed (e.g., disconnected)
+    // 使用防重入递归 setTimeout：上一轮 docker ps / docker stats 结束后再排期下一轮，
+    // 彻底杜绝弱网或 dockerd 卡顿时 SSH 通道叠加打爆 MaxSessions。
+    let activeTimer: ReturnType<typeof setTimeout> | null = null;
+    const isStillCurrent = (cur: ClientState | undefined): cur is ClientState =>
+        !!cur && cur.ws.readyState === WebSocket.OPEN && !!cur.sshClient && cur.dockerStatusIntervalId === activeTimer;
+
+    const runPollOnce = async (isInitial: boolean): Promise<boolean> => {
+        const currentState = clientStates.get(sessionId);
         if (!currentState || currentState.ws.readyState !== WebSocket.OPEN || !currentState.sshClient) {
-            console.log(`[Docker Polling] Session ${sessionId} no longer valid, WS closed, or SSH disconnected. Stopping poll.`);
-            clearInterval(dockerIntervalId);
-            if (currentState && currentState.dockerStatusIntervalId === dockerIntervalId) { // Ensure we only delete our own interval ID
+            if (currentState && activeTimer && currentState.dockerStatusIntervalId === activeTimer) {
                 delete currentState.dockerStatusIntervalId;
             }
-            return;
+            return false;
         }
         try {
             const statusPayload = await fetchRemoteDockerStatus(currentState);
-            if (currentState.ws.readyState === WebSocket.OPEN) { // Check again before sending
+            if (currentState.ws.readyState === WebSocket.OPEN) {
                 currentState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
             }
-        } catch (error: any) {
-            console.warn(`[Docker Polling] 探测 Docker 状态失败 (会话 ${sessionId}):`, error.message);
-            const errorMessage = error.message || '';
-            const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon') || errorMessage.includes('not recognized');
-            if (isUnavailable) {
-                console.log(`[Docker Polling] 判定远程主机无可用 Docker 守护进程，自动熔断停止周期轮询 (会话: ${sessionId})`);
-                clearInterval(dockerIntervalId);
-                if (currentState && currentState.dockerStatusIntervalId === dockerIntervalId) {
+            // 若明确探测到远端无 Docker，自动熔断停止后续轮询节约资源
+            if (!statusPayload.available) {
+                console.log(`[Docker Polling] 远端主机无可用 Docker，停止周期轮询 (会话: ${sessionId})`);
+                if (currentState.dockerStatusIntervalId === activeTimer) {
                     delete currentState.dockerStatusIntervalId;
                 }
+                return false;
             }
-        }
-    }, dockerPollIntervalMs);
-    state.dockerStatusIntervalId = dockerIntervalId;
-
-    // Initial fetch
-    const initialState = clientStates.get(sessionId);
-    if (initialState && initialState.ws.readyState === WebSocket.OPEN && initialState.sshClient) {
-        console.log(`[Docker Initial Fetch] Fetching status for session ${sessionId}...`);
-        try {
-            const statusPayload = await fetchRemoteDockerStatus(initialState);
-            if (initialState.ws.readyState === WebSocket.OPEN) { // Check again
-                initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
-            }
+            return true;
         } catch (error: any) {
-            console.warn(`[Docker Initial Fetch] 首次获取 Docker 状态失败 for session ${sessionId}:`, error.message);
-            if (initialState.ws.readyState === WebSocket.OPEN) {
-                 const errorMessage = error.message || 'Unknown error during initial fetch';
-                 const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon') || errorMessage.includes('not recognized');
-                 if (isUnavailable) {
-                     // 明确检测到无 Docker 进程，停止后续轮询以节约带宽与性能
-                     if (initialState.dockerStatusIntervalId) {
-                         clearInterval(initialState.dockerStatusIntervalId);
-                         delete initialState.dockerStatusIntervalId;
-                     }
-                     initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: { available: false, containers: [] } }));
-                 } else {
-                     initialState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Initial Docker status fetch failed: ${errorMessage}` } }));
-                 }
+            const errorMessage = error?.message || 'Unknown error fetching status';
+            const isUnavailable =
+                errorMessage.includes('command not found') ||
+                errorMessage.includes('Cannot connect to the Docker daemon') ||
+                errorMessage.includes('not recognized');
+            if (isInitial) {
+                console.warn(`[Docker Initial Fetch] 首次获取 Docker 状态失败 for session ${sessionId}:`, errorMessage);
+            } else {
+                console.warn(`[Docker Polling] 探测 Docker 状态失败 (会话 ${sessionId}):`, errorMessage);
             }
+            if (isUnavailable) {
+                console.log(`[Docker Polling] 判定远程主机无可用 Docker 守护进程，自动熔断停止周期轮询 (会话: ${sessionId})`);
+                if (currentState.dockerStatusIntervalId === activeTimer) {
+                    delete currentState.dockerStatusIntervalId;
+                }
+                if (isInitial && currentState.ws.readyState === WebSocket.OPEN) {
+                    currentState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: { available: false, containers: [] } }));
+                }
+                return false;
+            }
+            if (isInitial && currentState.ws.readyState === WebSocket.OPEN) {
+                currentState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Initial Docker status fetch failed: ${errorMessage}` } }));
+            }
+            return true;
+        }
+    };
+
+    const scheduleNext = () => {
+        const cur = clientStates.get(sessionId);
+        if (!cur || cur.ws.readyState !== WebSocket.OPEN || !cur.sshClient) return;
+        const timer = setTimeout(async () => {
+            const st = clientStates.get(sessionId);
+            if (!isStillCurrent(st)) return;
+            const shouldContinue = await runPollOnce(false);
+            if (shouldContinue && isStillCurrent(clientStates.get(sessionId))) {
+                scheduleNext();
+            }
+        }, dockerPollIntervalMs);
+        timer.unref?.();
+        activeTimer = timer;
+        cur.dockerStatusIntervalId = timer;
+    };
+
+    // 先执行首次探测，再根据结果决定是否开启周期轮询（无 Docker 主机零后续定时器）
+    const shouldContinueAfterInitial = await runPollOnce(true);
+    if (shouldContinueAfterInitial) {
+        const curAfter = clientStates.get(sessionId);
+        if (curAfter && curAfter.ws.readyState === WebSocket.OPEN && curAfter.sshClient && !curAfter.dockerStatusIntervalId) {
+            scheduleNext();
         }
     }
 }

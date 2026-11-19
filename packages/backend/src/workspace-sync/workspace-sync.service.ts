@@ -313,6 +313,8 @@ export class WorkspaceSyncService {
                 const paneStreamsToPass = state.paneStreams;
                 const emulatorToPass = state.terminalEmulator;
                 // 同步分离 SSH 主通道、所有分屏副终端通道与 Headless VT，防止旧客户端关闭时误杀分屏 Shell 或释放 VT
+                try { state.outputCoalescer?.dispose(true); } catch {}
+                state.outputCoalescer = undefined;
                 state.sshClient = undefined as any;
                 state.sshShellStream = undefined;
                 state.paneStreams = undefined;

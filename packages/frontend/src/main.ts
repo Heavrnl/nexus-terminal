@@ -11,8 +11,6 @@ import { prewarmWorkspaceSync } from './stores/workspaceSync.store';
 import './style.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import 'splitpanes/dist/splitpanes.css';
-import ElementPlus from 'element-plus';
-import 'element-plus/dist/index.css';
 import { installDebugBridge } from './debug';
 import { showBootFailure, isChunkLoadError } from './utils/bootFallback';
 import { isDesktopApp } from './utils/platform';

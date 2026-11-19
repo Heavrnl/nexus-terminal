@@ -11,7 +11,8 @@ import { getDbPath, getDataDir } from '../services/storage-path.service';
 const dbPath = getDbPath();
 console.log(`[数据库连接] 当前数据存储根目录: ${getDataDir()}, 数据库文件: ${dbPath}`);
 
-const verboseSqlite3 = sqlite3.verbose();
+// 仅在显式开启调试变量时启用 sqlite3.verbose()，避免生产环境每次 SQL 都构造 JS Error().stack 带来额外 CPU 与 GC 开销
+const sqliteDriver = process.env.NEXUS_SQLITE_VERBOSE === '1' ? sqlite3.verbose() : sqlite3;
 let dbInstancePromise: Promise<sqlite3.Database> | null = null;
 
 export interface RunResult {
@@ -157,6 +158,12 @@ export const allDb = <T = any>(db: sqlite3.Database, sql: string, params: any[] 
 
 const runDatabaseInitializations = async (db: sqlite3.Database): Promise<void> => {
     try {
+        // 生产级 SQLite 性能与并发调优：开启 WAL 日志模式 + NORMAL 同步 + 5s 锁等待 + 8MB 页缓存 + 内存临时表
+        await runDb(db, 'PRAGMA journal_mode = WAL;');
+        await runDb(db, 'PRAGMA synchronous = NORMAL;');
+        await runDb(db, 'PRAGMA busy_timeout = 5000;');
+        await runDb(db, 'PRAGMA cache_size = -8000;');
+        await runDb(db, 'PRAGMA temp_store = MEMORY;');
         await runDb(db, 'PRAGMA foreign_keys = ON;');
         for (const tableDef of tableDefinitions) {
             await runDb(db, tableDef.sql);
@@ -175,7 +182,7 @@ export const getDbInstance = (): Promise<sqlite3.Database> => {
     if (!dbInstancePromise) {
         dbInstancePromise = new Promise((resolve, reject) => {
         
-            const db = new verboseSqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, async (err) => { // Mark callback as async
+            const db = new sqliteDriver.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, async (err) => { // Mark callback as async
 
                 if (err) {
                     console.error(`[数据库连接] 打开数据库文件 ${dbPath} 时出错:`, err.message);

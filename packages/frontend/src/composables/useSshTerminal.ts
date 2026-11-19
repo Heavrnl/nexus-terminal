@@ -113,6 +113,13 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     /** 同一次采集内的序列化结果缓存（微任务清除，不会返回过期内容） */
     let panesSerializeCache: Record<string, string> | null = null;
     let panesCacheClearScheduled = false;
+    /** 按 paneId 维护的终端内容脏版本号与序列化结果缓存，避免多标签页下未变动终端反复全量 serialize() */
+    const paneDirtyVersions = new Map<string, number>();
+    const paneSerializedMemo = new Map<string, { version: number; cols: number; rows: number; text: string }>();
+    const paneWriteParsedDisposables = new Map<string, { dispose: () => void }>();
+    const markPaneDirty = (paneId: string) => {
+        paneDirtyVersions.set(paneId, (paneDirtyVersions.get(paneId) || 0) + 1);
+    };
     // Removed search result state refs
     // const searchResultCount = ref(0);
     // const currentSearchResultIndex = ref(-1);
@@ -146,20 +153,33 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         return filter;
     };
 
-    // 终端数据流防抖同步至云端工作区 (输出停歇 1.5s 后触发，命令执行中自动延后)
+    // 终端数据流防抖同步至云端工作区 (输出停歇后触发；高频刷屏时不再每包 clearTimeout/setTimeout 重建)
     let terminalSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastTerminalOutputAt = 0;
+    let scheduledSyncDelayMs = 1500;
     const scheduleTerminalSync = (delayMs: number = 1500) => {
-        if (terminalSyncTimer) clearTimeout(terminalSyncTimer);
-        terminalSyncTimer = setTimeout(() => {
-            try {
-                const workspaceSyncStore = useWorkspaceSyncStore();
-                if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
-                    workspaceSyncStore.triggerDebouncedSave(0);
+        lastTerminalOutputAt = Date.now();
+        scheduledSyncDelayMs = delayMs;
+        if (terminalSyncTimer) return;
+        const arm = (waitMs: number) => {
+            terminalSyncTimer = setTimeout(() => {
+                terminalSyncTimer = null;
+                const remaining = scheduledSyncDelayMs - (Date.now() - lastTerminalOutputAt);
+                if (remaining > 50) {
+                    arm(remaining);
+                    return;
                 }
-            } catch {
-                // Pinia 上下文未就绪时安全忽略
-            }
-        }, delayMs);
+                try {
+                    const workspaceSyncStore = useWorkspaceSyncStore();
+                    if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+                        workspaceSyncStore.triggerDebouncedSave(0);
+                    }
+                } catch {
+                    // Pinia 上下文未就绪时安全忽略
+                }
+            }, waitMs);
+        };
+        arm(delayMs);
     };
 
     // 辅助函数：获取终端消息文本
@@ -186,6 +206,18 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             isReady: false
         };
         terminalPanes.value.set(effectivePaneId, entry);
+        markPaneDirty(effectivePaneId);
+        // 监听 xterm 解析完成事件推进脏版本：确保任意路径写入/清屏都能自动失效序列化缓存
+        const prevDisposable = paneWriteParsedDisposables.get(effectivePaneId);
+        if (prevDisposable) {
+            try { prevDisposable.dispose(); } catch {}
+        }
+        if (typeof term.onWriteParsed === 'function') {
+            paneWriteParsedDisposables.set(
+                effectivePaneId,
+                term.onWriteParsed(() => markPaneDirty(effectivePaneId))
+            );
+        }
 
         // 兜底：旧快照可能把"备用屏（TUI）"状态一起存了下来。
         // 这里先强制切回主屏，避免刷新后 Ctrl+C 退出 TUI 时回到一个空的备用屏、整块变黑。
@@ -369,6 +401,13 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (terminalPanes.value.has(paneId)) {
             terminalPanes.value.delete(paneId);
             paneWriteFilters.delete(paneId);
+            paneDirtyVersions.delete(paneId);
+            paneSerializedMemo.delete(paneId);
+            const wpDisp = paneWriteParsedDisposables.get(paneId);
+            if (wpDisp) {
+                try { wpDisp.dispose(); } catch {}
+                paneWriteParsedDisposables.delete(paneId);
+            }
             if (paneId !== primaryPaneId.value) {
                 sendMessage({ type: 'ssh:pane_close', sessionId, payload: { sessionId, paneId } });
             } else {
@@ -797,6 +836,16 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         Array.from(searchStates.keys()).forEach((paneId) => disposeSearchState(paneId));
         // terminalInstance.value?.dispose(); // 终端实例的销毁由 TerminalComponent 负责
         terminalInstance.value = null;
+        if (terminalSyncTimer) {
+            clearTimeout(terminalSyncTimer);
+            terminalSyncTimer = null;
+        }
+        for (const [, disp] of paneWriteParsedDisposables.entries()) {
+            try { disp.dispose(); } catch {}
+        }
+        paneWriteParsedDisposables.clear();
+        paneDirtyVersions.clear();
+        paneSerializedMemo.clear();
         terminalPanes.value.clear();
         paneWriteFilters.clear();
         primaryPaneId.value = null;
@@ -840,10 +889,16 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (entry?.terminal && typeof entry.terminal.clear === 'function') {
             console.log(`[会话 ${sessionId}][SSH终端模块] 正在清空终端 (paneId: ${entry.paneId})`);
             entry.terminal.clear();
+            markPaneDirty(entry.paneId);
+            paneSerializedMemo.delete(entry.paneId);
             return true;
         }
         if (terminalInstance.value && typeof terminalInstance.value.clear === 'function') {
             terminalInstance.value.clear();
+            if (primaryPaneId.value) {
+                markPaneDirty(primaryPaneId.value);
+                paneSerializedMemo.delete(primaryPaneId.value);
+            }
             return true;
         }
         return false;
@@ -1218,13 +1273,26 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 console.log(`[会话 ${sessionId}][分屏终端 ${pId}] 处于 TUI 备用屏，跳过序列化`);
                 continue;
             }
+            // 脏版本缓存命中：内容与尺寸均未变化时 0ms 直接复用上次序列化结果
+            const curVersion = paneDirtyVersions.get(pId) || 0;
+            const curCols = rawEntry.terminal?.cols ?? 0;
+            const curRows = rawEntry.terminal?.rows ?? 0;
+            const memo = paneSerializedMemo.get(pId);
+            if (memo && memo.version === curVersion && memo.cols === curCols && memo.rows === curRows) {
+                if (memo.text.length > 0) {
+                    result[pId] = memo.text;
+                }
+                continue;
+            }
             if (rawEntry.serializeAddon) {
                 try {
                     const s = toRaw(rawEntry.serializeAddon).serialize({ scrollback: SNAPSHOT_MAX_LINES });
                     if (typeof s === 'string' && s.length > 0) {
+                        paneSerializedMemo.set(pId, { version: curVersion, cols: curCols, rows: curRows, text: s });
                         result[pId] = s;
                         continue;
                     }
+                    paneSerializedMemo.set(pId, { version: curVersion, cols: curCols, rows: curRows, text: '' });
                 } catch (e) {
                     console.warn(`[会话 ${sessionId}][分屏终端 ${pId}] 序列化失败:`, e);
                 }

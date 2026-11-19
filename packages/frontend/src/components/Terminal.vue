@@ -119,6 +119,12 @@ let rawTerminalWrite: ((data: string | Uint8Array, cb?: () => void) => void) | n
 /** 历史回放静默屏障：拦截回放解析期间 xterm.js 自动发出的查询应答，放行真实用户输入 */
 const replaySilence = createReplaySilenceController();
 let userInputListenerDisposable: IDisposable | null = null;
+/** 具名 DOM 监听器与宿主元素引用，卸载时统一 removeEventListener 防止闭包泄漏 */
+let textareaKeydownEl: HTMLTextAreaElement | null = null;
+let textareaKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+let containerWheelTouchEl: HTMLElement | null = null;
+let containerWheelHandler: ((event: WheelEvent) => void) | null = null;
+let hasBoundTouchListeners = false;
 /** 暂存上限：隐藏会话一直不回前台时，超过这个量就认了，先写进去（不无限吃内存） */
 const PENDING_WRITE_LIMIT = 8 * 1024 * 1024;
 
@@ -823,7 +829,8 @@ onMounted(() => {
 
     // --- 添加 Ctrl+Shift+C/V 复制粘贴 ---
     if (terminal && terminal.textarea) { // 确保 terminal 和 textarea 存在
-        terminal.textarea.addEventListener('keydown', async (event: KeyboardEvent) => {
+        textareaKeydownEl = terminal.textarea;
+        textareaKeydownHandler = async (event: KeyboardEvent) => {
             // Ctrl+Shift+C for Copy
             if (event.ctrlKey && event.shiftKey && event.code === 'KeyC') {
                 event.preventDefault(); // 阻止默认行为 (例如浏览器开发者工具)
@@ -854,7 +861,8 @@ onMounted(() => {
                     // 可以考虑添加 UI 提示
                 }
             }
-        });
+        };
+        textareaKeydownEl.addEventListener('keydown', textareaKeydownHandler);
     }
 
     // 根据初始设置添加右键交互监听器
@@ -875,7 +883,8 @@ onMounted(() => {
 
     // 重新添加鼠标滚轮缩放功能到内部容器 terminalRef
     if (terminalRef.value) {
-      terminalRef.value.addEventListener('wheel', (event: WheelEvent) => {
+      containerWheelTouchEl = terminalRef.value;
+      containerWheelHandler = (event: WheelEvent) => {
         if (event.ctrlKey) {
           event.preventDefault(); // 阻止默认的滚动行为
 
@@ -900,16 +909,19 @@ onMounted(() => {
             }
           }
         }
-      });
+      };
+      containerWheelTouchEl.addEventListener('wheel', containerWheelHandler);
     }
 
     // Add touch listeners for pinch zoom on mobile
     if (isMobile.value && terminalRef.value && terminal) {
       console.log(`[Terminal ${props.sessionId}] Adding touch listeners for mobile pinch zoom.`);
-      terminalRef.value.addEventListener('touchstart', handleTouchStart, { passive: false });
-      terminalRef.value.addEventListener('touchmove', handleTouchMove, { passive: false });
-      terminalRef.value.addEventListener('touchend', handleTouchEnd, { passive: false });
-      terminalRef.value.addEventListener('touchcancel', handleTouchEnd, { passive: false }); // Also handle cancel
+      containerWheelTouchEl = terminalRef.value;
+      containerWheelTouchEl.addEventListener('touchstart', handleTouchStart, { passive: false });
+      containerWheelTouchEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+      containerWheelTouchEl.addEventListener('touchend', handleTouchEnd, { passive: false });
+      containerWheelTouchEl.addEventListener('touchcancel', handleTouchEnd, { passive: false }); // Also handle cancel
+      hasBoundTouchListeners = true;
     }
 
     // 监听终端滚动、输出解析与尺寸变化，动态刷新滚动条显示与位置
@@ -977,6 +989,23 @@ onBeforeUnmount(() => {
     }
     userInputListenerDisposable = null;
   }
+  if (textareaKeydownEl && textareaKeydownHandler) {
+    textareaKeydownEl.removeEventListener('keydown', textareaKeydownHandler);
+    textareaKeydownEl = null;
+    textareaKeydownHandler = null;
+  }
+  if (containerWheelTouchEl && containerWheelHandler) {
+    containerWheelTouchEl.removeEventListener('wheel', containerWheelHandler);
+    containerWheelHandler = null;
+  }
+  if (containerWheelTouchEl && hasBoundTouchListeners) {
+    containerWheelTouchEl.removeEventListener('touchstart', handleTouchStart);
+    containerWheelTouchEl.removeEventListener('touchmove', handleTouchMove);
+    containerWheelTouchEl.removeEventListener('touchend', handleTouchEnd);
+    containerWheelTouchEl.removeEventListener('touchcancel', handleTouchEnd);
+    hasBoundTouchListeners = false;
+  }
+  containerWheelTouchEl = null;
   replaySilence.reset();
   cancelFitRetries();
   cancelFitRetries();

@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { Client, ClientChannel, SFTPWrapper } from 'ssh2';
 import type { BackendTerminalEmulator } from './terminal-emulator';
+import type { OutputCoalescer } from './output-coalescer';
 
 // 扩展 WebSocket 类型以包含会话 ID
 export interface AuthenticatedWebSocket extends WebSocket {
@@ -49,6 +50,8 @@ export interface ClientState { // 导出以便 Service 可以导入
     recentOutputBytes?: number;    // 缓冲累计字节数
     /** 服务端无头终端状态机（Headless VT），工作区同步与挂起恢复时直接序列化纯净屏幕状态 */
     terminalEmulator?: BackendTerminalEmulator;
+    /** SSH 输出微批合帧器（首包 0ms 延迟，高频刷屏时合并碎包降低 WS 帧与序列化开销） */
+    outputCoalescer?: OutputCoalescer;
     /** 跨在线/挂起/恢复全生命周期接力复用的流式 UTF-8 解码器，杜绝交接瞬间切断多字节字符 */
     outDecoder?: { write(buf: Buffer): string; end(): string };
     // 多终端分屏独立 Shell 通道映射 (key 为 paneId)

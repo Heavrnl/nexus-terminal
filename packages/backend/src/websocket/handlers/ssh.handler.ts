@@ -6,6 +6,7 @@ import { clientStates, sftpService, statusMonitorService, auditLogService, notif
 import * as SshService from '../../services/ssh.service';
 import { appendRingBuffer, cleanupClientConnection } from '../utils';
 import { BackendTerminalEmulator } from '../terminal-emulator';
+import { OutputCoalescer } from '../output-coalescer';
 import { temporaryLogStorageService } from '../../ssh-suspend/temporary-log-storage.service';
 import { startDockerStatusPolling } from './docker.handler';
 import WebSocket from 'ws';
@@ -145,16 +146,26 @@ export async function handleSshConnect(
                 // 日志与环形缓冲需要文本，交给 StringDecoder 跨块拼接。
                 const outDecoder = new StringDecoder('utf8');
                 newState.outDecoder = outDecoder;
+                const outputCoalescer = new OutputCoalescer({
+                    onFlush: (merged: Buffer) => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'ssh:output', payload: merged.toString('base64'), encoding: 'base64' }));
+                        }
+                    },
+                });
+                newState.outputCoalescer = outputCoalescer;
                 stream.on('data', (data: Buffer) => {
                     const utf8Data = outDecoder.write(data);
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'ssh:output', payload: data.toString('base64'), encoding: 'base64' }));
-                    }
+                    outputCoalescer.push(data);
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
                         currentState.terminalEmulator?.write(utf8Data);
-                        appendRingBuffer(currentState, utf8Data);
+                        // 仅在异步交接挂起窗口（采集 delta）或极端无 VT 兜底时才写入环形缓冲，
+                        // 避免在线态与 Headless VT 双份占内存并消除每包 Buffer.byteLength 热路径开销
+                        if (currentState.isHandingOverToSuspend || !currentState.terminalEmulator) {
+                            appendRingBuffer(currentState, utf8Data);
+                        }
 
                         // 如果会话被标记为待挂起（且不在异步写盘交接窗口内），则同时将输出写入日志
                         if (currentState.isMarkedForSuspend && !currentState.isHandingOverToSuspend && currentState.suspendLogPath) {
@@ -167,14 +178,14 @@ export async function handleSshConnect(
                 const errDecoder = new StringDecoder('utf8');
                 stream.stderr.on('data', (data: Buffer) => {
                     const utf8ErrData = errDecoder.write(data);
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'ssh:output', payload: data.toString('base64'), encoding: 'base64' }));
-                    }
+                    outputCoalescer.push(data);
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
                         currentState.terminalEmulator?.write(utf8ErrData);
-                        appendRingBuffer(currentState, utf8ErrData);
+                        if (currentState.isHandingOverToSuspend || !currentState.terminalEmulator) {
+                            appendRingBuffer(currentState, utf8ErrData);
+                        }
 
                         if (currentState.isMarkedForSuspend && !currentState.isHandingOverToSuspend && currentState.suspendLogPath) {
                             temporaryLogStorageService.writeToLog(currentState.suspendLogPath, `[STDERR] ${utf8ErrData}`).catch(err => {

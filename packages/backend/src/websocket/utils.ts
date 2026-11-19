@@ -131,6 +131,10 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
     {
         console.log(`WebSocket: 清理会话 ${sessionId} (用户: ${state.ws.username}, DB 连接 ID: ${state.dbConnectionId})...`);
 
+        // 0. 冲刷并释放输出微批合帧器，防止残留定时器与未发尾包
+        try { state.outputCoalescer?.dispose(false); } catch {}
+        state.outputCoalescer = undefined;
+
         // 1. 停止状态轮询 (如果存在)
         if (statusMonitorService) statusMonitorService.stopStatusPolling(sessionId);
 

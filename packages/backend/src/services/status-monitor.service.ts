@@ -3,6 +3,19 @@ import { WebSocket } from 'ws';
 import { ClientState } from '../websocket';
 import { settingsService } from '../settings/settings.service';
 import { MemUsage, parseFreeOutput, parseProcMeminfo } from './status-monitor-memory';
+import {
+    COMBINED_DYNAMIC_STATUS_CMD,
+    COMBINED_STATIC_HOST_INFO_CMD,
+    parseDynamicStatusSections,
+    parseProcLoadavg,
+    parseProcNetDevText,
+    parseRootDiskUsage,
+    parseStaticHostInfoOutput,
+    type StaticHostInfo,
+} from './status-monitor-parser';
+
+/** 单条状态采集 SSH exec 命令超时（毫秒），防止弱网/挂死导致通道与 Promise 泄漏 */
+const SSH_EXEC_TIMEOUT_MS = 8000;
 
 
 interface ServerStatus {
@@ -41,13 +54,18 @@ export class StatusMonitorService {
     private clientStates: Map<string, ClientState>; // 使用导入的 ClientState
     // 用于存储上一次的 CPU 统计信息以计算使用率
     private previousCpuStats = new Map<string, { total: number, idle: number, timestamp: number }>();
+    // 会话级静态主机信息缓存（OS 名称 / CPU 型号 / 默认网卡）：单会话生命周期只探测一次
+    private staticHostInfoCache = new Map<string, StaticHostInfo>();
+    // 记录正在运行轮询的会话及防重入标志，避免弱网下 setInterval 叠加打爆 SSH MaxSessions
+    private activePollingSessions = new Set<string>();
+    private inFlightSessions = new Set<string>();
 
     constructor(clientStates: Map<string, ClientState>) {
         this.clientStates = clientStates;
     }
 
     /**
-     * 启动指定会话的状态轮询
+     * 启动指定会话的状态轮询（递归 setTimeout + 防重入）
      * @param sessionId 会话 ID
      */
     async startStatusPolling(sessionId: string): Promise<void> {
@@ -55,112 +73,126 @@ export class StatusMonitorService {
         if (!state || !state.sshClient) {
             return;
         }
-        if (state.statusIntervalId) {
+        if (state.statusIntervalId || this.activePollingSessions.has(sessionId)) {
              return;
          }
 
-         // +++ 从 settingsService 获取轮询间隔 +++
          let intervalMs: number;
          try {
              const intervalSeconds = await settingsService.getStatusMonitorIntervalSeconds();
-             intervalMs = intervalSeconds * 1000;
+             intervalMs = Math.max(1000, intervalSeconds * 1000);
              console.log(`[StatusMonitor ${sessionId}] 使用配置的轮询间隔: ${intervalSeconds} 秒 (${intervalMs}ms)`);
          } catch (error) {
              console.error(`[StatusMonitor ${sessionId}] 获取轮询间隔设置失败，将使用默认值 3000ms:`, error);
              intervalMs = 3000; // 出错时回退到 3 秒
          }
 
-         // 移除立即执行，让 setInterval 负责第一次调用，给连接更多准备时间
-         state.statusIntervalId = setInterval(() => {
-             this.fetchAndSendServerStatus(sessionId);
-         }, intervalMs); // --- 使用获取到的间隔 ---
+         // 异步读配置后再次核对会话是否仍有效
+         const freshState = this.clientStates.get(sessionId);
+         if (!freshState || !freshState.sshClient || freshState.statusIntervalId) {
+             return;
+         }
+
+         this.activePollingSessions.add(sessionId);
+
+         const scheduleNext = () => {
+             if (!this.activePollingSessions.has(sessionId)) return;
+             const cur = this.clientStates.get(sessionId);
+             if (!cur || !cur.sshClient || cur.ws.readyState !== WebSocket.OPEN) {
+                 this.stopStatusPolling(sessionId);
+                 return;
+             }
+             const timer = setTimeout(async () => {
+                 if (!this.activePollingSessions.has(sessionId)) return;
+                 await this.fetchAndSendServerStatus(sessionId);
+                 scheduleNext();
+             }, intervalMs);
+             timer.unref?.();
+             cur.statusIntervalId = timer;
+         };
+
+         scheduleNext();
     }
 
     /**
-     * 停止指定会话的状态轮询
+     * 停止指定会话的状态轮询并释放全部会话级缓存
      * @param sessionId 会话 ID
      */
     stopStatusPolling(sessionId: string): void {
+        this.activePollingSessions.delete(sessionId);
+        this.inFlightSessions.delete(sessionId);
         const state = this.clientStates.get(sessionId);
         if (state?.statusIntervalId) {
-            //console.warn(`[StatusMonitor] 停止会话 ${sessionId} 的状态轮询。`);
-            clearInterval(state.statusIntervalId);
+            clearTimeout(state.statusIntervalId);
             state.statusIntervalId = undefined;
-            previousNetStats.delete(sessionId); // 清理网络统计缓存
-            this.previousCpuStats.delete(sessionId); // 清理 CPU 统计缓存
         }
+        previousNetStats.delete(sessionId);
+        this.previousCpuStats.delete(sessionId);
+        this.staticHostInfoCache.delete(sessionId);
     }
 
     /**
-     * 获取并发送服务器状态给客户端
+     * 获取并发送服务器状态给客户端（带防重入锁）
      * @param sessionId 会话 ID
      */
     private async fetchAndSendServerStatus(sessionId: string): Promise<void> {
+        if (this.inFlightSessions.has(sessionId)) return;
         const state = this.clientStates.get(sessionId);
         if (!state || !state.sshClient || state.ws.readyState !== WebSocket.OPEN) {
-            //console.warn(`[StatusMonitor] 无法获取会话 ${sessionId} 的状态，停止轮询。原因：状态无效、SSH断开或WS关闭。`);
             this.stopStatusPolling(sessionId);
             return;
         }
+        this.inFlightSessions.add(sessionId);
         try {
-            // 传递 sessionId 给 fetchServerStatus 以便查找 previousNetStats
             const status = await this.fetchServerStatus(state.sshClient, sessionId);
-            state.ws.send(JSON.stringify({ type: 'status_update', payload: { connectionId: state.dbConnectionId, status } }));
+            if (state.ws.readyState === WebSocket.OPEN) {
+                state.ws.send(JSON.stringify({ type: 'status_update', payload: { connectionId: state.dbConnectionId, status } }));
+            }
         } catch (error: any) {
-            // --- 移除 console.warn ---
-            // console.warn(`[StatusMonitor] 获取会话 ${sessionId} 服务器状态失败:`, error);
-            state.ws.send(JSON.stringify({ type: 'status_error', payload: { connectionId: state.dbConnectionId, message: `获取状态失败: ${error.message}` } }));
+            if (state.ws.readyState === WebSocket.OPEN) {
+                state.ws.send(JSON.stringify({ type: 'status_error', payload: { connectionId: state.dbConnectionId, message: `获取状态失败: ${error.message}` } }));
+            }
+        } finally {
+            this.inFlightSessions.delete(sessionId);
         }
     }
 
      /**
-      * 通过 SSH 执行命令获取服务器状态信息
-      * @param sshClient SSH 客户端实例
-      * @param sessionId 当前会话 ID，用于网络速率计算
-      * @returns Promise<ServerStatus> 服务器状态信息
+      * 通过 SSH 复合命令高效获取服务器状态信息：
+      *   - 静态主机信息（OS / CPU 型号 / 默认网卡）单会话仅采样一次并缓存；
+      *   - 动态指标（Mem / CPU / LoadAvg / Net / Disk）每轮合并为单次 SSH exec。
       */
      private async fetchServerStatus(sshClient: Client, sessionId: string): Promise<ServerStatus> {
-        //  console.debug(`[StatusMonitor ${sessionId}] Fetching server status...`);
          const timestamp = Date.now();
-         let status: Partial<ServerStatus> = { timestamp };
+         const status: Partial<ServerStatus> = { timestamp };
 
          try {
-             // --- OS Name ---
-             try {
-                 const osReleaseOutput = await this.executeSshCommand(sshClient, 'cat /etc/os-release');
-                 const nameMatch = osReleaseOutput.match(/^PRETTY_NAME="?([^"]+)"?/m);
-                 status.osName = nameMatch ? nameMatch[1] : (osReleaseOutput.match(/^NAME="?([^"]+)"?/m)?.[1] ?? 'Unknown');
-             } catch (err) { }
-
-             try {
-                 let cpuModelOutput = '';
+             // 1. 静态主机信息：每会话仅执行 1 次并缓存
+             let staticInfo = this.staticHostInfoCache.get(sessionId);
+             if (!staticInfo) {
                  try {
-                     cpuModelOutput = await this.executeSshCommand(sshClient, "cat /proc/cpuinfo | grep 'model name' | head -n 1");
-                     status.cpuModel = cpuModelOutput.match(/model name\s*:\s*(.*)/i)?.[1].trim();
-                 } catch (procErr) {
-
-                     try {
-                         cpuModelOutput = await this.executeSshCommand(sshClient, "lscpu | grep 'Model name:'");
-                         status.cpuModel = cpuModelOutput.match(/Model name:\s+(.*)/)?.[1].trim();
-                     } catch (lscpuErr) {
-
-                     }
+                     const staticOut = await this.executeSshCommand(sshClient, COMBINED_STATIC_HOST_INFO_CMD);
+                     staticInfo = parseStaticHostInfoOutput(staticOut);
+                 } catch {
+                     staticInfo = {};
                  }
-                 if (!status.cpuModel) {
-                     status.cpuModel = 'Unknown';
-                 }
-             } catch (err) {
+                 this.staticHostInfoCache.set(sessionId, staticInfo);
+             }
+             if (staticInfo.osName) status.osName = staticInfo.osName;
+             status.cpuModel = staticInfo.cpuModel || 'Unknown';
 
-                 status.cpuModel = 'Unknown';
+             // 2. 动态指标：单次 SSH exec 拿齐全部 5 项动态数据
+             let sections = { meminfo: '', stat: '', loadavg: '', netdev: '', df: '' };
+             try {
+                 const dynOut = await this.executeSshCommand(sshClient, COMBINED_DYNAMIC_STATUS_CMD);
+                 sections = parseDynamicStatusSections(dynOut);
+             } catch {
+                 // 复合命令失败时各项走下方安全兜底
              }
 
-
+             // 2.1 内存与 Swap（优先解析 /proc/meminfo，非 Linux 时回退到 free）
              try {
-                 // 先读 /proc/meminfo（key 是内核导出的英文，不受 locale 影响），
-                 // 失败再退回 free（命令强制 LC_ALL=C）。
-                 // 直接解析 `free` 的 "Mem:" 标签在 procps 4.0+ 的中文环境下必然失配，
-                 // 表现就是「只有内存读不到」，见 status-monitor-memory.ts 头部说明。
-                 const mem = (await this.readMemFromProc(sshClient)) ?? (await this.readMemFromFree(sshClient));
+                 const mem = (sections.meminfo ? parseProcMeminfo(sections.meminfo) : null) ?? (await this.readMemFromFree(sshClient));
                  if (mem) {
                      status.memTotal = mem.memTotal;
                      status.memUsed = mem.memUsed;
@@ -169,109 +201,64 @@ export class StatusMonitorService {
                      status.swapUsed = mem.swapUsed;
                      status.swapPercent = mem.swapTotal > 0 ? parseFloat(((mem.swapUsed / mem.swapTotal) * 100).toFixed(1)) : 0;
                  }
-             } catch (err) { /* 静默处理 */ }
+             } catch { /* 静默处理 */ }
 
-
-             try {
-                 let dfCommand = "df -kP /"; // 优先尝试 POSIX 标准格式
-                 let dfOutput: string;
-                 try {
-                     dfOutput = await this.executeSshCommand(sshClient, dfCommand);
-                 } catch (errP) {
-                     dfCommand = "df -k /"; // 备用方案
-                     try {
-                        dfOutput = await this.executeSshCommand(sshClient, dfCommand);
-                     } catch (errK) {
-                        dfOutput = "";
-                     }
+             // 2.2 根分区磁盘使用率
+             if (sections.df) {
+                 const disk = parseRootDiskUsage(sections.df);
+                 if (disk) {
+                     status.diskTotal = disk.diskTotal;
+                     status.diskUsed = disk.diskUsed;
+                     status.diskPercent = disk.diskPercent;
                  }
-
-                 if (dfOutput) {
-                     const lines = dfOutput.split('\n');
-                     let parsedDiskInfo = false;
-                     // 从第二行开始查找根挂载点信息 (跳过表头)
-                     for (let i = 1; i < lines.length; i++) {
-                         const line = lines[i].trim();
-                         // 确保是根挂载点，通常以 " /" 结尾
-                         if (line.endsWith(" /")) {
-                             const parts = line.split(/\s+/);
-                             // 预期 parts 至少包含: 文件系统, 总量(KB), 已用(KB), 可用(KB), 百分比%, 挂载点
-                             // 例如: /dev/sda1 10307920 3841884 5941800 40% /
-                             if (parts.length >= 5) {
-                                 const total = parseInt(parts[1], 10);
-                                 const used = parseInt(parts[2], 10);
-                                 const percentStr = parts.find(p => p.endsWith('%')); // 查找百分比字符串
-
-                                 if (percentStr) {
-                                     const percentMatch = percentStr.match(/(\d+)%/);
-                                     if (!isNaN(total) && !isNaN(used) && percentMatch && percentMatch[1]) {
-                                         status.diskTotal = total; // KB
-                                         status.diskUsed = used;   // KB
-                                         status.diskPercent = parseFloat(percentMatch[1]);
-                                         parsedDiskInfo = true;
-                                         break;
-                                     }
-                                 }
-                             }
-                         }
-                     }
-
-                 }
-             } catch (err) {
-                 // 如果捕获到错误 (例如 executeSshCommand 内部的 Promise reject), disk* 字段将保持 undefined
              }
 
-            try {
-                const procStatOutput = await this.executeSshCommand(sshClient, 'cat /proc/stat');
-                const currentCpuTimes = this.parseProcStat(procStatOutput);
-                const now = Date.now(); // Use a consistent timestamp
+             // 2.3 CPU 使用率（解析 head -n 1 /proc/stat）
+             if (sections.stat) {
+                 const currentCpuTimes = this.parseProcStat(sections.stat);
+                 const now = Date.now();
+                 if (currentCpuTimes) {
+                     const prevCpuStats = this.previousCpuStats.get(sessionId);
+                     if (prevCpuStats && prevCpuStats.timestamp < now) {
+                         const totalDiff = currentCpuTimes.total - prevCpuStats.total;
+                         const idleDiff = currentCpuTimes.idle - prevCpuStats.idle;
+                         const timeDiffMs = now - prevCpuStats.timestamp;
+                         if (totalDiff > 0 && timeDiffMs > 100) {
+                             const usageRatio = 1.0 - (idleDiff / totalDiff);
+                             status.cpuPercent = parseFloat((Math.max(0, Math.min(100, usageRatio * 100))).toFixed(1));
+                         } else {
+                             status.cpuPercent = prevCpuStats.total > 0 ? status.cpuPercent : 0;
+                         }
+                     } else {
+                         status.cpuPercent = 0;
+                     }
+                     this.previousCpuStats.set(sessionId, { ...currentCpuTimes, timestamp: now });
+                 }
+             }
 
-                if (currentCpuTimes) {
-                    const prevCpuStats = this.previousCpuStats.get(sessionId);
+             // 2.4 系统平均负载（优先直接解析 /proc/loadavg，缺失时才回退 uptime）
+             const loadAvg = parseProcLoadavg(sections.loadavg);
+             if (loadAvg) {
+                 status.loadAvg = loadAvg;
+             } else {
+                 try {
+                     const uptimeOutput = await this.executeSshCommand(sshClient, 'LC_ALL=C uptime');
+                     const match = uptimeOutput.match(/load average(?:s)?:\s*([\d.]+)[, ]?\s*([\d.]+)[, ]?\s*([\d.]+)/);
+                     if (match) status.loadAvg = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
+                 } catch { /* 静默处理 */ }
+             }
 
-                    if (prevCpuStats && prevCpuStats.timestamp < now) {
-                        const totalDiff = currentCpuTimes.total - prevCpuStats.total;
-                        const idleDiff = currentCpuTimes.idle - prevCpuStats.idle;
-                        const timeDiffMs = now - prevCpuStats.timestamp; // Time difference in ms
-
-                        // Ensure positive difference and minimal time gap (e.g., > 100ms) to avoid division by zero or erratic results
-                        if (totalDiff > 0 && timeDiffMs > 100) {
-                            const usageRatio = 1.0 - (idleDiff / totalDiff);
-                            // Clamp value between 0 and 100, format to 1 decimal place
-                            status.cpuPercent = parseFloat((Math.max(0, Math.min(100, usageRatio * 100))).toFixed(1));
-                        } else {
-                            // If totalDiff is not positive or time gap too small, report 0 or keep previous value?
-                            // Reporting 0 might be misleading if the system is actually busy but no change was detected in the short interval.
-                            // Let's keep the previous value if available, otherwise 0.
-                            status.cpuPercent = prevCpuStats?.total > 0 ? status.cpuPercent : 0; // Keep existing status.cpuPercent if valid prev exists, else 0
-                        }
-                    } else {
-                        // First run or timestamp issue, report 0 as we can't calculate a rate
-                        status.cpuPercent = 0;
-                    }
-                    // Store current stats for the next iteration
-                    this.previousCpuStats.set(sessionId, { ...currentCpuTimes, timestamp: now });
-                } else {
-                    // Failed to parse /proc/stat, set to undefined or keep previous? Let's use undefined.
-                    status.cpuPercent = undefined;
-                }
-            } catch (err) {
-                // Failed to execute cat /proc/stat
-                status.cpuPercent = undefined;
-                // console.warn(`[StatusMonitor ${sessionId}] Failed to get CPU stats via /proc/stat:`, err);
-            }
-
-            try {
-                const uptimeOutput = await this.executeSshCommand(sshClient, 'LC_ALL=C uptime');
-                 const match = uptimeOutput.match(/load average(?:s)?:\s*([\d.]+)[, ]?\s*([\d.]+)[, ]?\s*([\d.]+)/);
-                 if (match) status.loadAvg = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
-             } catch (err) { /* 静默处理 */ }
-
-
-             try {
-                 const currentStats = await this.parseProcNetDev(sshClient);
+             // 2.5 网络吞吐速率（直接解析 /proc/net/dev + 复用已缓存的默认网卡）
+             if (sections.netdev) {
+                 const currentStats = parseProcNetDevText(sections.netdev);
                  if (currentStats) {
-                     const defaultInterface = await this.getDefaultInterface(sshClient) || Object.keys(currentStats).find(iface => iface !== 'lo'); // Detect or fallback excluding loopback
+                     let defaultInterface = staticInfo.defaultInterface;
+                     if (!defaultInterface || !currentStats[defaultInterface]) {
+                         defaultInterface = Object.keys(currentStats).find(iface => iface !== 'lo');
+                         if (defaultInterface) {
+                             staticInfo.defaultInterface = defaultInterface;
+                         }
+                     }
 
                      if (defaultInterface && currentStats[defaultInterface]) {
                          status.netInterface = defaultInterface;
@@ -284,14 +271,19 @@ export class StatusMonitorService {
                              if (timeDiffSeconds > 0.1) {
                                  status.netRxRate = Math.max(0, Math.round((currentRx - prevStats.rx) / timeDiffSeconds));
                                  status.netTxRate = Math.max(0, Math.round((currentTx - prevStats.tx) / timeDiffSeconds));
-                             } else { status.netRxRate = 0; status.netTxRate = 0; }
-                         } else { status.netRxRate = 0; status.netTxRate = 0; }
+                             } else {
+                                 status.netRxRate = 0;
+                                 status.netTxRate = 0;
+                             }
+                         } else {
+                             status.netRxRate = 0;
+                             status.netTxRate = 0;
+                         }
 
                          previousNetStats.set(sessionId, { rx: currentRx, tx: currentTx, timestamp });
-                     } else { /* 静默处理 */ }
+                     }
                  }
-             } catch (err) { /* 静默处理 */ }
-
+             }
          } catch (error) {
              console.error(`[StatusMonitor ${sessionId}] General error fetching server status:`, error);
          }
@@ -410,24 +402,46 @@ export class StatusMonitorService {
     }
 
     /**
-     * 在 SSH 连接上执行单个命令
-     * @param sshClient SSH 客户端实例
-     * @param command 要执行的命令
-     * @returns Promise<string> 命令的标准输出
-     * @throws Error 如果命令执行失败
+     * 在 SSH 连接上执行单个命令（带超时保护，防止弱网或远端进程卡死导致通道泄漏）
      */
-    private executeSshCommand(sshClient: Client, command: string): Promise<string> {
+    private executeSshCommand(sshClient: Client, command: string, timeoutMs: number = SSH_EXEC_TIMEOUT_MS): Promise<string> {
         return new Promise((resolve, reject) => {
             let output = '';
+            let settled = false;
+            let activeStream: any = null;
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                try { activeStream?.close?.(); } catch {}
+                try { activeStream?.destroy?.(); } catch {}
+                reject(new Error(`执行命令超时 (${timeoutMs}ms)`));
+            }, timeoutMs);
+            timer.unref?.();
+
             sshClient.exec(command, (err, stream) => {
+                if (settled) {
+                    try { stream?.close?.(); } catch {}
+                    return;
+                }
                 if (err) {
+                    settled = true;
+                    clearTimeout(timer);
                     return reject(new Error(`执行命令 '${command}' 失败: ${err.message}`));
                 }
-                stream.on('close', (code: number, signal?: string) => {
+                activeStream = stream;
+                stream.on('close', () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
                     resolve(output.trim());
+                }).on('error', (execErr: Error) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(execErr);
                 }).on('data', (data: Buffer) => {
                     output += data.toString('utf8');
-                }).stderr.on('data', (data: Buffer) => {
+                }).stderr.on('data', () => {
                 });
             });
         });

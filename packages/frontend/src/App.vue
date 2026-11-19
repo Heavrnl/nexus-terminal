@@ -13,17 +13,19 @@ import { useSessionStore } from './stores/session.store';
 import { useFavoritePathsStore } from './stores/favoritePaths.store';
 import { storeToRefs } from 'pinia';
 import UINotificationDisplay from './components/UINotificationDisplay.vue';
-import StyleCustomizer from './components/StyleCustomizer.vue';
-import MobileStyleCustomizerModal from './components/MobileStyleCustomizerModal.vue';
-import FocusSwitcherConfigurator from './components/FocusSwitcherConfigurator.vue';
 import ConfirmDialog from './components/common/ConfirmDialog.vue';
-import QuickCommandVariableDialog from './components/QuickCommandVariableDialog.vue';
-import LargeFileOpenDialog from './components/LargeFileOpenDialog.vue';
-import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
-import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
 import { initGlobalSyncListener } from './composables/useGlobalSyncListener';
 import { initExternalOpenSync } from './composables/file-manager/useExternalOpenSync';
+
+// 非首屏重型弹窗组件全部按需异步加载，减小首屏入口 JS 体积与初始内存占用
+const StyleCustomizer = defineAsyncComponent(() => import('./components/StyleCustomizer.vue'));
+const MobileStyleCustomizerModal = defineAsyncComponent(() => import('./components/MobileStyleCustomizerModal.vue'));
+const FocusSwitcherConfigurator = defineAsyncComponent(() => import('./components/FocusSwitcherConfigurator.vue'));
+const QuickCommandVariableDialog = defineAsyncComponent(() => import('./components/QuickCommandVariableDialog.vue'));
+const LargeFileOpenDialog = defineAsyncComponent(() => import('./components/LargeFileOpenDialog.vue'));
+const CloseConfirmModal = defineAsyncComponent(() => import('./components/desktop/CloseConfirmModal.vue'));
+const FirstSyncModal = defineAsyncComponent(() => import('./components/desktop/FirstSyncModal.vue'));
 
 /**
  * 文件编辑器浮层必须懒加载。

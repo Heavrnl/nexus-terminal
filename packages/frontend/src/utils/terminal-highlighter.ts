@@ -135,29 +135,23 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
     const priority = group.priority || 2;
     const flags = group.flags && group.flags.includes('g') ? group.flags : `${group.flags || ''}g`;
 
-    // 1. 编译 matchers 列表中的每一项规则 (支持任意数量、任意类型)
+    // 1. 编译 matchers 列表中的每一项规则 (同分组同属性的 keyword 合批为单条联合正则，减少热路径正则遍历次数)
     if (Array.isArray(group.matchers) && group.matchers.length > 0) {
+      const keywordBuckets = new Map<string, { isWhole: boolean; isCase: boolean; keywords: string[] }>();
+
       for (const item of group.matchers) {
         if (item.type === 'keyword' && item.keyword) {
           const kw = item.keyword.trim();
           if (!kw) continue;
           const isWhole = item.wholeWord !== false;
           const isCase = !!item.caseSensitive;
-          const kwFlags = isCase ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`);
-          const esc = escapeRegExp(kw);
-          const pat = isWhole ? `(?<![a-zA-Z0-9_-])(?:${esc})(?![a-zA-Z0-9_-])` : `(?:${esc})`;
-          try {
-            matchers.push({
-              groupId: group.id,
-              regex: new RegExp(pat, kwFlags),
-              priority,
-              specificity: isWhole ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
-              prefix,
-              suffix,
-            });
-          } catch (e) {
-            console.warn(`[Highlighter] 关键词匹配项编译失败 (${group.name}: ${kw}):`, e);
+          const bucketKey = `${isWhole ? 'W' : 'P'}_${isCase ? 'CS' : 'CI'}`;
+          let bucket = keywordBuckets.get(bucketKey);
+          if (!bucket) {
+            bucket = { isWhole, isCase, keywords: [] };
+            keywordBuckets.set(bucketKey, bucket);
           }
+          bucket.keywords.push(kw);
         } else if (item.type === 'regex' && item.pattern) {
           try {
             matchers.push({
@@ -188,6 +182,34 @@ export function compileHighlightGroups(groups: TerminalHighlightGroup[]): Compil
               console.warn(`[Highlighter] 内置匹配项编译失败 (${group.name}: ${item.builtinType}):`, e);
             }
           }
+        }
+      }
+
+      // 将同桶关键词按长度降序去重，合并为单条联合正则（保持长词优先语义 100% 等价）
+      for (const bucket of keywordBuckets.values()) {
+        const seen = new Set<string>();
+        const uniqueKeywords: string[] = [];
+        for (const kw of bucket.keywords) {
+          const dedupKey = bucket.isCase ? kw : kw.toLowerCase();
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+          uniqueKeywords.push(kw);
+        }
+        uniqueKeywords.sort((a, b) => b.length - a.length);
+        const kwFlags = bucket.isCase ? flags.replace(/i/g, '') : (flags.includes('i') ? flags : `${flags}i`);
+        const body = uniqueKeywords.map((k) => escapeRegExp(k)).join('|');
+        const pat = bucket.isWhole ? `(?<![a-zA-Z0-9_-])(?:${body})(?![a-zA-Z0-9_-])` : `(?:${body})`;
+        try {
+          matchers.push({
+            groupId: group.id,
+            regex: new RegExp(pat, kwFlags),
+            priority,
+            specificity: bucket.isWhole ? SPECIFICITY_WEIGHTS.keyword_whole : SPECIFICITY_WEIGHTS.keyword_partial,
+            prefix,
+            suffix,
+          });
+        } catch (e) {
+          console.warn(`[Highlighter] 合并关键词正则编译失败 (${group.name}):`, e);
         }
       }
     }
@@ -370,9 +392,8 @@ export function highlightTerminalString(input: string, matchers: CompiledMatcher
   if (!input || matchers.length === 0) return input;
   if (input.length < 2) return input;
 
-  ANSI_PATTERN.lastIndex = 0;
-  if (!ANSI_PATTERN.test(input)) {
-    // 纯文本无 ANSI 控制符，直接全量执行 Span 仲裁高亮
+  // 单字节快速路径：无 ESC 直接走纯文本高亮，免去先跑一遍 ANSI_PATTERN.test()
+  if (input.indexOf('\x1b') === -1) {
     return highlightPlainTextSegmentWithSpans(input, matchers);
   }
 
@@ -380,9 +401,10 @@ export function highlightTerminalString(input: string, matchers: CompiledMatcher
   ANSI_PATTERN.lastIndex = 0;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  const segments: string[] = [];
+  let segments: string[] | null = null;
 
   while ((match = ANSI_PATTERN.exec(input)) !== null) {
+    if (!segments) segments = [];
     const matchIndex = match.index;
     if (matchIndex > lastIndex) {
       const plainText = input.substring(lastIndex, matchIndex);
@@ -391,6 +413,10 @@ export function highlightTerminalString(input: string, matchers: CompiledMatcher
     // 原样保留原生 ANSI 序列
     segments.push(match[0]);
     lastIndex = ANSI_PATTERN.lastIndex;
+  }
+
+  if (!segments) {
+    return highlightPlainTextSegmentWithSpans(input, matchers);
   }
 
   if (lastIndex < input.length) {

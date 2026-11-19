@@ -28,6 +28,7 @@ import { SshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { SftpService } from '../sftp/sftp.service';
 import { appendRingBuffer, cleanupClientConnection } from './utils';
 import { BackendTerminalEmulator } from './terminal-emulator';
+import { OutputCoalescer } from './output-coalescer';
 import { clientStates } from './state';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service'; 
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
@@ -105,11 +106,7 @@ async function activateResumedSession(params: {
         terminalEmulator: resumedEmulator,
         paneStreams: result.paneStreams ? new Map(result.paneStreams) : new Map(),
     };
-    // 环形缓冲存完整历史（不是发给前端的那段），下次挂起时才能写全
-    if (result.fullLogData) {
-        newSessionState.recentOutputBuffer = [result.fullLogData];
-        newSessionState.recentOutputBytes = Buffer.byteLength(result.fullLogData);
-    }
+    // 屏幕完整历史已由 Headless VT 托管，无需再在 recentOutputBuffer 里多存一份原始文本副本
     clientStates.set(newFrontendSessionId, newSessionState);
     ws.sessionId = newFrontendSessionId; // 将当前 ws 与新会话关联
 
@@ -159,7 +156,6 @@ async function activateResumedSession(params: {
             for (const buf of pendingBuffers) {
                 const utf8Str = liveDecoder.write(buf);
                 newSessionState.terminalEmulator?.write(utf8Str);
-                appendRingBuffer(newSessionState, utf8Str);
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'ssh:output',
@@ -171,20 +167,27 @@ async function activateResumedSession(params: {
         }
     }
 
-    // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲与 Headless VT
+    // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护 Headless VT（高频输出微批合帧）
+    const resumedCoalescer = new OutputCoalescer({
+        onFlush: (merged: Buffer) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:output',
+                    payload: merged.toString('base64'),
+                    encoding: 'base64'
+                }));
+            }
+        },
+    });
+    newSessionState.outputCoalescer = resumedCoalescer;
     result.channel.removeAllListeners('data');
     result.channel.on('data', (data: Buffer) => {
         const utf8Data = liveDecoder.write(data);
         newSessionState.terminalEmulator?.write(utf8Data);
-        appendRingBuffer(newSessionState, utf8Data);
-
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'ssh:output',
-                payload: data.toString('base64'),
-                encoding: 'base64'
-            }));
+        if (newSessionState.isHandingOverToSuspend || !newSessionState.terminalEmulator) {
+            appendRingBuffer(newSessionState, utf8Data);
         }
+        resumedCoalescer.push(data);
     });
 
     result.channel.on('close', () => {
@@ -646,6 +649,8 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                 const emulatorToPass = stateForSuspend.terminalEmulator;
 
                                 // 先摘引用再交接：交接失败要能原样放回去
+                                try { stateForSuspend.outputCoalescer?.dispose(true); } catch {}
+                                stateForSuspend.outputCoalescer = undefined;
                                 stateForSuspend.sshClient = undefined as any;
                                 stateForSuspend.sshShellStream = undefined;
                                 stateForSuspend.paneStreams = undefined;

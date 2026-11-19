@@ -75,7 +75,7 @@ export const openFileInSession = (
                 const currentTabState = session.editorTabs.value.find(t => t.id === newTab.id);
                 if (!currentTabState) return;
 
-                const initialContent = decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
+                const initialContent = await decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
                 currentTabState.content = initialContent;
                 currentTabState.originalContent = initialContent;
                 currentTabState.rawContentBase64 = fileData.rawContentBase64;
@@ -257,7 +257,7 @@ export const saveFileInSession = async (
     }
 };
 
-export const changeEncodingInSession = (sessionId: string, tabId: string, newEncoding: string) => {
+export const changeEncodingInSession = async (sessionId: string, tabId: string, newEncoding: string) => {
     const session = sessions.value.get(sessionId);
     if (!session) {
         console.warn(`[EditorActions] 尝试更改不存在的会话 ${sessionId} 中标签页 ${tabId} 的编码。`);
@@ -283,7 +283,7 @@ export const changeEncodingInSession = (sessionId: string, tabId: string, newEnc
     console.log(`[EditorActions] 使用新编码 "${newEncoding}" 在前端重新解码文件: ${tab.filePath} (会话 ${sessionId}, Tab ID: ${tabId})`);
 
     try {
-        const newContent = decodeRawContent(tab.rawContentBase64, newEncoding);
+        const newContent = await decodeRawContent(tab.rawContentBase64, newEncoding);
         tab.content = newContent;
         tab.selectedEncoding = newEncoding;
         // tab.isModified 状态取决于新内容是否与 originalContent 不同，或者用户可能希望将更改编码视为“修改”
@@ -384,7 +384,7 @@ export const reloadFileInSession = async (
 
     try {
         const fileData = await sftpManager.readFile(tab.filePath, tab.selectedEncoding);
-        const newContent = decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
+        const newContent = await decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
 
         tab.content = newContent;
         tab.originalContent = newContent;

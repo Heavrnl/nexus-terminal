@@ -1,7 +1,6 @@
 // packages/frontend/src/stores/session/utils.ts
 
-import * as iconv from '@vscode/iconv-lite-umd';
-import { Buffer } from 'buffer/';
+import { decodeRawContentAsync } from '../../utils/encodingDecoder';
 
 /**
  * 生成唯一的会话 ID。
@@ -48,36 +47,8 @@ export const getLanguageFromFilename = (filename: string): string => {
 };
 
 /**
- * 使用指定的编码解码 Base64 编码的原始文件内容。
- * @param {string} rawContentBase64 - Base64 编码的原始文件内容。
- * @param {string} encoding - 用于解码的字符编码。
- * @returns {string} 解码后的文件内容。如果解码失败，则返回错误信息。
+ * 使用指定的编码异步解码 Base64 编码的原始文件内容（原生 TextDecoder 优先，冷门编码按需动态加载 iconv-lite）。
  */
-export const decodeRawContent = (rawContentBase64: string, encoding: string): string => {
-    try {
-        if (!rawContentBase64 || typeof rawContentBase64 !== 'string') {
-            return '';
-        }
-        const buffer = Buffer.from(rawContentBase64, 'base64');
-        const normalizedEncoding = encoding.toLowerCase().replace(/[^a-z0-9]/g, ''); // 标准化编码名称
-
-        // 优先使用 TextDecoder 处理标准编码
-        if (['utf8', 'utf16le', 'utf16be'].includes(normalizedEncoding)) {
-            const decoder = new TextDecoder(encoding); // TextDecoder 使用原始编码名称
-            return decoder.decode(buffer);
-        }
-        // 使用 iconv-lite 处理其他编码
-        else if (iconv.encodingExists(normalizedEncoding)) {
-            return iconv.decode(buffer, normalizedEncoding);
-        }
-        // 如果 iconv-lite 也不支持，回退到 UTF-8 并警告
-        else {
-            console.warn(`[SessionUtils decodeRawContent] Unsupported encoding "${encoding}" requested. Falling back to UTF-8.`);
-            const decoder = new TextDecoder('utf-8');
-            return decoder.decode(buffer);
-        }
-    } catch (error: any) {
-        console.error(`[SessionUtils decodeRawContent] Error decoding content with encoding "${encoding}":`, error);
-        return `// Error decoding content: ${error.message}`; // 返回错误信息
-    }
+export const decodeRawContent = (rawContentBase64: string, encoding: string): Promise<string> => {
+    return decodeRawContentAsync(rawContentBase64, encoding);
 };

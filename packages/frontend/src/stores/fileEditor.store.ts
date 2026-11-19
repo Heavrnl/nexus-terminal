@@ -3,8 +3,7 @@ import { defineStore } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { useSessionStore } from './session.store'; 
 import type { SaveStatus, SftpReadFileSuccessPayload } from '../types/sftp.types'; 
-import * as iconv from '@vscode/iconv-lite-umd'; 
-import { Buffer } from 'buffer/'; 
+import { decodeRawContentAsync } from '../utils/encodingDecoder'; 
 
 // --- 类型定义 ---
 // 文件信息，用于打开文件操作
@@ -77,34 +76,9 @@ export const getFilenameFromPath = (filePath: string): string => {
     return filePath.split('/').pop() || filePath;
 };
 
-// +++ 前端解码辅助函数 +++
-const decodeRawContent = (rawContentBase64: string, encoding: string): string => {
-    try {
-        if (!rawContentBase64 || typeof rawContentBase64 !== 'string') {
-            return '';
-        }
-        const buffer = Buffer.from(rawContentBase64, 'base64');
-        const normalizedEncoding = encoding.toLowerCase().replace(/[^a-z0-9]/g, ''); // Normalize encoding name
-
-        // 优先使用 TextDecoder 处理标准编码
-        if (['utf8', 'utf16le', 'utf16be'].includes(normalizedEncoding)) {
-            const decoder = new TextDecoder(encoding); // Use original encoding name for TextDecoder
-            return decoder.decode(buffer);
-        }
-        // 使用 iconv-lite 处理其他编码
-        else if (iconv.encodingExists(normalizedEncoding)) {
-            return iconv.decode(buffer, normalizedEncoding);
-        }
-        // 如果 iconv-lite 也不支持，回退到 UTF-8 并警告
-        else {
-            console.warn(`[decodeRawContent] Unsupported encoding "${encoding}" requested. Falling back to UTF-8.`);
-            const decoder = new TextDecoder('utf-8');
-            return decoder.decode(buffer);
-        }
-    } catch (error: any) {
-        console.error(`[decodeRawContent] Error decoding content with encoding "${encoding}":`, error);
-        return `// Error decoding content: ${error.message}`; // 返回错误信息
-    }
+// +++ 前端异步按需解码辅助函数（原生 TextDecoder 优先，冷门编码动态加载 iconv-lite） +++
+const decodeRawContent = (rawContentBase64: string, encoding: string): Promise<string> => {
+    return decodeRawContentAsync(rawContentBase64, encoding);
 };
 
 
@@ -270,7 +244,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
             }
 
             // +++ 前端解码 +++
-            const initialContent = decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
+            const initialContent = await decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
 
             // 更新标签页状态
             const updatedTab: FileTab = {
@@ -567,8 +541,8 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
     };
 
     // +++ 修改：更改文件编码（通过请求后端重新读取） +++
-    // +++ 修改：changeEncoding 现在在前端解码 +++
-    const changeEncoding = (tabId: string, newEncoding: string) => {
+    // +++ 修改：changeEncoding 现在在前端异步按需解码 +++
+    const changeEncoding = async (tabId: string, newEncoding: string) => {
         const tab = tabs.value.get(tabId);
         if (!tab) {
             console.warn(`[文件编辑器 Store] 尝试更改不存在的标签页 ${tabId} 的编码。`);
@@ -605,7 +579,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
 
         try {
             // 使用新编码解码存储的原始数据
-            const newContent = decodeRawContent(tab.rawContentBase64, newEncoding);
+            const newContent = await decodeRawContent(tab.rawContentBase64, newEncoding);
 
             // 更新标签页状态
             const updatedTab: FileTab = {
@@ -727,7 +701,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
             const currentTab = tabs.value.get(tabId);
             if (!currentTab) return false;
 
-            const newContent = decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
+            const newContent = await decodeRawContent(fileData.rawContentBase64, fileData.encodingUsed);
 
             currentTab.rawContentBase64 = fileData.rawContentBase64;
             currentTab.content = newContent;
