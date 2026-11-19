@@ -21,6 +21,7 @@ import type {
 import { passkeyRepository, Passkey, NewPasskey } from './passkey.repository';
 import { userRepository, User } from '../user/user.repository';
 import { config } from '../config/app.config';
+import { PASSKEY_USER_VERIFICATION } from './passkey.policy';
 
 const RP_ID = config.rpId;
 const RP_ORIGIN = config.rpOrigin;
@@ -70,7 +71,7 @@ export class PasskeyService {
       excludeCredentials,
       authenticatorSelection: {
         residentKey: 'preferred',
-        userVerification: 'preferred',
+        userVerification: PASSKEY_USER_VERIFICATION.request,
       },
       supportedAlgorithmIDs: [-7, -257],
     };
@@ -107,7 +108,7 @@ export class PasskeyService {
       expectedChallenge,
       expectedOrigin: RP_ORIGIN,
       expectedRPID: RP_ID,
-      requireUserVerification: true,
+      requireUserVerification: PASSKEY_USER_VERIFICATION.verify,
     };
 
     const verification = await verifyRegistrationResponse(verifyOpts);
@@ -165,7 +166,7 @@ export class PasskeyService {
       rpID: RP_ID,
       timeout: 60000,
       allowCredentials,
-      userVerification: 'preferred',
+      userVerification: PASSKEY_USER_VERIFICATION.request,
     };
 
     const generatedOptions = await generateAuthOptions(options);
@@ -250,7 +251,7 @@ export class PasskeyService {
       expectedOrigin: RP_ORIGIN,
       expectedRPID: RP_ID,
       credential: credentialObjectForLibrary, // Renamed from authenticator to credential
-      requireUserVerification: true,
+      requireUserVerification: PASSKEY_USER_VERIFICATION.verify,
     };
 
     // Call without 'as VerifyAuthenticationResponseOpts' since verifyOpts is 'any'
