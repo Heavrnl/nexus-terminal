@@ -281,7 +281,7 @@
               <input
                 :type="showApiKey ? 'text' : 'password'"
                 v-model="syncApiKey"
-                placeholder="输入 API Key"
+                :placeholder="desktopSyncStore.hasApiKey ? `已配置 (${desktopSyncStore.apiKeyMasked || '****'})，留空则保持不变` : '输入 API Key'"
                 class="w-full px-3 py-1.5 pr-10 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm font-mono"
               />
               <button
@@ -432,7 +432,7 @@
             <button
               type="button"
               @click="handleTestSyncConnection"
-              :disabled="!syncVpsUrl.trim() || !syncApiKey.trim() || desktopSyncStore.isTesting"
+              :disabled="!syncVpsUrl.trim() || (!syncApiKey.trim() && !desktopSyncStore.hasApiKey) || desktopSyncStore.isTesting"
               class="px-3 py-1.5 border border-border bg-header text-foreground rounded-md shadow-sm hover:bg-border disabled:opacity-50 disabled:cursor-not-allowed transition text-xs font-medium flex items-center gap-1.5"
             >
               <i v-if="desktopSyncStore.isTesting" class="fas fa-spinner fa-spin"></i>
@@ -722,7 +722,8 @@ const handleInvertModules = () => {
  * 云端同步按钮是否允许点击 (只有配置了域名和 apikey 才可以点击，否则禁用置灰)
  */
 const isSyncButtonEnabled = computed(() => {
-  return syncVpsUrl.value.trim().length > 0 && syncApiKey.value.trim().length > 0 && desktopSyncStore.selectedModules.length > 0;
+  const hasKey = syncApiKey.value.trim().length > 0 || desktopSyncStore.hasApiKey;
+  return syncVpsUrl.value.trim().length > 0 && hasKey && desktopSyncStore.selectedModules.length > 0;
 });
 
 const currentSyncModeLabel = computed(() => {
@@ -793,8 +794,9 @@ const handleSaveSyncConfig = async () => {
   try {
     await desktopSyncStore.saveConfig({
       vpsUrl: syncVpsUrl.value,
-      apiKey: syncApiKey.value,
+      ...(syncApiKey.value.trim() ? { apiKey: syncApiKey.value.trim() } : {}),
     });
+    syncApiKey.value = '';
     desktopSyncStore.syncSuccessMessage = t('common.saved', '配置已保存');
     setTimeout(() => {
       if (desktopSyncStore.syncSuccessMessage === t('common.saved', '配置已保存')) {

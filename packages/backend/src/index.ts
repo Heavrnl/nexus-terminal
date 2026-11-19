@@ -108,6 +108,7 @@ import debugRouter from './debug/debug.routes';
 import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
+import { isAuthenticated } from './auth/auth.middleware';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
 import { ensureDesktopAdmin, isDesktopRuntime } from './auth/desktop-bootstrap';
 import { listAutoStartRules } from './port-forward/port-forward.repository';
@@ -214,6 +215,8 @@ const initializeEnvironment = async () => {
 
 // 基础 Express 应用设置
 const app = express();
+// 隐藏 Express 指纹响应头，降低框架信息暴露面
+app.disable('x-powered-by');
 const server = http.createServer(app);
 
 // --- 信任代理设置 ---
@@ -380,7 +383,7 @@ const startServer = () => {
     app.use('/api/v1/favorite-paths', favoritePathsRouter);
     app.use('/api/v1/port-forwards', portForwardRouter);
     app.use('/api/v1/workspace-sync', workspaceSyncRouter);
-    app.use('/api/v1/desktop', desktopRouter);
+    app.use('/api/v1/desktop', isAuthenticated, desktopRouter);
     app.use('/api/v1/sync', syncRouter);
     app.use('/api/sync/v2', syncV2Router);
     app.use('/api/v1/connections/:connectionId/file-color-highlights', fileColorHighlightsRouter);
@@ -464,6 +467,33 @@ const startServer = () => {
     } else {
       console.log('[Frontend Static] 未检测到前端构建产物，仅提供 API 与 WebSocket 服务。');
     }
+
+    // --- Express 全局错误处理兜底（禁止向客户端回显堆栈或本地绝对路径） ---
+    app.use((err: any, _req: Request, res: Response, next: NextFunction): void => {
+      if (res.headersSent) {
+        return next(err);
+      }
+
+      if (err?.type === 'entity.parse.failed' || (err instanceof SyntaxError && (err as any)?.status === 400)) {
+        res.status(400).json({ message: '请求体 JSON 格式无效' });
+        return;
+      }
+
+      if (err?.type === 'entity.too.large') {
+        res.status(413).json({ message: '请求体大小超出限制' });
+        return;
+      }
+
+      const rawStatus = Number(err?.status ?? err?.statusCode);
+      const statusCode = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
+      console.error('[Express ErrorHandler] 未捕获的请求异常:', err);
+
+      if (statusCode >= 500) {
+        res.status(statusCode).json({ message: '服务器内部错误' });
+      } else {
+        res.status(statusCode).json({ message: '请求参数或状态无效' });
+      }
+    });
 
     const host = process.env.HOST || '0.0.0.0';
     server.listen(Number(port), host, () => {

@@ -46,6 +46,8 @@ export default defineConfig({
     esbuildOptions: { target: 'es2022' }
   },
   server: {
+    // 默认仅监听本机回环地址，防止 dev server 的 /@fs/ 等开发调试能力暴露到局域网或公网
+    host: '127.0.0.1',
     proxy: {
       // 将所有 /api 开头的请求代理到后端服务器
       '/api': {

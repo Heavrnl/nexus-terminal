@@ -4,8 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { getDataDir } from '../services/storage-path.service';
 import { settingsRepository } from '../settings/settings.repository';
-import { getServerSyncApiKey } from './sync.middleware';
 import { syncThrottleScheduler } from './sync.scheduler';
+import { assertSafeSyncOutboundUrl, createPinnedLookup } from './outbound-url';
 
 /**
  * 桌面端常驻后台的 WebSocket 实时同步长连接客户端
@@ -78,32 +78,27 @@ export class SyncWsClient {
       } catch {}
     }
 
-    // 3. 从环境变量回退
-    if (!vpsUrl) vpsUrl = process.env.SYNC_VPS_URL || '';
-    if (!apiKey) apiKey = (await getServerSyncApiKey()) || '';
+    // 3. 从环境变量回退（仅使用显式配置的 SYNC_API_KEY，严禁回退泄露本地服务端 syncApiKey）
+    if (!vpsUrl) vpsUrl = (process.env.SYNC_VPS_URL || '').trim();
+    if (!apiKey) apiKey = (process.env.SYNC_API_KEY || '').trim();
 
     return { vpsUrl, apiKey };
   }
 
   /**
-   * 将 HTTP/HTTPS VPS URL 转化为 WS/WSS 同步长连接地址
+   * 将校验通过的 HTTP/HTTPS VPS URL 转化为 WS/WSS 同步长连接地址
    */
-  private buildWsUrl(vpsUrl: string, apiKey: string): string | null {
-    if (!vpsUrl || !apiKey) return null;
+  private buildWsUrl(parsed: URL, apiKey: string): string | null {
+    if (!apiKey) return null;
 
     try {
-      let cleanUrl = vpsUrl.trim().replace(/\/+$/, '');
-      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-        cleanUrl = `http://${cleanUrl}`;
-      }
-
-      const parsed = new URL(cleanUrl);
       const isSecure = parsed.protocol === 'https:';
       const wsProtocol = isSecure ? 'wss:' : 'ws:';
       const host = parsed.host;
-      const baseWsPath = parsed.pathname === '/' ? '' : parsed.pathname;
+      const cleanPathname = parsed.pathname.replace(/\/+$/, '');
+      const baseWsPath = cleanPathname === '/' ? '' : cleanPathname;
 
-      return `${wsProtocol}//${host}${baseWsPath}/ws/sync?apiKey=${encodeURIComponent(apiKey)}`;
+      return `${wsProtocol}//${host}${baseWsPath}/ws/sync`;
     } catch (e: any) {
       console.warn('[SyncWsClient] 构建 WebSocket 连接地址失败:', e.message);
       return null;
@@ -126,17 +121,34 @@ export class SyncWsClient {
       return;
     }
 
-    const wsUrl = this.buildWsUrl(vpsUrl, apiKey);
+    // 发起出站 WebSocket 连接前强制执行 SSRF 安全校验，阻断内网/回环与 DNS Rebinding
+    let verifiedTarget;
+    try {
+      let candidateUrl = vpsUrl.trim();
+      if (!/^https?:\/\//i.test(candidateUrl)) {
+        candidateUrl = `https://${candidateUrl}`;
+      }
+      verifiedTarget = await assertSafeSyncOutboundUrl(candidateUrl);
+    } catch (err: any) {
+      console.warn(`[SyncWsClient] 拒绝连接不安全的同步目标地址 (${vpsUrl}): ${err.message}`);
+      this.scheduleReconnect(30000);
+      return;
+    }
+
+    const wsUrl = this.buildWsUrl(verifiedTarget.url, apiKey);
     if (!wsUrl) {
       this.scheduleReconnect(15000);
       return;
     }
 
+    const pinnedLookup = createPinnedLookup(verifiedTarget);
+
     this.isConnecting = true;
     try {
-      console.log(`[SyncWsClient] 正在尝试建立双端实时长连接通道... (${vpsUrl})`);
+      console.log(`[SyncWsClient] 正在尝试建立双端实时长连接通道... (${verifiedTarget.url.origin})`);
       const ws = new WebSocket(wsUrl, {
         handshakeTimeout: 8000,
+        ...(pinnedLookup ? { lookup: pinnedLookup } : {}),
         headers: {
           'x-sync-api-key': apiKey
         }

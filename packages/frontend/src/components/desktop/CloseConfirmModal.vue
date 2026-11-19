@@ -104,16 +104,19 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
+import { isDesktopApp } from '../../utils/platform';
 
 const { t } = useI18n();
+const isDesktop = isDesktopApp();
 
 const visible = ref(false);
 const selectedAction = ref<'minimize_to_tray' | 'quit'>('minimize_to_tray');
 const rememberChoice = ref(false);
 const isSubmitting = ref(false);
 
-// 初始化读取配置
+// 初始化读取配置（仅在桌面端运行时请求）
 const loadInitialSettings = async () => {
+  if (!isDesktop) return;
   try {
     const res = await axios.get('/api/v1/desktop/settings');
     if (res.data) {
@@ -139,20 +142,29 @@ const handleCancel = () => {
 const handleConfirm = async () => {
   isSubmitting.value = true;
   try {
-    // 1. 本地与服务端双向持久化配置，并写入 actionToExecute
+    // 1. 本地缓存持久化配置
     localStorage.setItem('nexus_close_behavior', selectedAction.value);
     localStorage.setItem('nexus_remember_close_choice', String(rememberChoice.value));
 
-    await axios.put('/api/v1/desktop/settings', {
-      closeBehavior: selectedAction.value,
-      rememberCloseChoice: rememberChoice.value,
-      actionToExecute: selectedAction.value,
-    });
+    // 2. 尝试通过后端接口持久化（未登录时 401 不阻断桌面窗口关闭/隐藏动作）
+    try {
+      await axios.put('/api/v1/desktop/settings', {
+        closeBehavior: selectedAction.value,
+        rememberCloseChoice: rememberChoice.value,
+        actionToExecute: selectedAction.value,
+      });
+    } catch (apiErr) {
+      console.warn('[CloseConfirmModal] 同步关闭配置到后端失败，将继续执行原生窗口动作:', apiErr);
+    }
 
-    // 2. 尝试调用原生 IPC（若有注入）
+    // 3. 调用原生 Tauri IPC 持久化配置并执行窗口动作
     try {
       const tauri = (window as any).__TAURI__;
       if (tauri?.core?.invoke) {
+        await tauri.core.invoke('set_desktop_settings', {
+          closeBehavior: selectedAction.value,
+          rememberCloseChoice: rememberChoice.value,
+        }).catch(() => {});
         if (selectedAction.value === 'minimize_to_tray') {
           await tauri.core.invoke('hide_main_window');
         } else {
@@ -177,6 +189,7 @@ const showModal = () => {
 };
 
 onMounted(() => {
+  if (!isDesktop) return;
   loadInitialSettings();
 
   // 1. 全局挂载唤起钩子，供 Tauri 主进程在 CloseRequested 触发时直接调用
@@ -187,7 +200,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && isDesktop) {
     delete (window as any).__NEXUS_SHOW_CLOSE_CONFIRM__;
     window.removeEventListener('nexus:request-close', showModal);
   }

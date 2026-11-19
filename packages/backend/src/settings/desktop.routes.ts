@@ -1,18 +1,45 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { getDataDir } from '../services/storage-path.service';
+import { isAuthenticated } from '../auth/auth.middleware';
+import { isDesktopRuntime, isLocalRequest } from '../auth/desktop-bootstrap';
 import { syncService, type SyncModuleKey } from '../sync/sync.service';
 import { syncV2Service } from '../sync/sync.v2.service';
 import { syncThrottleScheduler } from '../sync/sync.scheduler';
 import { syncWsClient } from '../sync/sync.ws-client';
 import { resolveSyncItems } from '../sync/sync.items';
+import {
+  assertSafeSyncOutboundUrl,
+  isSafeDesktopRoute,
+  isSameOriginUrl,
+  maskSecret,
+} from '../sync/outbound-url';
 
 import { settingsRepository } from './settings.repository';
 
 const router = Router();
 
+/**
+ * 桌面端专属路由访问守卫：
+ * 1. 所有接口必须先通过会话鉴权（isAuthenticated，未登录返回 401）；
+ * 2. 生产 Web / Docker 部署（非桌面运行时）一律拒绝访问（403）；
+ * 3. 必须来自本机回环 socket（使用不可伪造的 socket.remoteAddress，拒绝 X-Forwarded-For 伪造）。
+ */
+function requireLocalDesktopAccess(req: Request, res: Response, next: NextFunction): void {
+  if (process.env.NODE_ENV === 'production' && !isDesktopRuntime()) {
+    res.status(403).json({ success: false, error: '当前运行模式未启用桌面端接口' });
+    return;
+  }
+  if (!isLocalRequest(req)) {
+    res.status(403).json({ success: false, error: '仅允许本机桌面客户端访问该接口' });
+    return;
+  }
+  next();
+}
 
+router.use(isAuthenticated);
+router.use(requireLocalDesktopAccess);
 
 export interface WindowState {
   width?: number;
@@ -60,9 +87,67 @@ function writeDesktopSettings(settings: DesktopSettings): void {
 }
 
 /**
+ * 脱敏桌面端配置对象，防止 syncApiKey 明文通过 /settings 或 /sync/config 响应泄露
+ */
+function sanitizeDesktopSettings(settings: DesktopSettings): DesktopSettings {
+  const { syncApiKey, ...rest } = settings;
+  const hasApiKey = typeof syncApiKey === 'string' && syncApiKey.trim().length > 0;
+  return {
+    ...rest,
+    hasSyncApiKey: hasApiKey,
+    ...(hasApiKey ? { syncApiKeyMasked: maskSecret(syncApiKey) } : {}),
+  };
+}
+
+/**
+ * 构造脱敏后的云端同步配置响应体（永不返回明文 apiKey）
+ */
+function buildPublicSyncConfig(settings: DesktopSettings) {
+  const rawKey = typeof settings.syncApiKey === 'string' ? settings.syncApiKey.trim() : '';
+  return {
+    vpsUrl: settings.syncVpsUrl || '',
+    apiKey: maskSecret(rawKey),
+    hasApiKey: rawKey.length > 0,
+    conflictStrategy: settings.syncConflictStrategy || 'lww',
+    syncMode: settings.syncMode || 'bidirectional',
+    lastSyncTime: settings.syncLastTime || 0,
+    autoSyncOnOpen: settings.syncAutoOnOpen ?? false,
+  };
+}
+
+/**
+ * 解析调用方传入的 apiKey（忽略空值和脱敏掩码回传），
+ * 且在未传入新 apiKey 时仅允许同源目标复用已保存密钥，严禁把密钥发往其他主机。
+ */
+function resolveOutboundApiKey(
+  providedApiKey: unknown,
+  targetUrl: string,
+  settings: DesktopSettings
+): { apiKey: string; error?: string } {
+  const savedKey = typeof settings.syncApiKey === 'string' ? settings.syncApiKey.trim() : '';
+  const savedMask = maskSecret(savedKey);
+  const rawProvided = typeof providedApiKey === 'string' ? providedApiKey.trim() : '';
+  const isNewKeyProvided = rawProvided.length > 0 && rawProvided !== savedMask;
+
+  if (isNewKeyProvided) {
+    return { apiKey: rawProvided };
+  }
+
+  if (!savedKey) {
+    return { apiKey: '', error: '请输入同步 API Key' };
+  }
+
+  if (!isSameOriginUrl(targetUrl, settings.syncVpsUrl)) {
+    return { apiKey: '', error: '目标服务器地址已变更，请重新输入对应的同步 API Key' };
+  }
+
+  return { apiKey: savedKey };
+}
+
+/**
  * 获取桌面客户端配置
  */
-router.get('/settings', (req: Request, res: Response) => {
+router.get('/settings', (_req: Request, res: Response) => {
   const settings = readDesktopSettings();
   if (!settings.closeBehavior) {
     settings.closeBehavior = 'minimize_to_tray';
@@ -70,16 +155,20 @@ router.get('/settings', (req: Request, res: Response) => {
   if (typeof settings.rememberCloseChoice !== 'boolean') {
     settings.rememberCloseChoice = false;
   }
-  res.json(settings);
+  res.json(sanitizeDesktopSettings(settings));
 });
 
 /**
  * 更新桌面客户端配置
  */
 router.put('/settings', (req: Request, res: Response): void => {
-  const { closeBehavior, rememberCloseChoice, windowState, actionToExecute } = req.body;
+  const { closeBehavior, rememberCloseChoice, windowState, actionToExecute } = req.body || {};
   if (closeBehavior && !['minimize_to_tray', 'quit'].includes(closeBehavior)) {
     res.status(400).json({ error: '无效的 closeBehavior 参数，仅支持 minimize_to_tray 或 quit' });
+    return;
+  }
+  if (actionToExecute !== undefined && !['minimize_to_tray', 'quit'].includes(actionToExecute)) {
+    res.status(400).json({ error: '无效的 actionToExecute 参数，仅支持 minimize_to_tray 或 quit' });
     return;
   }
 
@@ -103,10 +192,10 @@ router.put('/settings', (req: Request, res: Response): void => {
 
   try {
     writeDesktopSettings(updated);
-    res.json({ success: true, settings: updated });
+    res.json({ success: true, settings: sanitizeDesktopSettings(updated) });
   } catch (err: any) {
     console.error('[DesktopSettings] 保存 desktop-settings.json 失败:', err);
-    res.status(500).json({ error: '保存配置失败', details: err.message });
+    res.status(500).json({ error: '保存配置失败' });
   }
 });
 
@@ -114,7 +203,7 @@ router.put('/settings', (req: Request, res: Response): void => {
  * 记录用户当前停留的路由页面 (用于桌面端下次启动直达，传入空字符串或clear可清除)
  */
 router.post('/route', (req: Request, res: Response): void => {
-  const { route, clear, enabled } = req.body;
+  const { route, clear, enabled } = req.body || {};
   const current = readDesktopSettings();
   if (typeof enabled === 'boolean') {
     current.rememberLastRoute = enabled;
@@ -128,7 +217,11 @@ router.post('/route', (req: Request, res: Response): void => {
     } catch (err) {
       console.warn('[DesktopSettings] 清空上次停留路由失败:', err);
     }
-  } else if (typeof route === 'string' && route.trim().length > 0) {
+  } else if (route !== undefined) {
+    if (!isSafeDesktopRoute(route)) {
+      res.status(400).json({ success: false, error: '无效的站内路由路径' });
+      return;
+    }
     const trimmed = route.trim();
     if (!trimmed.includes('/login') && !trimmed.includes('/setup')) {
       current.lastRoute = trimmed;
@@ -144,9 +237,13 @@ router.post('/route', (req: Request, res: Response): void => {
 });
 
 /**
- * 退出应用程序接口 (由前端触发彻底关闭)
+ * 退出应用程序接口 (仅限已登录的本机桌面端运行时调用)
  */
 router.post('/exit', (req: Request, res: Response): void => {
+  if (!isDesktopRuntime() || !isLocalRequest(req)) {
+    res.status(403).json({ success: false, error: '仅桌面端本机运行时允许执行退出操作' });
+    return;
+  }
   res.json({ success: true, message: '正在退出桌面端应用...' });
   setTimeout(() => {
     console.log('🚪 [DesktopSettings] 收到前端退出请求，正在终止后端服务...');
@@ -159,37 +256,67 @@ router.post('/exit', (req: Request, res: Response): void => {
 // ==========================================
 
 /**
-
- * 获取桌面端云端同步配置
+ * 获取桌面端云端同步配置（apiKey 仅返回掩码，不暴露明文）
  */
-router.get('/sync/config', (req: Request, res: Response): void => {
+router.get('/sync/config', (_req: Request, res: Response): void => {
   const settings = readDesktopSettings();
   res.json({
     success: true,
-    config: {
-      vpsUrl: settings.syncVpsUrl || '',
-      apiKey: settings.syncApiKey || '',
-      conflictStrategy: settings.syncConflictStrategy || 'lww',
-      syncMode: settings.syncMode || 'bidirectional',
-      lastSyncTime: settings.syncLastTime || 0,
-      autoSyncOnOpen: settings.syncAutoOnOpen ?? false
-    }
+    config: buildPublicSyncConfig(settings),
   });
 });
 
 /**
  * 保存桌面端云端同步配置
  */
-router.post('/sync/config', (req: Request, res: Response): void => {
-  const { vpsUrl, apiKey, conflictStrategy, autoSyncOnOpen, syncMode } = req.body;
+router.post('/sync/config', async (req: Request, res: Response): Promise<void> => {
+  const { vpsUrl, apiKey, clearApiKey, conflictStrategy, autoSyncOnOpen, syncMode } = req.body || {};
   const current = readDesktopSettings();
+
+  const nextVpsUrl = vpsUrl !== undefined ? String(vpsUrl).trim() : (current.syncVpsUrl || '');
+  if (nextVpsUrl) {
+    try {
+      await assertSafeSyncOutboundUrl(nextVpsUrl);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || '同步服务器地址不合法' });
+      return;
+    }
+  }
+
+  const currentKey = typeof current.syncApiKey === 'string' ? current.syncApiKey.trim() : '';
+  const currentMask = maskSecret(currentKey);
+
+  let nextApiKey = currentKey;
+  if (clearApiKey === true) {
+    nextApiKey = '';
+  } else if (apiKey !== undefined) {
+    const incomingKey = String(apiKey).trim();
+    // 忽略空字符串或前端意外回传的掩码，仅在传入新明文密钥时覆盖
+    if (incomingKey.length > 0 && incomingKey !== currentMask) {
+      nextApiKey = incomingKey;
+    } else if (nextVpsUrl && currentKey && !isSameOriginUrl(nextVpsUrl, current.syncVpsUrl)) {
+      // 严禁在未提供新密钥的情况下，将已保存的旧密钥直接绑定到不同源的新服务器
+      res.status(400).json({
+        success: false,
+        error: '更换同步服务器地址时，请重新输入对应的 API Key',
+      });
+      return;
+    }
+  } else if (nextVpsUrl && currentKey && !isSameOriginUrl(nextVpsUrl, current.syncVpsUrl)) {
+    res.status(400).json({
+      success: false,
+      error: '更换同步服务器地址时，请重新输入对应的 API Key',
+    });
+    return;
+  }
+
   const updated: DesktopSettings = {
     ...current,
-    syncVpsUrl: vpsUrl !== undefined ? String(vpsUrl).trim() : current.syncVpsUrl,
-    syncApiKey: apiKey !== undefined ? String(apiKey).trim() : current.syncApiKey,
+    syncVpsUrl: nextVpsUrl,
+    syncApiKey: nextApiKey,
     syncConflictStrategy: conflictStrategy || current.syncConflictStrategy || 'lww',
     syncMode: syncMode || current.syncMode || 'bidirectional',
-    syncAutoOnOpen: typeof autoSyncOnOpen === 'boolean' ? autoSyncOnOpen : current.syncAutoOnOpen
+    syncAutoOnOpen: typeof autoSyncOnOpen === 'boolean' ? autoSyncOnOpen : current.syncAutoOnOpen,
   };
 
   try {
@@ -201,11 +328,18 @@ router.post('/sync/config', (req: Request, res: Response): void => {
       );
       syncThrottleScheduler.notifyChange();
       void syncWsClient.restart();
+    } else {
+      void settingsRepository.setSetting('desktop_sync_config', '');
+      syncWsClient.stop();
     }
-    res.json({ success: true, message: '云端同步配置已保存', config: updated });
+    res.json({
+      success: true,
+      message: '云端同步配置已保存',
+      config: buildPublicSyncConfig(updated),
+    });
   } catch (err: any) {
-
-    res.status(500).json({ success: false, error: '保存配置失败', details: err.message });
+    console.error('[DesktopSync] 保存配置失败:', err);
+    res.status(500).json({ success: false, error: '保存配置失败' });
   }
 });
 
@@ -214,31 +348,39 @@ router.post('/sync/config', (req: Request, res: Response): void => {
  */
 router.post('/sync/test', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { vpsUrl, apiKey } = req.body;
+    const { vpsUrl, apiKey } = req.body || {};
     const settings = readDesktopSettings();
-    const targetUrl = (vpsUrl || settings.syncVpsUrl || '').trim();
-    const targetApiKey = (apiKey || settings.syncApiKey || '').trim();
+    const targetUrl = (typeof vpsUrl === 'string' && vpsUrl.trim() ? vpsUrl : (settings.syncVpsUrl || '')).trim();
 
     if (!targetUrl) {
       res.status(400).json({ success: false, error: '请输入 VPS 服务器地址' });
       return;
     }
-    if (!targetApiKey) {
-      res.status(400).json({ success: false, error: '请输入同步 API Key' });
+
+    try {
+      await assertSafeSyncOutboundUrl(targetUrl);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message || '同步服务器地址不合法' });
       return;
     }
 
-    const testResult = await syncService.testRemoteConnection(targetUrl, targetApiKey);
+    const keyResolution = resolveOutboundApiKey(apiKey, targetUrl, settings);
+    if (!keyResolution.apiKey) {
+      res.status(400).json({ success: false, error: keyResolution.error || '请输入同步 API Key' });
+      return;
+    }
+
+    const testResult = await syncService.testRemoteConnection(targetUrl, keyResolution.apiKey);
     res.json({
       success: true,
       latencyMs: testResult.latencyMs,
-      serverInfo: testResult.data
+      serverInfo: testResult.data,
     });
   } catch (err: any) {
     console.warn('[DesktopSync] 连通性测试失败:', err.message);
     res.status(502).json({
       success: false,
-      error: `无法连接到 VPS 服务器: ${err.message}`
+      error: `无法连接到 VPS 服务器: ${err.message}`,
     });
   }
 });
@@ -248,22 +390,42 @@ router.post('/sync/test', async (req: Request, res: Response): Promise<void> => 
  */
 router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> => {
   try {
+    const body = req.body || {};
     const settings = readDesktopSettings();
-    const vpsUrl = (req.body.vpsUrl || settings.syncVpsUrl || '').trim();
-    const apiKey = (req.body.apiKey || settings.syncApiKey || '').trim();
+    const vpsUrl = (typeof body.vpsUrl === 'string' && body.vpsUrl.trim() ? body.vpsUrl : (settings.syncVpsUrl || '')).trim();
 
-    if (!vpsUrl || !apiKey) {
+    if (!vpsUrl) {
       res.status(400).json({
         success: false,
-        error: '未配置 VPS 域名或 API Key，无法执行同步'
+        error: '未配置 VPS 域名或 API Key，无法执行同步',
       });
       return;
     }
 
+    try {
+      await assertSafeSyncOutboundUrl(vpsUrl);
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: err.message || '同步服务器地址不合法',
+      });
+      return;
+    }
+
+    const keyResolution = resolveOutboundApiKey(body.apiKey, vpsUrl, settings);
+    if (!keyResolution.apiKey) {
+      res.status(400).json({
+        success: false,
+        error: keyResolution.error || '未配置 VPS 域名或 API Key，无法执行同步',
+      });
+      return;
+    }
+    const apiKey = keyResolution.apiKey;
+
     const lastSyncTime = settings.syncLastTime || 0;
-    const mode = req.body.mode || 'bidirectional';
-    const modules = Array.isArray(req.body.modules)
-      ? (req.body.modules.filter((m: unknown) => typeof m === 'string') as SyncModuleKey[])
+    const mode = body.mode || 'bidirectional';
+    const modules = Array.isArray(body.modules)
+      ? (body.modules.filter((m: unknown) => typeof m === 'string') as SyncModuleKey[])
       : undefined;
 
     // 同步范围（细项）发生变化时要退游标，否则「关掉的子项」期间的变更永久错过，
@@ -280,17 +442,12 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
 
     // 同步成功，更新本地最后同步时间戳与当前同步模式偏好
     settings.syncLastTime = result.serverTime;
-    if (req.body.mode) {
-      settings.syncMode = req.body.mode;
+    if (body.mode) {
+      settings.syncMode = body.mode;
     }
     writeDesktopSettings(settings);
 
     // 双向合并时协同执行 v2 增量游标同步。
-    // 以前这里要求「未指定模块」才跑，而前端每次都会带上所选模块（默认全选 5 个），
-    // 结果手动「立即同步」永远只走 v1（秒级 LWW），自动同步却走 v2（HLC），
-    // 两套判定互相打架，最容易出现「同步完刷新又变回去」。
-    // 现在：双向模式下都跑 v2，并把它收到的同步范围一并带下去，
-    // 让 v1 / v2 两条通路对「哪些子项要同步」保持同一套判断。
     if (mode === 'bidirectional') {
       try {
         const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey, modules);
@@ -305,14 +462,13 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
       success: true,
       message: '数据同步成功',
       lastSyncTime: result.serverTime,
-      stats: result.stats
+      stats: result.stats,
     });
-
   } catch (err: any) {
     console.error('[DesktopSync] 执行同步失败:', err);
     res.status(500).json({
       success: false,
-      error: `数据同步执行失败: ${err.message}`
+      error: `数据同步执行失败: ${err.message}`,
     });
   }
 });

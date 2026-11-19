@@ -6,7 +6,6 @@ import { generateDeterministicCommandUuid, normalizeCommandText } from '../comma
 import fs from 'fs';
 import path from 'path';
 import { getDataDir } from '../services/storage-path.service';
-import { getServerSyncApiKey } from './sync.middleware';
 import { broadcastSyncInvalidated, notifyLocalFrontendSyncDone } from './sync.ws-broadcaster';
 
 /**
@@ -157,9 +156,9 @@ export class SyncThrottleScheduler {
         } catch {}
       }
 
-      // 若仍未读取到，尝试环境变量
-      if (!vpsUrl) vpsUrl = process.env.SYNC_VPS_URL || '';
-      if (!apiKey) apiKey = (await getServerSyncApiKey()) || '';
+      // 若仍未读取到，仅使用显式配置的环境变量，严禁回退泄露本地服务端 syncApiKey
+      if (!vpsUrl) vpsUrl = (process.env.SYNC_VPS_URL || '').trim();
+      if (!apiKey) apiKey = (process.env.SYNC_API_KEY || '').trim();
 
       if (!vpsUrl || !apiKey) {
         // 未配置远程 VPS 地址或密钥，无需发起网络同步

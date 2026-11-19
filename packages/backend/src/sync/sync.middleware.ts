@@ -6,7 +6,7 @@ import { settingsRepository } from '../settings/settings.repository';
 /**
  * 恒定时间字符串比较，防止时序侧信道攻击
  */
-function safeCompare(a: string, b: string): boolean {
+export function safeCompare(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -14,11 +14,16 @@ function safeCompare(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-export const DEFAULT_SYNC_API_KEY = 'nexus-sync-key-2026';
+/**
+ * 生成服务端随机同步 API Key（32 字节高熵十六进制字符串）
+ */
+export function generateSyncApiKey(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 /**
  * 获取服务端配置的有效 API Key
- * 完全基于数据库 settings 表持久化，不再依赖 .env 环境变量
+ * 完全基于数据库 settings 表持久化；首次初始化由服务端随机生成，严禁使用硬编码默认密钥
  */
 export async function getServerSyncApiKey(): Promise<string> {
   try {
@@ -26,12 +31,13 @@ export async function getServerSyncApiKey(): Promise<string> {
     if (settingValue && settingValue.trim() !== '') {
       return settingValue.trim();
     }
-    // 数据库中若尚未配置，自动初始化存入数据库
-    await settingsRepository.setSetting('syncApiKey', DEFAULT_SYNC_API_KEY);
-    return DEFAULT_SYNC_API_KEY;
+    // 数据库中尚未配置时，由服务端自动生成强随机密钥并持久化
+    const generatedKey = generateSyncApiKey();
+    await settingsRepository.setSetting('syncApiKey', generatedKey);
+    return generatedKey;
   } catch (err: any) {
     console.warn('[SyncMiddleware] 读取或初始化 syncApiKey 失败:', err.message);
-    return DEFAULT_SYNC_API_KEY;
+    return '';
   }
 }
 

@@ -4,7 +4,8 @@ import { Request, RequestHandler } from 'express';
 import { WebSocketServer } from 'ws';
 import { AuthenticatedWebSocket } from './types';
 import { handleSyncWsConnection, handleFrontendEventsConnection } from '../sync/sync.ws-broadcaster';
-import { getServerSyncApiKey } from '../sync/sync.middleware';
+import { getServerSyncApiKey, safeCompare } from '../sync/sync.middleware';
+import { isLocalRequest } from '../auth/desktop-bootstrap';
 import { consumeTicket } from '../remote/remote-session.store';
 import { handleRdpTunnel } from '../remote/rdp-tunnel';
 import { handleVncTunnel } from '../remote/vnc-tunnel';
@@ -32,13 +33,7 @@ export function initializeUpgradeHandler(
     sessionParser: RequestHandler
 ): void {
     server.on('upgrade', (request: Request, socket, head) => {
-        // --- 添加详细日志：检查传入的请求头和 request.ip ---
         console.log('[WebSocket Upgrade] Received upgrade request.');
-        console.log('[WebSocket Upgrade] Request Headers:', JSON.stringify(request.headers, null, 2));
-        console.log(`[WebSocket Upgrade] Initial request.ip value: ${request.ip}`); // Express 尝试解析的 IP
-        console.log(`[WebSocket Upgrade] X-Real-IP Header: ${request.headers['x-real-ip']}`);
-        console.log(`[WebSocket Upgrade] X-Forwarded-For Header: ${request.headers['x-forwarded-for']}`);
-        // --- 结束添加日志 ---
 
         const parsedUrl = url.parse(request.url || '', true); // Parse URL and query string
         const pathname = parsedUrl.pathname;
@@ -74,7 +69,7 @@ export function initializeUpgradeHandler(
         if (pathname === '/ws/sync' || pathname === '/sync') {
             const rawApiKey = (parsedUrl.query.apiKey as string) || (request.headers['x-sync-api-key'] as string);
             getServerSyncApiKey().then(serverApiKey => {
-                if (!serverApiKey || !rawApiKey || rawApiKey !== serverApiKey) {
+                if (!serverApiKey || !rawApiKey || !safeCompare(String(rawApiKey).trim(), serverApiKey)) {
                     console.warn(`[Sync WS] 鉴权失败，拒绝来自 ${ipAddress} 的同步长连接。`);
                     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
                     socket.destroy();
@@ -96,7 +91,8 @@ export function initializeUpgradeHandler(
         if (pathname === '/ws/events' || pathname === '/events') {
             // @ts-ignore Express-session 类型问题
             sessionParser(request, {} as any, () => {
-                const isLocal = ipAddress === '127.0.0.1' || ipAddress === '::1' || ipAddress === 'localhost' || ipAddress === '::ffff:127.0.0.1';
+                // 必须使用不可伪造的 socket.remoteAddress 判定本机连接，严禁采信可伪造的 X-Forwarded-For
+                const isLocal = isLocalRequest(request);
                 const isAuthed = !!(request.session && request.session.userId);
                 if (!isAuthed && !isLocal) {
                     console.warn(`[FrontendEvents] 拒绝未登录且非本地的前端事件连接 (来自 IP: ${ipAddress})。`);

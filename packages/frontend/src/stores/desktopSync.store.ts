@@ -178,6 +178,8 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
 
   const vpsUrl = ref<string>('');
   const apiKey = ref<string>('');
+  const hasApiKey = ref<boolean>(false);
+  const apiKeyMasked = ref<string>('');
   const conflictStrategy = ref<string>('lww');
   const syncMode = ref<SyncMode>(loadPersistedSyncMode());
   const lastSyncTime = ref<number>(0);
@@ -212,11 +214,11 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    * 是否已配置有效的 VPS 域名与 API Key
    */
   const isConfigured = computed(() => {
-    return vpsUrl.value.trim().length > 0 && apiKey.value.trim().length > 0;
+    return vpsUrl.value.trim().length > 0 && (hasApiKey.value || apiKey.value.trim().length > 0);
   });
 
   /**
-   * 从桌面端本地接口读取同步配置
+   * 从桌面端本地接口读取同步配置（后端仅返回掩码 apiKey，不暴露明文）
    */
   const fetchConfig = async (): Promise<void> => {
     if (!isDesktop.value) return;
@@ -224,7 +226,10 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       const res = await axios.get('/api/v1/desktop/sync/config');
       if (res.data?.success && res.data.config) {
         vpsUrl.value = res.data.config.vpsUrl || '';
-        apiKey.value = res.data.config.apiKey || '';
+        apiKeyMasked.value = res.data.config.apiKey || '';
+        hasApiKey.value = Boolean(res.data.config.hasApiKey ?? (res.data.config.apiKey && res.data.config.apiKey.length > 0));
+        // 明文输入框不预填掩码，仅在用户主动输入新密钥时携带
+        apiKey.value = '';
         conflictStrategy.value = res.data.config.conflictStrategy || 'lww';
         if (res.data.config.syncMode) {
           setSyncMode(res.data.config.syncMode);
@@ -242,16 +247,38 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    */
   const saveConfig = async (params: {
     vpsUrl: string;
-    apiKey: string;
+    apiKey?: string;
+    clearApiKey?: boolean;
     conflictStrategy?: string;
     syncMode?: SyncMode;
     autoSyncOnOpen?: boolean;
   }): Promise<boolean> => {
     try {
-      const res = await axios.post('/api/v1/desktop/sync/config', params);
+      const payload: Record<string, any> = {
+        vpsUrl: params.vpsUrl.trim(),
+        ...(params.conflictStrategy ? { conflictStrategy: params.conflictStrategy } : {}),
+        ...(params.syncMode ? { syncMode: params.syncMode } : {}),
+        ...(typeof params.autoSyncOnOpen === 'boolean' ? { autoSyncOnOpen: params.autoSyncOnOpen } : {}),
+      };
+      if (params.clearApiKey) {
+        payload.clearApiKey = true;
+      } else if (typeof params.apiKey === 'string' && params.apiKey.trim().length > 0) {
+        payload.apiKey = params.apiKey.trim();
+      }
+
+      const res = await axios.post('/api/v1/desktop/sync/config', payload);
       if (res.data?.success) {
         vpsUrl.value = params.vpsUrl.trim();
-        apiKey.value = params.apiKey.trim();
+        if (res.data.config) {
+          apiKeyMasked.value = res.data.config.apiKey || '';
+          hasApiKey.value = Boolean(res.data.config.hasApiKey);
+        } else if (params.clearApiKey) {
+          apiKeyMasked.value = '';
+          hasApiKey.value = false;
+        } else if (payload.apiKey) {
+          hasApiKey.value = true;
+        }
+        apiKey.value = '';
         if (params.conflictStrategy) conflictStrategy.value = params.conflictStrategy;
         if (params.syncMode) setSyncMode(params.syncMode);
         if (typeof params.autoSyncOnOpen === 'boolean') autoSyncOnOpen.value = params.autoSyncOnOpen;
@@ -273,10 +300,15 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     testError.value = null;
 
     try {
-      const res = await axios.post('/api/v1/desktop/sync/test', {
-        vpsUrl: targetUrl !== undefined ? targetUrl : vpsUrl.value,
-        apiKey: targetKey !== undefined ? targetKey : apiKey.value
-      });
+      const resolvedUrl = (targetUrl !== undefined ? targetUrl : vpsUrl.value).trim();
+      const resolvedKey = (targetKey !== undefined ? targetKey : apiKey.value).trim();
+      const payload: Record<string, string> = { vpsUrl: resolvedUrl };
+      // 仅在用户输入新明文密钥时发送；留空则由后端在同源条件下安全复用本地已保存密钥
+      if (resolvedKey.length > 0) {
+        payload.apiKey = resolvedKey;
+      }
+
+      const res = await axios.post('/api/v1/desktop/sync/test', payload);
 
       if (res.data?.success) {
         testLatency.value = res.data.latencyMs;
@@ -326,12 +358,15 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     showFirstSyncModal.value = false;
 
     try {
-      const res = await axios.post('/api/v1/desktop/sync/trigger', {
+      const payload: Record<string, any> = {
         vpsUrl: vpsUrl.value,
-        apiKey: apiKey.value,
         mode: activeMode,
-        modules: activeModules
-      });
+        modules: activeModules,
+      };
+      if (apiKey.value.trim().length > 0) {
+        payload.apiKey = apiKey.value.trim();
+      }
+      const res = await axios.post('/api/v1/desktop/sync/trigger', payload);
 
       if (res.data?.success) {
         setSyncMode(activeMode);
@@ -517,6 +552,8 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     isDesktop,
     vpsUrl,
     apiKey,
+    hasApiKey,
+    apiKeyMasked,
     conflictStrategy,
     syncMode,
     setSyncMode,
