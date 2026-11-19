@@ -7,7 +7,7 @@ import { broadcastFrontendEvent } from '../websocket/frontend-events';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
-import { assertSafeSyncOutboundUrl, createPinnedLookup } from './outbound-url';
+import { assertSafeSyncOutboundUrl } from './outbound-url';
 import {
   CATEGORY_ITEMS,
   isAppearanceKeyEnabled,
@@ -1896,12 +1896,9 @@ export const syncV2Service = {
    * HTTP 客户端辅助请求
    */
   async sendHttpJson(urlStr: string, options: { method: string; headers?: Record<string, string>; body?: any }): Promise<any> {
-    // 发起 v2 出站同步请求前强制执行 SSRF 安全校验，并固定解析出的 IP 防止 DNS Rebinding
-    const verifiedTarget = await assertSafeSyncOutboundUrl(urlStr);
-    const parsedUrl = verifiedTarget.url;
+    const parsedUrl = assertSafeSyncOutboundUrl(urlStr);
     const isHttps = parsedUrl.protocol === 'https:';
     const client = isHttps ? https : http;
-    const pinnedLookup = createPinnedLookup(verifiedTarget);
     const postData = options.body ? JSON.stringify(options.body) : '';
 
     const reqOptions: http.RequestOptions = {
@@ -1911,7 +1908,6 @@ export const syncV2Service = {
       path: `${parsedUrl.pathname}${parsedUrl.search}`,
       method: options.method,
       timeout: 15000,
-      ...(pinnedLookup ? { lookup: pinnedLookup } : {}),
       headers: {
         'Content-Type': 'application/json',
         ...(postData ? { 'Content-Length': Buffer.byteLength(postData) } : {}),

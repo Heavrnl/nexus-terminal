@@ -5,7 +5,7 @@ import path from 'path';
 import { getDataDir } from '../services/storage-path.service';
 import { settingsRepository } from '../settings/settings.repository';
 import { syncThrottleScheduler } from './sync.scheduler';
-import { assertSafeSyncOutboundUrl, createPinnedLookup } from './outbound-url';
+import { assertSafeSyncOutboundUrl } from './outbound-url';
 
 /**
  * 桌面端常驻后台的 WebSocket 实时同步长连接客户端
@@ -121,34 +121,31 @@ export class SyncWsClient {
       return;
     }
 
-    // 发起出站 WebSocket 连接前强制执行 SSRF 安全校验，阻断内网/回环与 DNS Rebinding
-    let verifiedTarget;
+    // 校验协议与 URL 格式
+    let parsedUrl: URL;
     try {
       let candidateUrl = vpsUrl.trim();
       if (!/^https?:\/\//i.test(candidateUrl)) {
         candidateUrl = `https://${candidateUrl}`;
       }
-      verifiedTarget = await assertSafeSyncOutboundUrl(candidateUrl);
+      parsedUrl = assertSafeSyncOutboundUrl(candidateUrl);
     } catch (err: any) {
-      console.warn(`[SyncWsClient] 拒绝连接不安全的同步目标地址 (${vpsUrl}): ${err.message}`);
+      console.warn(`[SyncWsClient] 拒绝连接不合法的同步目标地址 (${vpsUrl}): ${err.message}`);
       this.scheduleReconnect(30000);
       return;
     }
 
-    const wsUrl = this.buildWsUrl(verifiedTarget.url, apiKey);
+    const wsUrl = this.buildWsUrl(parsedUrl, apiKey);
     if (!wsUrl) {
       this.scheduleReconnect(15000);
       return;
     }
 
-    const pinnedLookup = createPinnedLookup(verifiedTarget);
-
     this.isConnecting = true;
     try {
-      console.log(`[SyncWsClient] 正在尝试建立双端实时长连接通道... (${verifiedTarget.url.origin})`);
+      console.log(`[SyncWsClient] 正在尝试建立双端实时长连接通道... (${parsedUrl.origin})`);
       const ws = new WebSocket(wsUrl, {
         handshakeTimeout: 8000,
-        ...(pinnedLookup ? { lookup: pinnedLookup } : {}),
         headers: {
           'x-sync-api-key': apiKey
         }

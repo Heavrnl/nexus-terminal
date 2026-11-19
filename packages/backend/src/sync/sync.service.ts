@@ -6,7 +6,7 @@ import https from 'https';
 import { URL } from 'url';
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
 import { getServerSyncApiKey } from './sync.middleware';
-import { assertSafeSyncOutboundUrl, createPinnedLookup } from './outbound-url';
+import { assertSafeSyncOutboundUrl } from './outbound-url';
 import { syncThrottleScheduler } from './sync.scheduler';
 import {
   CATEGORY_ITEMS,
@@ -1513,12 +1513,9 @@ export const syncService = {
    * 客户端发送 HTTP/HTTPS JSON 请求辅助函数
    */
   async makeHttpRequest(urlStr: string, options: { method: string; headers?: Record<string, string>; body?: any; timeoutMs?: number }): Promise<any> {
-    // 发起出站请求前强制执行 SSRF 安全校验，并固定解析出的 IP 防止 DNS Rebinding
-    const verifiedTarget = await assertSafeSyncOutboundUrl(urlStr);
-    const parsedUrl = verifiedTarget.url;
+    const parsedUrl = assertSafeSyncOutboundUrl(urlStr);
     const isHttps = parsedUrl.protocol === 'https:';
     const client = isHttps ? https : http;
-    const pinnedLookup = createPinnedLookup(verifiedTarget);
 
     const postData = options.body ? JSON.stringify(options.body) : '';
 
@@ -1529,7 +1526,6 @@ export const syncService = {
       path: `${parsedUrl.pathname}${parsedUrl.search}`,
       method: options.method,
       timeout: options.timeoutMs || 10000,
-      ...(pinnedLookup ? { lookup: pinnedLookup } : {}),
       headers: {
         'Content-Type': 'application/json',
         ...(postData ? { 'Content-Length': Buffer.byteLength(postData) } : {}),

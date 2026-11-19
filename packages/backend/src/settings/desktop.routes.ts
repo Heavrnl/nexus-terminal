@@ -276,7 +276,7 @@ router.post('/sync/config', async (req: Request, res: Response): Promise<void> =
   const nextVpsUrl = vpsUrl !== undefined ? String(vpsUrl).trim() : (current.syncVpsUrl || '');
   if (nextVpsUrl) {
     try {
-      await assertSafeSyncOutboundUrl(nextVpsUrl);
+      assertSafeSyncOutboundUrl(nextVpsUrl);
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message || '同步服务器地址不合法' });
       return;
@@ -358,7 +358,7 @@ router.post('/sync/test', async (req: Request, res: Response): Promise<void> => 
     }
 
     try {
-      await assertSafeSyncOutboundUrl(targetUrl);
+      assertSafeSyncOutboundUrl(targetUrl);
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message || '同步服务器地址不合法' });
       return;
@@ -403,7 +403,7 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     }
 
     try {
-      await assertSafeSyncOutboundUrl(vpsUrl);
+      assertSafeSyncOutboundUrl(vpsUrl);
     } catch (err: any) {
       res.status(400).json({
         success: false,
