@@ -1,7 +1,8 @@
 // packages/backend/src/sync/sync.scheduler.ts
-import { getDbInstance, runDb, getDb, allDb, registerSyncChangeNotifier, isDbInTransaction } from '../database/connection';
+import { getDbInstance, runDb, getDb, allDb, registerSyncChangeNotifier, isDbInTransaction, acquireApplyLock, applyContext } from '../database/connection';
 import { syncV2Service } from './sync.v2.service';
 import { settingsRepository } from '../settings/settings.repository';
+import { generateDeterministicCommandUuid, normalizeCommandText } from '../command-history/command-history.pure';
 import fs from 'fs';
 import path from 'path';
 import { getDataDir } from '../services/storage-path.service';
@@ -246,6 +247,88 @@ export class SyncThrottleScheduler {
   public async activateAndCatchup(): Promise<void> {
     const db = await getDbInstance();
     console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
+
+    // 补齐在触发器启用前（或历史遗留流程）写入的 command_history 缺失的确定性 UUID 与 updated_hlc，
+    // 防止因 uuid 为空永远进不了 sync_changes 而丢失记录
+    const releaseLock = await acquireApplyLock();
+    try {
+      await applyContext.run({ isApplying: true }, async () => {
+        await runDb(db, `UPDATE sync_state SET applying = 1 WHERE id = 1`);
+        try {
+          const missingCmdRows = await allDb<{
+            id: number;
+            command: string;
+            timestamp: number;
+            uuid: string | null;
+            updated_hlc: string | null;
+          }>(
+            db,
+            `SELECT id, command, timestamp, uuid, updated_hlc
+             FROM command_history
+             WHERE uuid IS NULL OR uuid = '' OR updated_hlc IS NULL OR updated_hlc = ''`
+          );
+
+          if (missingCmdRows.length > 0) {
+            const stateRow = await getDb<{ device_id: string; hlc_ms: number; hlc_ctr: number }>(
+              db,
+              `SELECT device_id, hlc_ms, hlc_ctr FROM sync_state WHERE id = 1`
+            );
+            const devId = stateRow?.device_id || 'local';
+            const baseMs = Math.max(Number(stateRow?.hlc_ms) || 0, Date.now());
+            let ctr = Number(stateRow?.hlc_ctr) || 0;
+
+            for (const row of missingCmdRows) {
+              const normalized = normalizeCommandText(row.command);
+              if (!normalized) {
+                await runDb(db, `DELETE FROM command_history WHERE id = ?`, [row.id]);
+                continue;
+              }
+              const detUuid = generateDeterministicCommandUuid(normalized);
+              const existingOther = await getDb<{ id: number; timestamp: number; updated_hlc: string | null }>(
+                db,
+                `SELECT id, timestamp, updated_hlc FROM command_history WHERE command = ? AND id != ? LIMIT 1`,
+                [normalized, row.id]
+              );
+              if (existingOther) {
+                const mergedTs = Math.max(Number(row.timestamp) || 0, Number(existingOther.timestamp) || 0);
+                ctr++;
+                const hlc =
+                  (row.updated_hlc && row.updated_hlc.trim()) ||
+                  (existingOther.updated_hlc && existingOther.updated_hlc.trim()) ||
+                  `${String(baseMs).padStart(13, '0')}-${String(ctr).padStart(5, '0')}-${devId}`;
+                await runDb(
+                  db,
+                  `UPDATE command_history SET timestamp = ?, uuid = ?, updated_hlc = ? WHERE id = ?`,
+                  [mergedTs, detUuid, hlc, existingOther.id]
+                );
+                await runDb(db, `DELETE FROM command_history WHERE id = ?`, [row.id]);
+              } else {
+                ctr++;
+                const hlc =
+                  row.updated_hlc && row.updated_hlc.trim() !== ''
+                    ? row.updated_hlc
+                    : `${String(baseMs).padStart(13, '0')}-${String(ctr).padStart(5, '0')}-${devId}`;
+                await runDb(
+                  db,
+                  `UPDATE command_history SET command = ?, uuid = ?, updated_hlc = ? WHERE id = ?`,
+                  [normalized, detUuid, hlc, row.id]
+                );
+              }
+            }
+
+            await runDb(
+              db,
+              `UPDATE sync_state SET hlc_ms = MAX(hlc_ms, ?), hlc_ctr = ? WHERE id = 1`,
+              [baseMs, ctr]
+            );
+          }
+        } finally {
+          await runDb(db, `UPDATE sync_state SET applying = 0 WHERE id = 1`);
+        }
+      });
+    } finally {
+      releaseLock();
+    }
 
     const tables = [
       'connections', 'proxies', 'ssh_keys', 'folders', 'quick_commands', 'quick_command_folders',

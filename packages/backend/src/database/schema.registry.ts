@@ -65,6 +65,7 @@ const initCommandHistoryTable = async (db: Database): Promise<void> => {
     try {
         await runDb(db, `CREATE INDEX IF NOT EXISTS idx_command_history_command ON command_history(command);`);
         await runDb(db, `CREATE INDEX IF NOT EXISTS idx_command_history_timestamp ON command_history(timestamp DESC);`);
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_command_history_uuid ON command_history(uuid);`);
     } catch (err: any) {
         console.error('[DB Init] 创建 command_history 索引失败:', err.message);
     }

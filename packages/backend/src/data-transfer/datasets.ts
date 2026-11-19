@@ -298,7 +298,7 @@ const DATASET_LIST: DatasetSpec[] = [
             {
                 table: 'command_history',
                 idColumn: 'id',
-                identity: ['command', 'timestamp'],
+                identity: ['command'],
                 dropColumns: ['uuid', 'updated_hlc'],
             },
         ],

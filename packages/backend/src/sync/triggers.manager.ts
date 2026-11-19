@@ -155,8 +155,12 @@ function generateTableTriggersSql(cfg: TableTriggerConfig): string {
     AND NEW.updated_hlc IS OLD.updated_hlc
     BEGIN
       ${BUMP_HLC}
-      UPDATE ${tableName} SET updated_hlc = ${HLC_EXPR} WHERE ${pk} = NEW.${pk};
-      INSERT INTO sync_changes(tbl, row_id, op, origin) VALUES ('${tableName}', NEW.uuid, 'U', NULL);
+      UPDATE ${tableName} SET
+        uuid = CASE WHEN NEW.uuid IS NULL OR NEW.uuid = '' THEN (${UUID_FALLBACK}) ELSE NEW.uuid END,
+        updated_hlc = ${HLC_EXPR}
+      WHERE ${pk} = NEW.${pk};
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT '${tableName}', uuid, 'U', NULL FROM ${tableName} WHERE ${pk} = NEW.${pk};
     END;
 
     -- ${tableName} AFTER DELETE
@@ -270,7 +274,13 @@ export async function installSyncTriggers(db: sqlite3.Database, forceReinstall: 
       });
     });
 
-    if (currentCount >= expectedCount) {
+    const staleCommandAu = await new Promise<boolean>((resolve) => {
+      db.get("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'command_history_sync_au'", (err, r: any) => {
+        resolve(Boolean(r?.sql && r.sql.includes("VALUES ('command_history', NEW.uuid")));
+      });
+    });
+
+    if (currentCount >= expectedCount && !staleCommandAu) {
       console.log(`[SyncTriggers] SQLite 同步触发器已就绪 (${currentCount}/${expectedCount})，跳过重复安装。`);
       return;
     }

@@ -26,7 +26,8 @@ export const syncRuntimeState = {
     isApplying: false
 };
 
-const applyWaiters: Array<() => void> = [];
+const applyLockWaiters: Array<() => void> = [];
+const writeBarrierWaiters: Array<() => void> = [];
 let transactionDepth = 0;
 
 type ChangeNotifier = () => void;
@@ -59,13 +60,21 @@ export function getTransactionDepth(): number {
  */
 export async function acquireApplyLock(): Promise<() => void> {
     while (syncRuntimeState.isApplying) {
-        await new Promise<void>(resolve => applyWaiters.push(resolve));
+        await new Promise<void>(resolve => applyLockWaiters.push(resolve));
     }
     syncRuntimeState.isApplying = true;
     return () => {
         syncRuntimeState.isApplying = false;
-        const next = applyWaiters.shift();
-        if (next) next();
+        // 优先唤醒下一个排队的同步应用任务；没有排队的同步任务时一次性放行全部挂起业务写入
+        if (applyLockWaiters.length > 0) {
+            const nextApply = applyLockWaiters.shift();
+            if (nextApply) nextApply();
+            return;
+        }
+        const pendingWrites = writeBarrierWaiters.splice(0);
+        for (const wake of pendingWrites) {
+            wake();
+        }
     };
 }
 
@@ -74,11 +83,13 @@ export const runDb = async (db: sqlite3.Database, sql: string, params: any[] = [
 
     // 核心安全屏障：若当前正在应用远端数据，且当前调用来自普通业务（非应用链路）：
     // 异步排队挂起，等待应用事务完成并提交后再放行执行，绝对杜绝被 applying 事务吞噬或回滚！
-    if (syncRuntimeState.isApplying && !isFromApply) {
-        await new Promise<void>(resolve => applyWaiters.push(resolve));
+    while (syncRuntimeState.isApplying && !isFromApply) {
+        await new Promise<void>(resolve => writeBarrierWaiters.push(resolve));
     }
 
     const trimmed = sql.trim().toUpperCase();
+    const isSavepointRollback = /^ROLLBACK(\s+TRANSACTION)?\s+TO\b/i.test(trimmed);
+    const isTxEnd = !isSavepointRollback && (trimmed.startsWith('COMMIT') || trimmed.startsWith('ROLLBACK'));
     if (trimmed.startsWith('BEGIN')) {
         transactionDepth++;
     }
@@ -95,7 +106,7 @@ export const runDb = async (db: sqlite3.Database, sql: string, params: any[] = [
             });
         });
 
-        if (trimmed.startsWith('COMMIT') || trimmed.startsWith('ROLLBACK')) {
+        if (isTxEnd) {
             transactionDepth = Math.max(0, transactionDepth - 1);
             if (transactionDepth === 0 && !syncRuntimeState.isApplying) {
                 triggerSyncNotify();
@@ -106,7 +117,9 @@ export const runDb = async (db: sqlite3.Database, sql: string, params: any[] = [
 
         return result;
     } catch (err) {
-        if (trimmed.startsWith('ROLLBACK')) {
+        if (trimmed.startsWith('BEGIN')) {
+            transactionDepth = Math.max(0, transactionDepth - 1);
+        } else if (!isSavepointRollback && trimmed.startsWith('ROLLBACK')) {
             transactionDepth = Math.max(0, transactionDepth - 1);
         }
         throw err;

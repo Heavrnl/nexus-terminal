@@ -1,4 +1,5 @@
 import { getDbInstance, runDb, getDb as getDbRow, allDb } from '../database/connection';
+import { generateDeterministicCommandUuid, normalizeCommandText } from './command-history.pure';
 
 // 定义命令历史记录的接口
 export interface CommandHistoryEntry {
@@ -10,38 +11,40 @@ export interface CommandHistoryEntry {
 type DbCommandHistoryRow = CommandHistoryEntry;
 
 /**
- * 插入或更新一条命令历史记录。
- * 如果命令已存在，则更新其时间戳；否则，插入新记录。
+ * 原子插入或更新一条命令历史记录。
+ * 依靠 command 唯一索引 + 确定性 UUID，彻底避免并发写入导致同一命令产生两条记录。
  * @param command - 要添加或更新的命令字符串
  * @returns 返回插入或更新后的完整历史记录条目
  */
 export const upsertCommand = async (command: string): Promise<CommandHistoryEntry> => {
-    const now = Math.floor(Date.now() / 1000); // 获取当前时间戳
+    const normalized = normalizeCommandText(command);
+    if (!normalized) {
+        throw new Error('命令不能为空');
+    }
+
+    const now = Math.floor(Date.now() / 1000); // 获取当前时间戳 (秒)
+    const detUuid = generateDeterministicCommandUuid(normalized);
     const db = await getDbInstance();
 
     try {
-        // 1. 尝试更新现有记录的时间戳
-        const updateSql = `UPDATE command_history SET timestamp = ? WHERE command = ?`;
-        const updateResult = await runDb(db, updateSql, [now, command]);
+        const upsertSql = `
+            INSERT INTO command_history (command, timestamp, uuid)
+            VALUES (?, ?, ?)
+            ON CONFLICT(command) DO UPDATE SET
+                timestamp = MAX(command_history.timestamp, excluded.timestamp),
+                uuid = excluded.uuid
+        `;
+        await runDb(db, upsertSql, [normalized, now, detUuid]);
 
-        if (updateResult.changes > 0) {
-            // 更新成功，获取被更新记录的 ID
-            const selectSql = `SELECT id FROM command_history WHERE command = ? ORDER BY timestamp DESC LIMIT 1`;
-            const row = await getDbRow<{ id: number }>(db, selectSql, [command]);
-            if (row) {
-                return { id: row.id, command, timestamp: now };
-            } else {
-                throw new Error('更新成功但无法找到记录 ID');
-            }
-        } else {
-            // 2. 没有记录被更新，说明命令不存在，执行插入
-            const insertSql = `INSERT INTO command_history (command, timestamp) VALUES (?, ?)`;
-            const insertResult = await runDb(db, insertSql, [command, now]);
-            if (typeof insertResult.lastID !== 'number' || insertResult.lastID <= 0) {
-                 throw new Error('插入新命令历史记录后未能获取有效的 lastID');
-            }
-            return { id: insertResult.lastID, command, timestamp: now };
+        const row = await getDbRow<DbCommandHistoryRow>(
+            db,
+            `SELECT id, command, timestamp FROM command_history WHERE command = ? LIMIT 1`,
+            [normalized]
+        );
+        if (!row) {
+            throw new Error('写入命令历史记录后未能查询到目标行');
         }
+        return row;
     } catch (err: any) {
         console.error('Upsert 命令历史记录时出错:', err.message);
         throw new Error('无法更新或插入命令历史记录');

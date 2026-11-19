@@ -1,5 +1,9 @@
 import { Database } from 'sqlite3';
 import crypto from 'crypto';
+import {
+    deduplicateCommandHistoryRows,
+    generateDeterministicCommandUuid,
+} from '../command-history/command-history.pure';
 
 /**
  * 根据文件夹名称生成全局确定性的 UUID v5 (基于 SHA-1 与固定命名空间)
@@ -67,6 +71,16 @@ const columnExists = async (db: Database, tableName: string, columnName: string)
         db.all(`PRAGMA table_info(${tableName})`, (err, columns: any[]) => {
             if (err) reject(err);
             else resolve(columns.some(col => col.name === columnName));
+        });
+    });
+};
+
+// 辅助函数：检查索引是否存在
+const indexExists = async (db: Database, indexName: string): Promise<boolean> => {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT name FROM sqlite_master WHERE type='index' AND name=?", [indexName], (err, row) => {
+            if (err) reject(err);
+            else resolve(!!row);
         });
     });
 };
@@ -1125,6 +1139,98 @@ const definedMigrations: Migration[] = [
         `,
         execute: async (): Promise<void> => {
             console.log('[Migrations] Migration 32: user_oidc_links 表已就绪（OIDC 账号绑定）。');
+        }
+    },
+    {
+        id: 33,
+        name: 'Deduplicate command_history by command, enforce UNIQUE constraint and deterministic UUIDs',
+        check: async (db: Database): Promise<boolean> => {
+            return await tableExists(db, 'command_history');
+        },
+        sql: `SELECT 1;`,
+        execute: async (db: Database): Promise<void> => {
+            const runSql = (sql: string, params: any[] = []): Promise<void> =>
+                new Promise((resolve, reject) => {
+                    db.run(sql, params, (err) => (err ? reject(err) : resolve()));
+                });
+            const allSql = <T = any>(sql: string, params: any[] = []): Promise<T[]> =>
+                new Promise((resolve, reject) => {
+                    db.all(sql, params, (err, rows: T[]) => (err ? reject(err) : resolve(rows || [])));
+                });
+            const getSql = <T = any>(sql: string, params: any[] = []): Promise<T | undefined> =>
+                new Promise((resolve, reject) => {
+                    db.get(sql, params, (err, row: T) => (err ? reject(err) : resolve(row)));
+                });
+
+            const hasSyncState = await tableExists(db, 'sync_state');
+            if (hasSyncState) {
+                await runSql('UPDATE sync_state SET applying = 1 WHERE id = 1');
+            }
+
+            try {
+                let deviceId = 'migrated';
+                let hlcMs = 0;
+                let hlcCtr = 0;
+                if (hasSyncState) {
+                    const syncState = await getSql<{ device_id: string; hlc_ms: number; hlc_ctr: number }>(
+                        'SELECT device_id, hlc_ms, hlc_ctr FROM sync_state WHERE id = 1'
+                    );
+                    if (syncState) {
+                        deviceId = syncState.device_id || 'migrated';
+                        hlcMs = Number(syncState.hlc_ms) || 0;
+                        hlcCtr = Number(syncState.hlc_ctr) || 0;
+                    }
+                }
+
+                const rows = await allSql<{
+                    id: number;
+                    command: string;
+                    timestamp: number;
+                    uuid: string | null;
+                    updated_hlc: string | null;
+                }>('SELECT id, command, timestamp, uuid, updated_hlc FROM command_history ORDER BY timestamp DESC, id DESC');
+
+                const { deleteIds, keepRows } = deduplicateCommandHistoryRows(rows, (ts) => {
+                    const ms = Math.max(hlcMs, ts > 0 ? ts * 1000 : Date.now());
+                    return `${String(ms).padStart(13, '0')}-${String(hlcCtr).padStart(5, '0')}-${deviceId}`;
+                });
+
+                for (const delId of deleteIds) {
+                    await runSql('DELETE FROM command_history WHERE id = ?', [delId]);
+                }
+
+                for (const keep of keepRows) {
+                    const detUuid = generateDeterministicCommandUuid(keep.command);
+                    await runSql(
+                        'UPDATE command_history SET command = ?, timestamp = ?, uuid = ?, updated_hlc = ? WHERE id = ?',
+                        [keep.command, keep.timestamp, detUuid, keep.updated_hlc, keep.id]
+                    );
+                }
+
+                if (await tableExists(db, 'sync_changes')) {
+                    await runSql(
+                        `DELETE FROM sync_changes
+                         WHERE tbl = 'command_history'
+                           AND op = 'U'
+                           AND row_id NOT IN (SELECT uuid FROM command_history WHERE uuid IS NOT NULL)`
+                    );
+                }
+
+                // 清理旧的普通索引并创建 command 唯一索引及 uuid 索引
+                await runSql('DROP INDEX IF EXISTS idx_command_history_command');
+                if (!(await indexExists(db, 'idx_command_history_command_unique'))) {
+                    await runSql('CREATE UNIQUE INDEX IF NOT EXISTS idx_command_history_command_unique ON command_history(command)');
+                }
+                await runSql('CREATE INDEX IF NOT EXISTS idx_command_history_uuid ON command_history(uuid)');
+
+                console.log(
+                    `[Migrations] Migration 33: command_history 去重并强制唯一索引完成，清理重复/空白 ${deleteIds.length} 条，保留 ${keepRows.length} 条。`
+                );
+            } finally {
+                if (hasSyncState) {
+                    await runSql('UPDATE sync_state SET applying = 0 WHERE id = 1').catch(() => {});
+                }
+            }
         }
     }
 

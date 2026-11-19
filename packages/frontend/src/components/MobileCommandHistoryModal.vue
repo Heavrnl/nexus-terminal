@@ -154,10 +154,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 watch(() => props.isVisible, (val) => {
   if (val) {
     document.addEventListener('keydown', handleKeydown);
-    // 打开时拉取历史或重置搜索
-    if (commandHistoryStore.historyList.length === 0) {
-      commandHistoryStore.fetchHistory();
-    }
+    // 每次打开弹窗都向后端同步最新历史（保留本地缓存与在途新增，绝不丢失）
+    commandHistoryStore.fetchHistory();
     searchInput.value = commandHistoryStore.searchTerm;
     displayLimit.value = 40;
   } else {

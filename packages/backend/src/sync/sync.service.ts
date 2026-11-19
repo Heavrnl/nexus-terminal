@@ -17,6 +17,11 @@ import {
   type SyncCategoryKey,
   type SyncItemKey,
 } from './sync.items';
+import {
+  generateDeterministicCommandUuid,
+  normalizeCommandText,
+  normalizeTimestampSeconds,
+} from '../command-history/command-history.pure';
 
 /**
  * 同步范围里的一个 key：既可能是旧的大类（appearance / layout …），
@@ -411,14 +416,21 @@ export const syncService = {
     if (en('commandHistory.history')) {
       const histRows = await allDb<any>(
         db,
-        `SELECT id, command, timestamp FROM command_history WHERE timestamp > ? ORDER BY timestamp DESC LIMIT 500`,
+        `SELECT id, uuid, command, timestamp, updated_hlc
+         FROM command_history
+         WHERE timestamp > ?
+         ORDER BY timestamp DESC, id DESC
+         LIMIT 1000`,
         [sinceTimestamp]
       );
-      command_history = histRows.map(r => ({
-        uuid: `cmd_${r.timestamp}_${Buffer.from(r.command || '').toString('base64').slice(0, 16)}`,
-        updated_at: r.timestamp || Math.floor(Date.now() / 1000),
-        data: { command: r.command, timestamp: r.timestamp }
-      }));
+      command_history = histRows.map(r => {
+        const normalized = normalizeCommandText(r.command);
+        return {
+          uuid: r.uuid || generateDeterministicCommandUuid(normalized),
+          updated_at: r.timestamp || Math.floor(Date.now() / 1000),
+          data: { command: normalized || r.command, timestamp: r.timestamp }
+        };
+      });
     }
 
     return {
@@ -562,6 +574,22 @@ export const syncService = {
           if (local.updated_at <= t.deleted_at) {
             await runDb(db, `DELETE FROM quick_command_folders WHERE uuid = ?`, [t.uuid]);
             await recordTombstone('quick_command_folders', t.uuid, t.deleted_at);
+            pushed++;
+          } else {
+            conflictsResolved++;
+          }
+        }
+      } else if (t.entity_type === 'command_history') {
+        const local = await getDb<{ id: number; timestamp: number }>(
+          db,
+          `SELECT id, timestamp FROM command_history WHERE uuid = ?`,
+          [t.uuid]
+        );
+        const deletedSec = normalizeTimestampSeconds(t.deleted_at);
+        if (local) {
+          if ((local.timestamp || 0) <= deletedSec) {
+            await runDb(db, `DELETE FROM command_history WHERE uuid = ?`, [t.uuid]);
+            await recordTombstone('command_history', t.uuid, deletedSec);
             pushed++;
           } else {
             conflictsResolved++;
@@ -1180,20 +1208,66 @@ export const syncService = {
       }
     }
 
-    // --- 步骤 12: 合并 command_history (命令历史) ---
+    // --- 步骤 12: 合并 command_history (命令历史，按 command 去重并携带确定性 UUID 与 HLC) ---
     if (en('commandHistory.history') && entities.command_history && entities.command_history.length > 0) {
+      let maxV1CmdMs = 0;
       for (const item of entities.command_history) {
-        const cmd = item.data.command;
-        const ts = item.data.timestamp || item.updated_at;
-        const existing = await getDb<{ id: number }>(
+        const cmd = normalizeCommandText(item?.data?.command);
+        if (!cmd) continue;
+
+        const detUuid = generateDeterministicCommandUuid(cmd);
+        const ts = normalizeTimestampSeconds(item.data.timestamp || item.updated_at);
+
+        // 若本地存在不旧于该执行时间的删除墓碑，禁止逆向复活
+        const tomb = await getDb<{ deleted_hlc: string; deleted_at: number }>(
           db,
-          `SELECT id FROM command_history WHERE command = ? AND timestamp = ?`,
-          [cmd, ts]
+          `SELECT deleted_hlc, deleted_at FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`,
+          [detUuid]
         );
-        if (!existing) {
-          await runDb(db, `INSERT INTO command_history (command, timestamp) VALUES (?, ?)`, [cmd, ts]);
+        if (tomb) {
+          const tombSec = normalizeTimestampSeconds(tomb.deleted_at, 0);
+          if (tombSec >= ts) {
+            conflictsResolved++;
+            continue;
+          }
+        }
+
+        const cmdMs = ts * 1000;
+        if (cmdMs > maxV1CmdMs) maxV1CmdMs = cmdMs;
+        const v1Hlc = `${String(cmdMs).padStart(13, '0')}-00000-v1sync`;
+
+        const beforeExisting = await getDb<{ id: number; timestamp: number; uuid: string | null }>(
+          db,
+          `SELECT id, timestamp, uuid FROM command_history WHERE command = ? LIMIT 1`,
+          [cmd]
+        );
+
+        await runDb(
+          db,
+          `INSERT INTO command_history (uuid, command, timestamp, updated_hlc)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(command) DO UPDATE SET
+             timestamp = MAX(command_history.timestamp, excluded.timestamp),
+             uuid = excluded.uuid,
+             updated_hlc = CASE
+               WHEN command_history.updated_hlc IS NULL OR command_history.updated_hlc = '' THEN excluded.updated_hlc
+               WHEN excluded.timestamp > command_history.timestamp THEN excluded.updated_hlc
+               ELSE command_history.updated_hlc
+             END`,
+          [detUuid, cmd, ts, v1Hlc]
+        );
+
+        if (tomb) {
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`, [detUuid]);
+        }
+
+        if (!beforeExisting || ts > (beforeExisting.timestamp || 0) || beforeExisting.uuid !== detUuid) {
           pushed++;
         }
+      }
+
+      if (maxV1CmdMs > 0) {
+        await runDb(db, `UPDATE sync_state SET hlc_ms = MAX(hlc_ms, ?) WHERE id = 1`, [maxV1CmdMs]);
       }
     }
 

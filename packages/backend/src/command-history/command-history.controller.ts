@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import * as CommandHistoryService from './command-history.service';
+import { broadcastFrontendEvent } from '../websocket/frontend-events';
 
 /**
  * 处理添加新命令历史记录的请求
@@ -14,6 +15,11 @@ export const addCommand = async (req: Request, res: Response): Promise<void> => 
 
     try {
         const entry = await CommandHistoryService.addCommandHistory(command);
+        broadcastFrontendEvent({
+            type: 'command_history:changed',
+            action: 'upsert',
+            timestamp: Date.now(),
+        });
         res.status(201).json({
             id: entry.id,
             command: entry.command,
@@ -56,6 +62,11 @@ export const deleteCommand = async (req: Request, res: Response): Promise<void> 
     try {
         const success = await CommandHistoryService.deleteCommandHistoryById(id);
         if (success) {
+            broadcastFrontendEvent({
+                type: 'command_history:changed',
+                action: 'delete',
+                timestamp: Date.now(),
+            });
             res.status(200).json({ message: '命令历史记录已删除' });
         } else {
             res.status(404).json({ message: '未找到要删除的命令历史记录' });
@@ -72,6 +83,11 @@ export const deleteCommand = async (req: Request, res: Response): Promise<void> 
 export const clearAllCommands = async (req: Request, res: Response): Promise<void> => {
     try {
         const count = await CommandHistoryService.clearAllCommandHistory();
+        broadcastFrontendEvent({
+            type: 'command_history:changed',
+            action: 'clear',
+            timestamp: Date.now(),
+        });
         res.status(200).json({ count, message: `已清空 ${count} 条命令历史记录` });
     } catch (error: any) {
         console.error('清空命令历史记录控制器出错:', error);

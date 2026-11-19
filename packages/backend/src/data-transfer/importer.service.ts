@@ -22,6 +22,10 @@ import {
     normalizeIdentityValue,
 } from './plan';
 import { ExportPayload, toPlainColumn } from './exporter.service';
+import {
+    generateDeterministicCommandUuid,
+    normalizeCommandText,
+} from '../command-history/command-history.pure';
 
 const MAX_PACKAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES = 128 * 1024 * 1024;
@@ -420,6 +424,12 @@ async function importRow(input: {
     }
 
     // 3. 身份
+    if (tableSpec.table === 'command_history') {
+        row.command = normalizeCommandText(row.command);
+        if (row.command) {
+            row.uuid = generateDeterministicCommandUuid(row.command);
+        }
+    }
     if (isBlankIdentity(tableSpec.identity, row)) {
         return { status: 'invalid', message: 'missingIdentity' };
     }
@@ -449,8 +459,8 @@ async function importRow(input: {
     }
 
     if (existingId !== undefined && strategy === 'duplicate') {
-        // 关联表 / 关联键没有"两份"的概念，重复就是重复
-        if (isJunction) return { status: 'skipped' };
+        // 关联表 / 命令历史（存在 UNIQUE(command) 约束）不存在两份副本的概念，重复直接跳过
+        if (isJunction || tableSpec.table === 'command_history') return { status: 'skipped' };
 
         // 只有真的有 name 列才能改名。settings / appearance / workspace 这类
         // KV 表以 key 为身份，duplicate 退化成覆盖（下面走 INSERT OR REPLACE）。

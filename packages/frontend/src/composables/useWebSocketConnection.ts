@@ -1,6 +1,7 @@
 import { ref, shallowRef, computed, readonly } from 'vue';
 import { useI18n } from 'vue-i18n'; // +++ Add import for useI18n +++
 import { workspaceEmitter } from './workspaceEvents';
+import { useGlobalSyncListener } from './useGlobalSyncListener';
 // 从 websocket.types.ts 导入并重新导出 ConnectionStatus
 import type { ConnectionStatus as WsConnectionStatusType, MessagePayload, WebSocketMessage, MessageHandler } from '../types/websocket.types';
 
@@ -378,11 +379,8 @@ export function createWebSocketConnectionManager(
 
                     // --- 检查是否为双端实时同步完成通知 ---
                     if (message.type === 'sync:completed' || message.type === 'sync:refreshed') {
-                        console.log('[WebSocket] 收到后台同步完成通知，自动刷新各模块 Store...');
-                        import('../stores/desktopSync.store').then(({ useDesktopSyncStore }) => {
-                            const desktopSyncStore = useDesktopSyncStore();
-                            void desktopSyncStore.refreshAllStores();
-                        }).catch(() => {});
+                        console.log('[WebSocket] 收到后台同步完成通知，通过全局防抖通道统一刷新各模块 Store...');
+                        useGlobalSyncListener().refreshNow();
                         return;
                     }
 

@@ -89,6 +89,7 @@ class SyncEventsManager {
         }
       }
     }, 25000);
+    this.heartbeatInterval.unref?.();
   }
 }
 

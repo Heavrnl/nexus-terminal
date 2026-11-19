@@ -135,8 +135,8 @@ watch(searchTerm, (newVal) => {
 
 // --- 生命周期钩子 ---
 onMounted(() => {
-  // 视图挂载时获取历史记录 (如果 store 中还没有的话)
-  if (commandHistoryStore.historyList.length === 0) {
+  // 视图挂载时若尚未从服务端完整同步过，则拉取最新历史记录（即使在此之前已乐观发送过单条命令）
+  if (!commandHistoryStore.hasLoadedFromServer) {
       commandHistoryStore.fetchHistory();
   }
 });

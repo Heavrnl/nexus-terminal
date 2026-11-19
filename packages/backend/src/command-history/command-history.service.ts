@@ -1,5 +1,6 @@
 import * as CommandHistoryRepository from '../command-history/command-history.repository';
 import { CommandHistoryEntry } from '../command-history/command-history.repository';
+import { normalizeCommandText } from './command-history.pure';
 
 /**
  * 添加一条命令历史记录
@@ -7,13 +8,13 @@ import { CommandHistoryEntry } from '../command-history/command-history.reposito
  * @returns 返回完整历史记录条目
  */
 export const addCommandHistory = async (command: string): Promise<CommandHistoryEntry> => {
-    // 可以在这里添加额外的业务逻辑，例如校验命令格式、长度限制等
-    if (!command || command.trim().length === 0) {
+    const normalized = normalizeCommandText(command);
+    if (!normalized) {
         throw new Error('命令不能为空');
     }
 
-    // 调用 upsertCommand 来处理插入或更新时间戳
-    return CommandHistoryRepository.upsertCommand(command.trim());
+    // 调用原子 upsertCommand 来处理插入或更新时间戳
+    return CommandHistoryRepository.upsertCommand(normalized);
 };
 
 /**

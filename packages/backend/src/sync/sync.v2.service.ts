@@ -15,6 +15,12 @@ import {
   resolveSyncItems,
   SyncItemKey
 } from './sync.items';
+import {
+  collapseSyncChangeRows,
+  generateDeterministicCommandUuid,
+  normalizeCommandText,
+  normalizeTimestampSeconds,
+} from '../command-history/command-history.pure';
 
 export interface SyncV2ChangeItem {
   seq?: number;
@@ -64,6 +70,69 @@ function isChangeInScope(enabled: Set<SyncItemKey>, tbl: string, op: 'U' | 'D', 
     return tbl === 'settings' ? isSettingsKeyEnabled(enabled, key) : isAppearanceKeyEnabled(enabled, key);
   }
   return isTableEnabled(enabled, tbl);
+}
+
+/** 参与双端同步且受 sync_tombstones 管理的实体表白名单 */
+const SYNC_ENTITY_TABLES = new Set([
+  'connections',
+  'proxies',
+  'ssh_keys',
+  'folders',
+  'quick_commands',
+  'quick_command_folders',
+  'settings',
+  'port_forwards',
+  'command_history',
+  'appearance_settings',
+  'terminal_themes',
+  'favorite_paths',
+]);
+
+/**
+ * 解析历史 DELETE 变更应当下发或上报的真实删除 HLC：
+ * - 若实体已被后续复活（表中存在存活行且无更晚墓碑，或后续有 op='U' 覆盖），返回 null 以跳过作废的 DELETE
+ * - 严禁在墓碑缺失时使用 Date.now() 伪造高水位 HLC 反杀存活数据
+ */
+async function resolveDeleteChangeHlc(
+  db: any,
+  tbl: string,
+  rowId: string,
+  seq: number
+): Promise<string | null> {
+  const tomb = await getDb<{ deleted_hlc: string }>(
+    db,
+    `SELECT deleted_hlc FROM sync_tombstones WHERE tbl = ? AND row_id = ?`,
+    [tbl, rowId]
+  );
+
+  if (SYNC_ENTITY_TABLES.has(tbl)) {
+    const live = await getDb<{ updated_hlc: string | null }>(
+      db,
+      `SELECT updated_hlc FROM ${tbl} WHERE uuid = ? LIMIT 1`,
+      [rowId]
+    );
+    if (live) {
+      const liveHlc = live.updated_hlc || '';
+      if (!tomb?.deleted_hlc || liveHlc > tomb.deleted_hlc) {
+        return null;
+      }
+    }
+  }
+
+  if (tomb?.deleted_hlc) {
+    return tomb.deleted_hlc;
+  }
+
+  const newerUpsert = await getDb<{ seq: number }>(
+    db,
+    `SELECT seq FROM sync_changes WHERE seq > ? AND tbl = ? AND row_id = ? AND op = 'U' LIMIT 1`,
+    [seq, tbl, rowId]
+  );
+  if (newerUpsert) {
+    return null;
+  }
+
+  return '0000000000001-00000-expired';
 }
 
 
@@ -362,6 +431,7 @@ export const syncV2Service = {
             // 3.2 准备写入数据并解封凭据字段
             const data = item.data || {};
             let targetPhysId = existingLive ? existingLive.id : null;
+            let syncedRowId = item.row_id;
 
             if (item.tbl === 'settings') {
               const settingKey = data.key;
@@ -667,38 +737,95 @@ export const syncV2Service = {
                 targetPhysId = ins.lastID;
               }
             } else if (item.tbl === 'command_history') {
-              const cmdText = data.command;
-              const cmdTs = data.timestamp || Math.floor(nowMs / 1000);
-
-              // 幂等去重保护：如果根据 UUID 没找到，先检查本地是否存在完全相同 command 与 timestamp 的历史记录
-              let matchByContent: { id: number; uuid: string } | undefined = undefined;
-              if (!existingLive) {
-                matchByContent = await getDb<{ id: number; uuid: string }>(
-                  db,
-                  `SELECT id, uuid FROM command_history WHERE command = ? AND timestamp = ? LIMIT 1`,
-                  [cmdText, cmdTs]
-                );
+              const cmdText = normalizeCommandText(data.command);
+              if (!cmdText) {
+                stale.push({ tbl: item.tbl, row_id: item.row_id, reason: '空命令跳过' });
+                await runDb(db, `RELEASE SAVEPOINT ${savepointName}`);
+                continue;
               }
 
-              if (existingLive) {
-                await runDb(
+              const canonicalUuid = generateDeterministicCommandUuid(cmdText);
+              // 若传入的 UUID 不是规范确定性 UUID，额外检查规范 UUID 是否已有更新删除墓碑
+              if (canonicalUuid !== item.row_id) {
+                const canonicalTomb = await getDb<{ deleted_hlc: string }>(
                   db,
-                  `UPDATE command_history SET command = ?, timestamp = ?, updated_hlc = ? WHERE uuid = ?`,
-                  [cmdText, cmdTs, effectiveHlc, item.row_id]
+                  `SELECT deleted_hlc FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`,
+                  [canonicalUuid]
                 );
-              } else if (matchByContent) {
-                // 本地已存在该历史指令（由不同端独立生成过旧 UUID），直接对齐 UUID 和 HLC，坚决不进行重复 INSERT！
+                if (canonicalTomb && canonicalTomb.deleted_hlc >= effectiveHlc) {
+                  stale.push({ tbl: item.tbl, row_id: item.row_id, reason: '本地已存在更新的删除墓碑' });
+                  await runDb(db, `RELEASE SAVEPOINT ${savepointName}`);
+                  continue;
+                }
+              }
+
+              const fallbackSec = itemTimeMs > 0 ? Math.floor(itemTimeMs / 1000) : Math.floor(nowMs / 1000);
+              const cmdTs = normalizeTimestampSeconds(data.timestamp, fallbackSec);
+
+              if (existingLive) {
+                // 避免更新后与表内同 command 的其他残余行撞 UNIQUE(command) 索引
+                const conflictOther = await getDb<{ id: number }>(
+                  db,
+                  `SELECT id FROM command_history WHERE command = ? AND id != ? LIMIT 1`,
+                  [cmdText, existingLive.id]
+                );
+                if (conflictOther) {
+                  await runDb(db, `DELETE FROM command_history WHERE id = ?`, [conflictOther.id]);
+                }
+                const targetUuid = item.row_id === canonicalUuid ? canonicalUuid : item.row_id;
+                syncedRowId = targetUuid;
                 await runDb(
                   db,
-                  `UPDATE command_history SET uuid = ?, updated_hlc = ? WHERE id = ?`,
-                  [item.row_id, effectiveHlc, matchByContent.id]
+                  `UPDATE command_history SET command = ?, timestamp = MAX(timestamp, ?), uuid = ?, updated_hlc = ? WHERE id = ?`,
+                  [cmdText, cmdTs, targetUuid, effectiveHlc, existingLive.id]
                 );
               } else {
-                await runDb(
+                // 按 command 业务唯一键去重归并（不再错误依赖 timestamp 相等）
+                const matchByCommand = await getDb<{
+                  id: number;
+                  uuid: string | null;
+                  timestamp: number;
+                  updated_hlc: string | null;
+                }>(
                   db,
-                  `INSERT INTO command_history (uuid, command, timestamp, updated_hlc) VALUES (?, ?, ?, ?)`,
-                  [item.row_id, cmdText, cmdTs, effectiveHlc]
+                  `SELECT id, uuid, timestamp, updated_hlc FROM command_history WHERE command = ? LIMIT 1`,
+                  [cmdText]
                 );
+
+                if (matchByCommand) {
+                  const localHlc = matchByCommand.updated_hlc || '';
+                  if (localHlc >= effectiveHlc) {
+                    // 本地 HLC 更新或一致：若远端已采用规范确定性 UUID 且本地仍是旧随机 UUID，顺手对齐 UUID 并清规范墓碑
+                    if (matchByCommand.uuid !== canonicalUuid && item.row_id === canonicalUuid) {
+                      await runDb(db, `UPDATE command_history SET uuid = ? WHERE id = ?`, [canonicalUuid, matchByCommand.id]);
+                      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`, [canonicalUuid]);
+                    }
+                    stale.push({ tbl: item.tbl, row_id: item.row_id, reason: '本地数据版本较新或一致' });
+                    await runDb(db, `RELEASE SAVEPOINT ${savepointName}`);
+                    continue;
+                  }
+
+                  const finalUuid =
+                    item.row_id === canonicalUuid
+                      ? canonicalUuid
+                      : matchByCommand.uuid === canonicalUuid
+                        ? canonicalUuid
+                        : item.row_id;
+                  syncedRowId = finalUuid;
+                  await runDb(
+                    db,
+                    `UPDATE command_history SET timestamp = MAX(timestamp, ?), uuid = ?, updated_hlc = ? WHERE id = ?`,
+                    [cmdTs, finalUuid, effectiveHlc, matchByCommand.id]
+                  );
+                } else {
+                  const insertUuid = item.row_id || canonicalUuid;
+                  syncedRowId = insertUuid;
+                  await runDb(
+                    db,
+                    `INSERT INTO command_history (uuid, command, timestamp, updated_hlc) VALUES (?, ?, ?, ?)`,
+                    [insertUuid, cmdText, cmdTs, effectiveHlc]
+                  );
+                }
               }
             } else if (item.tbl === 'appearance_settings') {
               const appearanceKey = data.key;
@@ -815,13 +942,22 @@ export const syncV2Service = {
 
             // 清理墓碑
             await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = ? AND row_id = ?`, [item.tbl, item.row_id]);
+            if (item.tbl === 'command_history') {
+              const canonical = generateDeterministicCommandUuid(normalizeCommandText(data.command));
+              if (canonical && canonical !== item.row_id) {
+                await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`, [canonical]);
+              }
+              if (syncedRowId && syncedRowId !== item.row_id && syncedRowId !== canonical) {
+                await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history' AND row_id = ?`, [syncedRowId]);
+              }
+            }
 
             // 若在 VPS 服务端，向服务端 sync_changes 记一行，origin 填发送端 ID
             if (isServerSide) {
               const insChange = await runDb(
                 db,
                 `INSERT INTO sync_changes (tbl, row_id, op, origin) VALUES (?, ?, 'U', ?)`,
-                [item.tbl, item.row_id, originDeviceId]
+                [item.tbl, syncedRowId, originDeviceId]
               );
               accepted.push({ tbl: item.tbl, row_id: item.row_id, seq: insChange.lastID });
             } else {
@@ -944,10 +1080,15 @@ export const syncV2Service = {
 
     const enabledItems = resolveSyncItems(modules);
     let nextCursor = cursor;
+    for (const row of itemsToProcess) {
+      nextCursor = Math.max(nextCursor, row.seq);
+    }
+    // 折叠同一批次中针对同一实体的多次连续变更，仅传输最终状态
+    const collapsedItems = collapseSyncChangeRows(itemsToProcess);
     const resultChanges: SyncV2ChangeItem[] = [];
 
     // 去重并提取记录当前完整状态
-    for (const row of itemsToProcess) {
+    for (const row of collapsedItems) {
       nextCursor = Math.max(nextCursor, row.seq);
 
       // 同步范围过滤。游标照常前进：这些变更对「这台设备」来说属于有意不同步的内容，
@@ -974,17 +1115,14 @@ export const syncV2Service = {
       }
 
       if (row.op === 'D') {
-        const tomb = await getDb<{ deleted_hlc: string }>(
-          db,
-          `SELECT deleted_hlc FROM sync_tombstones WHERE tbl = ? AND row_id = ?`,
-          [row.tbl, row.row_id]
-        );
+        const deleteHlc = await resolveDeleteChangeHlc(db, row.tbl, row.row_id, row.seq);
+        if (!deleteHlc) continue;
         resultChanges.push({
           seq: row.seq,
           tbl: row.tbl,
           row_id: row.row_id,
           op: 'D',
-          hlc: tomb?.deleted_hlc || `${Date.now()}-00000-server`
+          hlc: deleteHlc
         });
       } else {
         // op === 'U'
@@ -1250,9 +1388,14 @@ export const syncV2Service = {
 
     const enabledItems = resolveSyncItems(modules);
     let maxSeq = pushCursor;
+    for (const r of rows) {
+      maxSeq = Math.max(maxSeq, r.seq);
+    }
+    // 折叠同批次针对同一条记录的连续多次操作（如重复执行 50 次同一条命令），减少无效流量
+    const collapsedRows = collapseSyncChangeRows(rows);
     const list: SyncV2ChangeItem[] = [];
 
-    for (const r of rows) {
+    for (const r of collapsedRows) {
       maxSeq = Math.max(maxSeq, r.seq);
 
       // 同步范围过滤：maxSeq 仍然覆盖这些被跳过的行，
@@ -1273,17 +1416,14 @@ export const syncV2Service = {
       }
 
       if (r.op === 'D') {
-        const tomb = await getDb<{ deleted_hlc: string }>(
-          db,
-          `SELECT deleted_hlc FROM sync_tombstones WHERE tbl = ? AND row_id = ?`,
-          [r.tbl, r.row_id]
-        );
+        const deleteHlc = await resolveDeleteChangeHlc(db, r.tbl, r.row_id, r.seq);
+        if (!deleteHlc) continue;
         list.push({
           seq: r.seq,
           tbl: r.tbl,
           row_id: r.row_id,
           op: 'D',
-          hlc: tomb?.deleted_hlc || `${Date.now()}-00000-local`
+          hlc: deleteHlc
         });
       } else {
         // op === 'U'
@@ -1541,82 +1681,95 @@ export const syncV2Service = {
     let totalPushed = 0;
     let totalPulled = 0;
 
-    // --- 步骤 1: PUSH 本地变更 (安全切片分批与 413 弹性防护) ---
+    // --- 步骤 1: PUSH 本地变更 (循环排空所有积压变更 + 安全切片分批与 413 弹性防护) ---
     try {
-      const { changes: localChanges, maxSeq: scannedMaxSeq } = await this.extractLocalChangesToPush(pairingSecret, modules);
-      if (localChanges.length > 0) {
-        console.log(`[SyncV2:Client] 检测到 ${localChanges.length} 条本地变更待推送，采用小批次切片防溢出传输...`);
+      const MAX_PUSH_ROUNDS = 50;
+      for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+        const beforeState = await getDb<{ push_cursor: number }>(db, `SELECT push_cursor FROM sync_state WHERE id = 1`);
+        const beforeCursor = beforeState?.push_cursor || 0;
+        const { changes: localChanges, maxSeq: scannedMaxSeq } = await this.extractLocalChangesToPush(pairingSecret, modules);
 
-        // 设置安全单批条数 (每批 25 条，严格低于 Express/Nginx 默认限制)
-        const CHUNK_SIZE = 25;
-        for (let i = 0; i < localChanges.length; i += CHUNK_SIZE) {
-          const chunk = localChanges.slice(i, i + CHUNK_SIZE);
+        if (scannedMaxSeq <= beforeCursor) {
+          break;
+        }
 
-          // 尝试推送该批次，若遭遇 413 则二分降级重试
-          let subBatchSize = chunk.length;
-          let subIdx = 0;
+        if (localChanges.length > 0) {
+          console.log(`[SyncV2:Client] 第 ${round + 1} 轮检测到 ${localChanges.length} 条本地变更待推送，采用小批次切片防溢出传输...`);
 
-          while (subIdx < chunk.length) {
-            const subChunk = chunk.slice(subIdx, subIdx + subBatchSize);
-            try {
-              const pushRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/push`, {
-                method: 'POST',
-                headers: { 'x-device-token': deviceToken },
-                body: { device_id: deviceId, changes: subChunk, modules: modules && modules.length > 0 ? [...modules] : undefined }
-              });
+          // 设置安全单批条数 (每批 25 条，严格低于 Express/Nginx 默认限制)
+          const CHUNK_SIZE = 25;
+          for (let i = 0; i < localChanges.length; i += CHUNK_SIZE) {
+            const chunk = localChanges.slice(i, i + CHUNK_SIZE);
 
-              if (pushRes && pushRes.success && pushRes.data) {
-                const data: PushResponseResult = pushRes.data;
-                totalPushed += (data.accepted || []).length;
-                if ((data.stale || []).length > 0 && (data.accepted || []).length === 0) {
-                  // 全部被判旧版本 = 云端已有更新的 HLC。以前这里完全静默，
-                  // 用户只能看到「改了但另一边不动」，排查时毫无线索。
-                  console.warn(
-                    `[SyncV2:Client] 本批 ${data.stale.length} 条变更被云端判为旧版本(stale)，未落库：` +
-                    `${data.stale.slice(0, 3).map(s => `${s.tbl}:${s.row_id}`).join(', ')}` +
-                    `（若持续出现，多半是本机系统时钟比云端慢）`
-                  );
+            // 尝试推送该批次，若遭遇 413 则二分降级重试
+            let subBatchSize = chunk.length;
+            let subIdx = 0;
+
+            while (subIdx < chunk.length) {
+              const subChunk = chunk.slice(subIdx, subIdx + subBatchSize);
+              try {
+                const pushRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/push`, {
+                  method: 'POST',
+                  headers: { 'x-device-token': deviceToken },
+                  body: { device_id: deviceId, changes: subChunk, modules: modules && modules.length > 0 ? [...modules] : undefined }
+                });
+
+                if (pushRes && pushRes.success && pushRes.data) {
+                  const data: PushResponseResult = pushRes.data;
+                  totalPushed += (data.accepted || []).length;
+                  // 吸收云端 server_time 推进本地 HLC，防止本机时钟偏慢导致新变更持续被云端判为 stale
+                  if (typeof data.server_time === 'number' && data.server_time > 0) {
+                    const serverMs = Math.floor(data.server_time) * 1000 + 999;
+                    await runDb(db, `UPDATE sync_state SET hlc_ms = MAX(hlc_ms, ?) WHERE id = 1`, [serverMs]);
+                  }
+                  if ((data.stale || []).length > 0 && (data.accepted || []).length === 0) {
+                    // 全部被判旧版本 = 云端已有更新的 HLC。
+                    console.warn(
+                      `[SyncV2:Client] 本批 ${data.stale.length} 条变更被云端判为旧版本(stale)，未落库：` +
+                      `${data.stale.slice(0, 3).map(s => `${s.tbl}:${s.row_id}`).join(', ')}` +
+                      `（若持续出现，多半是本机系统时钟比云端慢）`
+                    );
+                  }
+                  // 推进该批次中最大的 seq
+                  const batchMaxSeq = Math.max(...subChunk.map(c => c.seq || 0));
+                  if (batchMaxSeq > 0) {
+                    await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [batchMaxSeq]);
+                  }
+                  subIdx += subBatchSize;
+                } else {
+                  throw new Error(pushRes?.error || '推送响应未成功');
                 }
-                // 推进该批次中最大的 seq
-                const batchMaxSeq = Math.max(...subChunk.map(c => c.seq || 0));
-                if (batchMaxSeq > 0) {
-                  await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [batchMaxSeq]);
+              } catch (postErr: any) {
+                const is413 = postErr.message && (postErr.message.includes('413') || postErr.message.includes('Payload Too Large'));
+                if (is413 && subBatchSize > 5) {
+                  // 遇到 413 且批次大于 5，立即二分降级重试该段
+                  console.warn(`[SyncV2:Client] 遭遇云端 413 限制，自动降级批次大小 (${subBatchSize} -> ${Math.floor(subBatchSize / 2)}) 重试...`);
+                  subBatchSize = Math.max(1, Math.floor(subBatchSize / 2));
+                } else if (is413) {
+                  // 单条也超限：这一行永远推不上去，只能跳过，否则会堵死后续所有变更
+                  console.warn(`[SyncV2:Client] 单条变更体积超限，跳过 seq=${subChunk[0]?.seq} 避免阻塞:`, postErr.message);
+                  const failedSeq = subChunk[0]?.seq;
+                  if (failedSeq) {
+                    await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [failedSeq]);
+                  }
+                  subIdx += 1;
+                } else {
+                  // 网络中断 / 鉴权失败 / 云端 5xx 都是可恢复的：游标绝不能动，
+                  // 否则这批变更会永久跳过（sync_changes 已落在游标下面，再也不会被取出）。
+                  // 抛出去结束本轮 PUSH，下一轮从同一条重试。
+                  console.warn(`[SyncV2:Client] 推送批次 (偏移 ${i + subIdx}) 失败，保留游标待下轮重试:`, postErr.message);
+                  throw postErr;
                 }
-                subIdx += subBatchSize;
-              } else {
-                throw new Error(pushRes?.error || '推送响应未成功');
-              }
-            } catch (postErr: any) {
-              const is413 = postErr.message && (postErr.message.includes('413') || postErr.message.includes('Payload Too Large'));
-              if (is413 && subBatchSize > 5) {
-                // 遇到 413 且批次大于 5，立即二分降级重试该段
-                console.warn(`[SyncV2:Client] 遭遇云端 413 限制，自动降级批次大小 (${subBatchSize} -> ${Math.floor(subBatchSize / 2)}) 重试...`);
-                subBatchSize = Math.max(1, Math.floor(subBatchSize / 2));
-              } else if (is413) {
-                // 单条也超限：这一行永远推不上去，只能跳过，否则会堵死后续所有变更
-                console.warn(`[SyncV2:Client] 单条变更体积超限，跳过 seq=${subChunk[0]?.seq} 避免阻塞:`, postErr.message);
-                const failedSeq = subChunk[0]?.seq;
-                if (failedSeq) {
-                  await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [failedSeq]);
-                }
-                subIdx += 1;
-              } else {
-                // 网络中断 / 鉴权失败 / 云端 5xx 都是可恢复的：游标绝不能动，
-                // 否则这批变更会永久跳过（sync_changes 已落在游标下面，再也不会被取出）。
-                // 抛出去结束本轮 PUSH，下一轮从同一条重试。
-                console.warn(`[SyncV2:Client] 推送批次 (偏移 ${i + subIdx}) 失败，保留游标待下轮重试:`, postErr.message);
-                throw postErr;
               }
             }
           }
         }
-      }
 
-      // 被同步范围过滤掉的变更不会出现在 localChanges 里，但它们占着 seq。
-      // 游标必须推到「本轮扫描到的最大 seq」，否则下轮又从头扫同一批过滤项、永远返回空，
-      // 后面的真实变更就彻底堵死了。放在这里（try 内、循环之后）保证推送失败时不会被推进。
-      if (scannedMaxSeq > 0) {
-        await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [scannedMaxSeq]);
+        // 被同步范围过滤掉的变更或被折叠掉的更早 seq 不会出现在 localChanges 尾部，
+        // 整批推完后必须推进到本轮扫描到的最大 seq，否则下一轮还会扫相同范围或停止排空。
+        if (scannedMaxSeq > beforeCursor) {
+          await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [scannedMaxSeq]);
+        }
       }
     } catch (pushErr: any) {
       console.warn('[SyncV2:Client] PUSH 本地变更流程遇到告警，已安全隔离，继续执行 PULL 拉取:', pushErr.message);
@@ -1942,10 +2095,14 @@ export const syncV2Service = {
       updated_hlc: s.updated_hlc || `${Date.now()}-00000-server`
     }));
 
-    // 10. 提取 command_history (最近 500 条)
+    // 10. 提取 command_history (按最近使用时间提取最近 1000 条，防止高频执行的老 id 命令被截断)
     const rawCmdHist = await allDb<any>(
       db,
-      `SELECT uuid, command, timestamp, updated_hlc FROM command_history ORDER BY id DESC LIMIT 500`
+      `SELECT uuid, command, timestamp, updated_hlc
+       FROM command_history
+       WHERE uuid IS NOT NULL AND uuid != ''
+       ORDER BY timestamp DESC, id DESC
+       LIMIT 1000`
     );
     const command_history = rawCmdHist.map(ch => ({
       uuid: ch.uuid,
