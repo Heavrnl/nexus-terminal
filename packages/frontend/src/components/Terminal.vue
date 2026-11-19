@@ -23,6 +23,7 @@ import { useTerminalContextMenu } from '../composables/terminal/useTerminalConte
 import { useTerminalScrollbar } from '../composables/terminal/useTerminalScrollbar';
 import { useTerminalPinchZoom } from '../composables/terminal/useTerminalPinchZoom';
 import { buildSearchMarkers, DEFAULT_SEARCH_DECORATIONS } from '../utils/terminalSearch';
+import { createReplaySilenceController } from '../utils/terminalReplaySilence';
 
 const highlightStore = useTerminalHighlightStore();
 
@@ -110,11 +111,14 @@ const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素
 // --- 尺寸未定时暂存写入（见 onMounted 里「把 write 包一层」的说明）---
 /** 是否已经量到过一次真实尺寸（= 终端 cols/rows 可信，可以往里写内容了） */
 let hasRealSize = false;
-/** 尺寸可信之前收到的写入，按原顺序暂存 */
-let pendingWrites: (string | Uint8Array)[] = [];
+/** 尺寸可信之前收到的写入，按原顺序暂存（携带是否回放静默标记） */
+let pendingWrites: Array<{ data: string | Uint8Array; silent: boolean }> = [];
 let pendingWriteChars = 0;
 /** 未经包装的原始 write，flush 时才用 */
 let rawTerminalWrite: ((data: string | Uint8Array, cb?: () => void) => void) | null = null;
+/** 历史回放静默屏障：拦截回放解析期间 xterm.js 自动发出的查询应答，放行真实用户输入 */
+const replaySilence = createReplaySilenceController();
+let userInputListenerDisposable: IDisposable | null = null;
 /** 暂存上限：隐藏会话一直不回前台时，超过这个量就认了，先写进去（不无限吃内存） */
 const PENDING_WRITE_LIMIT = 8 * 1024 * 1024;
 
@@ -232,9 +236,13 @@ const flushPendingWrites = () => {
   pendingWrites = [];
   pendingWriteChars = 0;
   const write = rawTerminalWrite;
-  for (const chunk of queue) {
+  for (const entry of queue) {
     try {
-      write(chunk);
+      if (entry.silent) {
+        replaySilence.writeWithSilence(write, entry.data);
+      } else {
+        write(entry.data);
+      }
     } catch (e) {
       console.warn(`[Terminal ${props.sessionId}] 补写暂存数据失败:`, e);
       break;
@@ -439,12 +447,16 @@ onMounted(() => {
      * 在 `hasRealSize` 之前只入队；`markRealSize()` 在 fit 成功后按顺序补写。
      */
     rawTerminalWrite = terminal.write.bind(terminal);
-    (terminal as any).write = ((data: string | Uint8Array, cb?: () => void) => {
+    const enqueueOrWrite = (data: string | Uint8Array, silent: boolean, cb?: () => void) => {
       if (hasRealSize) {
-        rawTerminalWrite!(data, cb);
+        if (silent) {
+          replaySilence.writeWithSilence(rawTerminalWrite!, data, cb);
+        } else {
+          rawTerminalWrite!(data, cb);
+        }
         return;
       }
-      pendingWrites.push(data);
+      pendingWrites.push({ data, silent });
       pendingWriteChars += data.length;
       if (pendingWriteChars >= PENDING_WRITE_LIMIT) {
         console.warn(
@@ -453,6 +465,12 @@ onMounted(() => {
         hasRealSize = true;
         flushPendingWrites();
       }
+    };
+    (terminal as any).write = ((data: string | Uint8Array, cb?: () => void) => {
+      enqueueOrWrite(data, false, cb);
+    }) as any;
+    (terminal as any).writeReplay = ((data: string | Uint8Array, cb?: () => void) => {
+      enqueueOrWrite(data, true, cb);
     }) as any;
     // 采集快照时如果数据还压在队里（这个会话从没露过面），直接把原始字节流交出去：
     // 此刻 buffer 还是空的，这份流就是它的全部内容；等它真被切到、fit 到正确列数后
@@ -461,8 +479,8 @@ onMounted(() => {
     (terminal as any).getPendingWriteText = () => {
       if (pendingWrites.length === 0) return null;
       let text = '';
-      for (const chunk of pendingWrites) {
-        text += typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk as Uint8Array);
+      for (const entry of pendingWrites) {
+        text += typeof entry.data === 'string' ? entry.data : new TextDecoder().decode(entry.data as Uint8Array);
       }
       return text;
     };
@@ -496,8 +514,23 @@ onMounted(() => {
       return true;
     });
 
+    // 订阅 xterm 内部真实用户输入信号，确保回放静默窗口内只拦截 parser 自动回包、不丢任何真实按键/粘贴
+    try {
+      const coreUserInputEvent = (terminal as any)?._core?.coreService?.onUserInput;
+      if (typeof coreUserInputEvent === 'function') {
+        userInputListenerDisposable = coreUserInputEvent(() => {
+          replaySilence.markUserInput();
+        });
+      }
+    } catch {
+      /* 非标准 xterm 实例时安全忽略 */
+    }
+
     // 监听用户输入
     terminal.onData((data) => {
+      if (replaySilence.shouldSuppressOnData()) {
+        return;
+      }
       emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, paneId: props.paneId, data });
     });
 
@@ -936,6 +969,15 @@ onBeforeUnmount(() => {
   pendingWrites = [];
   pendingWriteChars = 0;
   rawTerminalWrite = null;
+  if (userInputListenerDisposable) {
+    try {
+      userInputListenerDisposable.dispose();
+    } catch {
+      /* ignore */
+    }
+    userInputListenerDisposable = null;
+  }
+  replaySilence.reset();
   cancelFitRetries();
   cancelFitRetries();
   if (innerResizeObserver) {

@@ -13,6 +13,8 @@
    },
    "dependencies": {
       "@simplewebauthn/server": "^13.3.3",
+      "@xterm/addon-serialize": "^0.14.0",
+      "@xterm/headless": "^5.5.0",
       "@types/archiver": "^6.0.3",
       "@types/multer": "^2.3.0",
       "@types/session-file-store": "^1.2.6",

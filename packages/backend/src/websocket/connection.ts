@@ -27,6 +27,7 @@ import {
 import { SshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { SftpService } from '../sftp/sftp.service';
 import { appendRingBuffer, cleanupClientConnection } from './utils';
+import { BackendTerminalEmulator } from './terminal-emulator';
 import { clientStates } from './state';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service'; 
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
@@ -83,6 +84,14 @@ async function activateResumedSession(params: {
         return { ok: false, error: '服务未能恢复会话，或会话不存在/状态不正确。' };
     }
 
+    const resumedEmulator =
+        result.terminalEmulator && !result.terminalEmulator.isDisposed()
+            ? result.terminalEmulator
+            : new BackendTerminalEmulator();
+    if (!resumedEmulator.hasAnyOutput() && result.fullLogData) {
+        resumedEmulator.write(result.fullLogData);
+    }
+
     const newSessionState: ClientState = {
         ws, // 当前的 WebSocket 连接
         sshClient: result.sshClient,
@@ -93,6 +102,7 @@ async function activateResumedSession(params: {
         isShellReady: true, // 恢复后 Shell 立即可用
         recentOutputBuffer: [],
         recentOutputBytes: 0,
+        terminalEmulator: resumedEmulator,
         paneStreams: result.paneStreams ? new Map(result.paneStreams) : new Map(),
     };
     // 环形缓冲存完整历史（不是发给前端的那段），下次挂起时才能写全
@@ -148,6 +158,7 @@ async function activateResumedSession(params: {
             console.log(`[SSH Suspend Backend] 正在回放恢复过渡期间暂存的数据块 (${pendingBuffers.length} 块)`);
             for (const buf of pendingBuffers) {
                 const utf8Str = liveDecoder.write(buf);
+                newSessionState.terminalEmulator?.write(utf8Str);
                 appendRingBuffer(newSessionState, utf8Str);
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
@@ -160,10 +171,11 @@ async function activateResumedSession(params: {
         }
     }
 
-    // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲
+    // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲与 Headless VT
     result.channel.removeAllListeners('data');
     result.channel.on('data', (data: Buffer) => {
         const utf8Data = liveDecoder.write(data);
+        newSessionState.terminalEmulator?.write(utf8Data);
         appendRingBuffer(newSessionState, utf8Data);
 
         if (ws.readyState === WebSocket.OPEN) {
@@ -607,13 +619,17 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             try {
                                 const logIdentifier = stateForSuspend.suspendLogPath || actualSessionId;
                                 await temporaryLogStorageService.ensureLogDirectoryExists();
-                                // 先把前端带过来的完整 scrollback 落地，挂起期间的新输出由 service 追加
+                                // 先把前端带过来的完整 scrollback 或后端 Headless VT 纯净序列化状态落地，挂起期间的新输出由 service 追加
+                                let normalizedInitialForSeed: string | undefined = undefined;
                                 if (initialBuffer) {
                                     const normalized = initialBuffer.replace(/\r?\n/g, '\r\n');
-                                    await temporaryLogStorageService.overwriteLog(
-                                        logIdentifier,
-                                        normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`
-                                    );
+                                    normalizedInitialForSeed = normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`;
+                                    await temporaryLogStorageService.overwriteLog(logIdentifier, normalizedInitialForSeed);
+                                } else if (stateForSuspend.terminalEmulator?.hasAnyOutput()) {
+                                    const serialized = await stateForSuspend.terminalEmulator.serialize();
+                                    if (serialized) {
+                                        await temporaryLogStorageService.overwriteLog(logIdentifier, serialized);
+                                    }
                                 } else if (stateForSuspend.recentOutputBuffer?.length) {
                                     const fallbackBuffer = stateForSuspend.recentOutputBuffer.join('');
                                     if (fallbackBuffer) {
@@ -627,11 +643,13 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                 const sshClientToPass = stateForSuspend.sshClient;
                                 const channelToPass = stateForSuspend.sshShellStream;
                                 const paneStreamsToPass = stateForSuspend.paneStreams;
+                                const emulatorToPass = stateForSuspend.terminalEmulator;
 
                                 // 先摘引用再交接：交接失败要能原样放回去
                                 stateForSuspend.sshClient = undefined as any;
                                 stateForSuspend.sshShellStream = undefined;
                                 stateForSuspend.paneStreams = undefined;
+                                stateForSuspend.terminalEmulator = undefined;
                                 stateForSuspend.isSuspendedByService = true;
                                 stateForSuspend.isMarkedForSuspend = false;
                                 stateForSuspend.suspendLogPath = logIdentifier;
@@ -644,8 +662,10 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                     connectionName: stateForSuspend.connectionName || '未知连接',
                                     connectionId: String(stateForSuspend.dbConnectionId),
                                     logIdentifier,
-                                    // 历史已经写进日志了，别再塞给 service 重复一份
-                                    initialBuffer: undefined,
+                                    // 仅在 VT 为空时作为种子灌入，不重复塞进内存 delta 缓冲
+                                    initialBuffer: emulatorToPass?.hasAnyOutput() ? undefined : normalizedInitialForSeed,
+                                    utf8Decoder: stateForSuspend.outDecoder,
+                                    terminalEmulator: emulatorToPass,
                                     paneStreams: paneStreamsToPass,
                                     // 打上「手动挂起」标记：这是用户主动关的标签，
                                     // 工作区恢复流程必须跳过它，只能由用户去挂起面板手动恢复。
@@ -656,6 +676,9 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                     stateForSuspend.sshClient = sshClientToPass;
                                     stateForSuspend.sshShellStream = channelToPass;
                                     stateForSuspend.paneStreams = paneStreamsToPass;
+                                    if (emulatorToPass && !emulatorToPass.isDisposed()) {
+                                        stateForSuspend.terminalEmulator = emulatorToPass;
+                                    }
                                     stateForSuspend.isSuspendedByService = false;
                                     replySuspendNow(false, { error: '挂起失败：SSH 通道已不可用' });
                                     break;

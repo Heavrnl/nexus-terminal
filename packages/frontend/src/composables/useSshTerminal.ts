@@ -17,6 +17,7 @@ import {
     type TerminalSearchOptions,
 } from '../utils/terminalSearch';
 import { createTerminalStreamFilter, type TerminalStreamFilter } from '../utils/terminal-stream';
+import { writeTerminalReplay } from '../utils/terminalReplaySilence';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -240,11 +241,13 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
             if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
                 currentSessionState.pendingOutput.forEach(data => {
-                    // 回放数据是 PTY 原始字节，必须原样写入：以前这里做 `\n` → `\r\n`
-                    // 的"规范化"，会把 TUI 里只用 LF 换行的行首顶到第 0 列，
-                    // 画出来就是错位/重复的行。
-                    term.write(mainWriteFilter.write(data));
+                    // 回放数据走静默回放通道，既保留原始字节排版语义，又防止任何历史查询序列触发回包
+                    writeTerminalReplay(term as any, mainWriteFilter.write(data));
                 });
+                const tail = mainWriteFilter.flush();
+                if (tail) {
+                    writeTerminalReplay(term as any, tail);
+                }
                 currentSessionState.pendingOutput = []; // 清空
                 if (currentSessionState.isResuming) {
                     currentSessionState.isResuming = false;
@@ -281,7 +284,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
                 console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
                 const paneFilter = getPaneWriteFilter(effectivePaneId);
-                term.write(paneFilter.write(cachedPaneBuffer.replace(/(\r\n)+$/, '')) + paneFilter.flush());
+                writeTerminalReplay(term as any, paneFilter.write(cachedPaneBuffer.replace(/(\r\n)+$/, '')) + paneFilter.flush());
                 // 消费掉这段缓存：workspaceSync 里还有一条"panes 已就绪时立即回放"的路径，
                 // 不清掉会写第二遍，表现为刷新后终端里多出好几个重复的提示符。
                 usedKeys.forEach((k) => {

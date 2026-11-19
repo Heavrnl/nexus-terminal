@@ -153,11 +153,13 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
             );
             state.isMarkedForSuspend = false;
             try {
+                state.terminalEmulator?.dispose();
                 state.sshShellStream?.destroy?.();
                 state.sshShellStream?.end?.();
                 state.sshClient?.destroy?.();
                 state.sshClient?.end?.();
             } catch (closeErr) {}
+            state.terminalEmulator = undefined;
             state.sshClient = undefined as any;
             state.sshShellStream = undefined;
         } else if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
@@ -170,11 +172,20 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
 
             // ⚠️ 必须在任何 await 之前同步冻结「断线前前端已看到的历史」，并清空 recentOutputBuffer
             // 来专门承接异步写盘窗口内远端新吐出的输出（作为 deltaBuffer，避免 reattach delta 模式下被当成已读历史裁掉！）
-            let initialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '';
+            let initialBuffer = '';
+            const fallbackRawRecent = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '';
             state.recentOutputBuffer = [];
             state.recentOutputBytes = 0;
 
-            // 如果后端内存缓冲为空，尝试从快照终端缓冲区获取保底历史
+            // 优先使用服务端 Headless VT 序列化出的纯净屏幕状态落盘（不含历史查询控制序列）
+            if (state.terminalEmulator?.hasAnyOutput()) {
+                initialBuffer = await state.terminalEmulator.serialize();
+            }
+            if (!initialBuffer) {
+                initialBuffer = fallbackRawRecent;
+            }
+
+            // 如果后端内存缓冲与 VT 均为空，尝试从快照终端缓冲区获取保底历史
             if (!initialBuffer) {
                 try {
                     const syncRecord = await workspaceSyncService.getState(state.ws.userId);
@@ -212,23 +223,30 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
 
             state.isMarkedForSuspend = true;
         } else if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream) {
-            // 已经提前被标记为待挂起（SSH_MARK_FOR_SUSPEND）：保留内存中已积累的历史
+            // 已经提前被标记为待挂起（SSH_MARK_FOR_SUSPEND）：优先序列化纯净屏幕状态，兜底使用内存缓冲
             state.isHandingOverToSuspend = true;
-            frozenInitialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') || undefined : undefined;
+            if (state.terminalEmulator?.hasAnyOutput()) {
+                frozenInitialBuffer = (await state.terminalEmulator.serialize()) || undefined;
+            }
+            if (!frozenInitialBuffer) {
+                frozenInitialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') || undefined : undefined;
+            }
             state.recentOutputBuffer = [];
             state.recentOutputBytes = 0;
         }
 
         if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.suspendLogPath && state.ws.userId !== undefined) {
             console.log(`WebSocket: 会话 ${sessionId} 已被标记为待挂起，尝试移交给 SshSuspendService...`);
+            let emulatorToPass = state.terminalEmulator;
             try {
-                // 从 state 中“分离”SSH资源与分屏Shell通道，防止后续意外关闭
+                // 从 state 中“分离”SSH资源、分屏Shell通道与 Headless VT，防止后续意外关闭或释放
                 const sshClientToPass = state.sshClient;
                 const channelToPass = state.sshShellStream;
                 const paneStreamsToPass = state.paneStreams;
                 state.sshClient = undefined as any; // 清除引用
                 state.sshShellStream = undefined; // 清除引用
                 state.paneStreams = undefined; // 清除引用，防止后续误清理
+                state.terminalEmulator = undefined; // 所有权移交给 SshSuspendService
                 state.isSuspendedByService = true; // 标记为已被服务接管（即使是尝试接管）
 
                 const newSuspendId = await sshSuspendService.takeOverMarkedSession({
@@ -242,16 +260,18 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
                     initialBuffer: frozenInitialBuffer,
                     deltaBuffer: handoverDeltaBuffer,
                     utf8Decoder: state.outDecoder,
+                    terminalEmulator: emulatorToPass,
                     customSuspendName: undefined,
                     paneStreams: paneStreamsToPass,
                 });
 
                 if (newSuspendId) {
                     console.log(`WebSocket: 会话 ${sessionId} 已成功移交给 SshSuspendService，新的挂起ID: ${newSuspendId}。SSH 连接与 ${paneStreamsToPass?.size || 0} 个分屏将由服务管理。`);
-                    // SSH 资源已移交，不需要在这里关闭它们
+                    // SSH 资源与 Headless VT 已移交，不需要在这里关闭它们
                 } else {
                     console.warn(`WebSocket: 会话 ${sessionId} 移交给 SshSuspendService 失败 (takeOverMarkedSession 返回 null)。可能 SSH 连接在标记后已断开。将执行常规清理。`);
                     // 移交失败，执行常规关闭
+                    try { emulatorToPass?.dispose(); } catch {}
                     channelToPass?.end();
                     sshClientToPass?.end();
                     if (paneStreamsToPass) {
@@ -264,6 +284,7 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
             } catch (error) {
                 console.error(`WebSocket: 会话 ${sessionId} 移交给 SshSuspendService 时发生错误:`, error);
                 // 发生错误，也执行常规关闭以防资源泄露
+                try { emulatorToPass?.dispose(); } catch {}
                 if (state.sshClient) state.sshClient.end(); // 如果引用还在，尝试关闭
                 if (state.sshShellStream) state.sshShellStream.end(); // 如果引用还在，尝试关闭
                 state.isSuspendedByService = false; // 重置标记
@@ -272,12 +293,18 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
             }
         } else if (!state.isSuspendedByService && state.sshClient) {
             // 未标记挂起，也未被服务接管，执行常规关闭
+            try { state.terminalEmulator?.dispose(); } catch {}
+            state.terminalEmulator = undefined;
             state.sshShellStream?.end();
             state.sshClient?.end();
             console.log(`WebSocket: 会话 ${sessionId} 的 SSH 连接已关闭 (未标记挂起，未被服务接管)。`);
         } else if (state.isSuspendedByService) {
             // 已被服务接管（例如通过旧的 startSuspend 流程，或成功移交后），不在此处关闭
             console.log(`WebSocket: 会话 ${sessionId} 的 SSH 连接已由挂起服务管理，跳过关闭。`);
+        } else {
+            // 未建立完整 SSH 连接的残留状态，兜底释放可能已创建的 VT
+            try { state.terminalEmulator?.dispose(); } catch {}
+            state.terminalEmulator = undefined;
         }
         state.isHandingOverToSuspend = false;
 

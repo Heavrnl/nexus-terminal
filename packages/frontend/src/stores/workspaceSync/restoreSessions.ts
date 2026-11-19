@@ -4,6 +4,7 @@ import { useConnectionsStore } from '../connections.store';
 import { useTerminalHighlightStore } from '../terminal-highlight.store';
 import { getLocalStorageSafe, recordSessionIdAlias as recordAlias } from '../../utils/pendingRemoval';
 import { cleanTrailingPromptForReconnect } from './terminalBuffer';
+import { writeTerminalReplay } from '../../utils/terminalReplaySilence';
 import { logSync, logSyncWarn } from './log';
 import type { WorkspaceSnapshot } from './types';
 
@@ -254,7 +255,7 @@ export async function restoreSessionsFromSnapshot(
 
             if (sessionState.terminalManager?.terminalInstance?.value) {
               const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
-              sessionState.terminalManager.terminalInstance.value.write(highlightedData);
+              writeTerminalReplay(sessionState.terminalManager.terminalInstance.value as any, highlightedData);
               try {
                 sessionState.terminalManager.terminalInstance.value.refresh(
                   0,
@@ -306,7 +307,7 @@ export async function restoreSessionsFromSnapshot(
                 );
                 const cleaned = cleanTrailingPromptForReconnect(buf);
                 const highlighted = highlightStore.highlight(cleaned) as string;
-                paneTerminal.write(highlighted);
+                writeTerminalReplay(paneTerminal as any, highlighted);
                 try {
                   paneTerminal.refresh(0, paneTerminal.rows - 1);
                 } catch {

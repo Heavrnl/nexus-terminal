@@ -5,6 +5,7 @@ import { AuthenticatedWebSocket, ClientState } from '../types';
 import { clientStates, sftpService, statusMonitorService, auditLogService, notificationService } from '../state';
 import * as SshService from '../../services/ssh.service';
 import { appendRingBuffer, cleanupClientConnection } from '../utils';
+import { BackendTerminalEmulator } from '../terminal-emulator';
 import { temporaryLogStorageService } from '../../ssh-suspend/temporary-log-storage.service';
 import { startDockerStatusPolling } from './docker.handler';
 import WebSocket from 'ws';
@@ -118,11 +119,23 @@ export async function handleSshConnect(
                 newState.sshShellStream = stream;
                 newState.isShellReady = true;
 
+                let initialCols = defaultCols;
+                let initialRows = defaultRows;
                 // 如果在 Shell 打开前已收到前端的调整尺寸请求，立即应用
                 if (newState.pendingDimensions) {
-                    console.log(`WebSocket: 会话 ${newSessionId} 应用就绪前暂存的终端尺寸: ${newState.pendingDimensions.cols}x${newState.pendingDimensions.rows}`);
-                    stream.setWindow(newState.pendingDimensions.rows, newState.pendingDimensions.cols, 0, 0);
+                    initialCols = newState.pendingDimensions.cols;
+                    initialRows = newState.pendingDimensions.rows;
+                    console.log(`WebSocket: 会话 ${newSessionId} 应用就绪前暂存的终端尺寸: ${initialCols}x${initialRows}`);
+                    stream.setWindow(initialRows, initialCols, 0, 0);
                     delete newState.pendingDimensions;
+                }
+
+                // 为普通交互式终端会话初始化服务端 Headless 终端状态机（无终端私有 SFTP 会话不创建）
+                if (!newState.isHeadless) {
+                    newState.terminalEmulator = new BackendTerminalEmulator({
+                        cols: initialCols,
+                        rows: initialRows,
+                    });
                 }
 
                 // ⚠️ 输出必须按**原始字节**转发（base64）。
@@ -140,6 +153,7 @@ export async function handleSshConnect(
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
+                        currentState.terminalEmulator?.write(utf8Data);
                         appendRingBuffer(currentState, utf8Data);
 
                         // 如果会话被标记为待挂起（且不在异步写盘交接窗口内），则同时将输出写入日志
@@ -159,6 +173,7 @@ export async function handleSshConnect(
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
+                        currentState.terminalEmulator?.write(utf8ErrData);
                         appendRingBuffer(currentState, utf8ErrData);
 
                         if (currentState.isMarkedForSuspend && !currentState.isHandingOverToSuspend && currentState.suspendLogPath) {
@@ -294,6 +309,7 @@ export function handleSshResize(ws: AuthenticatedWebSocket, payload: any): void 
     if (state.isShellReady && state.sshShellStream) {
         console.log(`SSH: 会话 ${sessionId} 调整终端大小: ${cols}x${rows}`);
         state.sshShellStream.setWindow(rows, cols, 0, 0);
+        state.terminalEmulator?.resize(cols, rows);
     } else {
         // 暂存尺寸请求，待 Shell 就绪后立即无缝应用，防止初始终端错位
         console.log(`WebSocket: 会话 ${sessionId} 收到调整大小请求，Shell 尚未就绪，暂存尺寸: ${cols}x${rows}`);

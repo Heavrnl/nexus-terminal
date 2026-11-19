@@ -10,6 +10,7 @@ import {
 } from '../types/ssh-suspend.types';
 import { temporaryLogStorageService, TemporaryLogStorageService } from './temporary-log-storage.service';
 import { ClientState } from '../websocket/types';
+import { BackendTerminalEmulator } from '../websocket/terminal-emulator';
 import { shouldPruneTakeoverSuspend } from '../workspace-sync/workspace-sync.pure';
 
 /** 挂起态单会话内存缓冲上限（4MB），防止后台日志洪流导致后端 OOM */
@@ -101,6 +102,8 @@ export class SshSuspendService extends EventEmitter {
     deltaBuffer?: string;
     /** 从在线态接力传入的 UTF-8 流式解码器，避免交接瞬间切断跨包多字节字符 */
     utf8Decoder?: { write(buf: Buffer): string; end(): string };
+    /** 从在线态无缝接力的服务端 Headless 终端状态机 */
+    terminalEmulator?: BackendTerminalEmulator;
     customSuspendName?: string;
     paneStreams?: Map<string, any>;
     /** 手动挂起（用户关标签）标记，见 SuspendSessionDetails.manuallySuspended */
@@ -119,6 +122,7 @@ export class SshSuspendService extends EventEmitter {
       initialBuffer,
       deltaBuffer,
       utf8Decoder: inheritedDecoder,
+      terminalEmulator: inheritedEmulator,
       customSuspendName,
       paneStreams,
       manuallySuspended,
@@ -130,6 +134,7 @@ export class SshSuspendService extends EventEmitter {
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Checking channel for originalSessionId=${originalSessionId}. Readable: ${channel?.readable}, Writable: ${channel?.writable}`);
     if (!channel || !channel.readable || !channel.writable) {
         console.warn(`[SshSuspendService WARN] takeOverMarkedSession: userId=${userId}, originalSessionId=${originalSessionId}. SSH channel is not usable. readable=${channel?.readable}, writable=${channel?.writable}. Cannot take over.`);
+        try { inheritedEmulator?.dispose(); } catch (e) { /* ignore */ }
         try { channel?.end(); } catch (e) { /* ignore */ }
         try { sshClient?.end(); } catch (e) { /* ignore */ }
         return null; // 无法接管
@@ -157,6 +162,24 @@ export class SshSuspendService extends EventEmitter {
     }
 
     const utf8Decoder = inheritedDecoder || new StringDecoder('utf8');
+    // 复用在线态传入的 Headless VT；若调用方未传入（如直接挂起或兼容路径），则就地新建并灌入历史种子
+    let terminalEmulator: BackendTerminalEmulator;
+    if (inheritedEmulator && !inheritedEmulator.isDisposed()) {
+      terminalEmulator = inheritedEmulator;
+      // 仅当继承的 VT 尚无任何输出时，才使用调用方提供的快照/初始缓冲作为种子
+      if (!terminalEmulator.hasAnyOutput() && initialBuffer) {
+        terminalEmulator.write(initialBuffer);
+      }
+    } else {
+      terminalEmulator = new BackendTerminalEmulator();
+      if (initialBuffer) {
+        terminalEmulator.write(initialBuffer);
+      }
+      if (deltaBuffer) {
+        terminalEmulator.write(deltaBuffer);
+      }
+    }
+
     const sessionDetails: SuspendSessionDetails = {
       sshClient,
       channel,
@@ -171,6 +194,7 @@ export class SshSuspendService extends EventEmitter {
       inMemoryBuffer: [],
       inMemoryBytes: 0,
       utf8Decoder,
+      terminalEmulator,
       // 第 0 块是前端已经显示过的历史；就地接回时不能重放它
       historyChunks: 0,
       historyChars: initialBuffer ? initialBuffer.length : 0,
@@ -225,6 +249,7 @@ export class SshSuspendService extends EventEmitter {
           // 必须走 StringDecoder 跨包拼接多字节 UTF-8（中文/Emoji），绝不能逐块 data.toString('utf-8')
           const str = currentDetails.utf8Decoder ? currentDetails.utf8Decoder.write(data) : data.toString('utf8');
           if (str) {
+            currentDetails.terminalEmulator?.write(str);
             appendToSuspendMemory(currentDetails, str);
             // 异步写入磁盘日志作为双轨保底（底层按 suspendSessionId 串行队列落盘）
             this.logStorageService.writeToLog(logIdentifier, str).catch(err => {
@@ -406,6 +431,7 @@ export class SshSuspendService extends EventEmitter {
     originalConnectionId: string;
     paneStreams?: Map<string, any>;
     utf8Decoder?: { write(buf: Buffer): string; end(): string };
+    terminalEmulator?: BackendTerminalEmulator;
     getPendingResumeData?: () => Buffer[];
   } | null> {
     const userSessions = this.getUserSessions(userId);
@@ -424,22 +450,48 @@ export class SshSuspendService extends EventEmitter {
     //    保证跨挂起/恢复边界的多字节 UTF-8 字符（中文/Emoji）无缝续接、绝不产出 U+FFFD。
     session.pendingResumeBuffer = [];
 
-    // 2. 优先从内存缓冲中无缝拼接完整数据，避免异步磁盘 I/O 排队未落盘导致的尾部数据丢失
+    // 2. 构建恢复回放数据：
+    //    - full 模式（工作区同步 / 刷新 / 挂起面板恢复）：优先从服务端 Headless VT 序列化纯净屏幕快照，
+    //      天然剔除历史上所有 DA1/DA2/OSC 10~12/DSR/DECRQM 等查询控制序列；
+    //    - delta 模式（WS 短暂抖动就地接回）：只补发断线期间增量，避免重画前端已有历史。
     let fullLogData = '';
     let deltaLogData = '';
     const historyChunks = session.historyChunks ?? 0;
     if (session.inMemoryBuffer && session.inMemoryBuffer.length > 0) {
-      fullLogData = session.inMemoryBuffer.join('');
       deltaLogData = session.inMemoryBuffer.slice(historyChunks).join('');
-      console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 优先从内存输出缓冲拼接挂起会话 ${suspendSessionId} 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
     } else {
       try {
-        fullLogData = await this.logStorageService.readLog(session.tempLogPath);
-        deltaLogData = fullLogData.slice(session.historyChars ?? 0);
-        console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 从磁盘读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
+        const diskLog = await this.logStorageService.readLog(session.tempLogPath);
+        deltaLogData = diskLog.slice(session.historyChars ?? 0);
+        fullLogData = diskLog;
       } catch (error) {
-        fullLogData = '';
         deltaLogData = '';
+      }
+    }
+
+    const emulator = session.terminalEmulator;
+    if (emulator && !emulator.isDisposed() && emulator.hasAnyOutput()) {
+      const serialized = await emulator.serialize();
+      if (serialized) {
+        fullLogData = serialized;
+        console.log(
+          `[SshSuspendService][用户: ${userId}] resumeSession: 从服务端 Headless VT 序列化纯净屏幕状态 (会话: ${suspendSessionId}, 长度: ${fullLogData.length}, delta 长度: ${deltaLogData.length})`
+        );
+      }
+    }
+
+    // 兜底：若 Headless VT 尚无输出（极端兼容场景），退回内存或磁盘缓冲
+    if (!fullLogData) {
+      if (session.inMemoryBuffer && session.inMemoryBuffer.length > 0) {
+        fullLogData = session.inMemoryBuffer.join('');
+        console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 降级从内存输出缓冲拼接挂起会话 ${suspendSessionId} 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
+      } else {
+        try {
+          fullLogData = await this.logStorageService.readLog(session.tempLogPath);
+          console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 降级从磁盘读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
+        } catch (error) {
+          fullLogData = '';
+        }
       }
     }
     const logData = options?.replay === 'delta' ? deltaLogData : fullLogData;
@@ -448,7 +500,7 @@ export class SshSuspendService extends EventEmitter {
     this.removeChannelListeners(session.channel, session.sshClient);
     
     // 保存返回的会话关键信息与过渡期缓冲
-    const { sshClient, channel, connectionName, connectionId: originalConnectionId, paneStreams, utf8Decoder } = session;
+    const { sshClient, channel, connectionName, connectionId: originalConnectionId, paneStreams, utf8Decoder, terminalEmulator } = session;
     const pendingData = session.pendingResumeBuffer;
 
     userSessions.delete(suspendSessionId);
@@ -465,6 +517,7 @@ export class SshSuspendService extends EventEmitter {
       originalConnectionId,
       paneStreams,
       utf8Decoder,
+      terminalEmulator,
       getPendingResumeData: () => pendingData || [],
     };
   }
@@ -484,6 +537,7 @@ export class SshSuspendService extends EventEmitter {
       // 如果会话已断开，但记录还在，也应该能被“终止”（即移除）
       if(session && session.backendSshStatus === 'disconnected_by_backend'){
         const logPathToDelete = session.tempLogPath; // 获取正确的日志路径
+        try { session.terminalEmulator?.dispose(); } catch {}
         userSessions.delete(suspendSessionId);
         await this.logStorageService.deleteLog(logPathToDelete);
         console.log(`[用户: ${userId}] 已断开的挂起会话条目 ${suspendSessionId} (日志: ${logPathToDelete}) 已通过终止操作移除。`);
@@ -493,6 +547,7 @@ export class SshSuspendService extends EventEmitter {
     }
 
     this.removeChannelListeners(session.channel, session.sshClient);
+    try { session.terminalEmulator?.dispose(); } catch {}
 
     // 销毁所有分屏 Shell 通道
     if (session.paneStreams && session.paneStreams.size > 0) {
@@ -541,6 +596,7 @@ export class SshSuspendService extends EventEmitter {
 
     // 如果会话在内存中（不论状态），则删除
     if (session) {
+      try { session.terminalEmulator?.dispose(); } catch {}
       userSessions.delete(suspendSessionId);
     }
     

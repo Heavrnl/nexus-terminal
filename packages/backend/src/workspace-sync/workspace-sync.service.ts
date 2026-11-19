@@ -245,25 +245,29 @@ export class WorkspaceSyncService {
                 state.recentOutputBuffer = [];
                 state.recentOutputBytes = 0;
 
-                // 写挂起日志：新端恢复时屏幕内容完全来自这份日志，写空 = 整屏被清掉。
-                //
-                // 优先用本端内存里攒下的输出（resume 时以整份日志初始化、之后持续追加），
-                // 它不受"会话 id 每轮都变"的影响；其次是快照（同 id → 同连接兜底）。
-                // 一份都拿不到时**保持现有日志不动** —— 宁可留旧内容，也不能写空。
+                // 优先从服务端 Headless VT 序列化纯净屏幕状态（天然不含历史查询控制序列）
+                let vtSerialized = '';
+                if (state.terminalEmulator?.hasAnyOutput()) {
+                    vtSerialized = await state.terminalEmulator.serialize();
+                }
+
+                // 写挂起日志：优先用 VT 纯净快照；VT 为空时再走原有策略（内存 → 同 id 快照 → 同连接快照）
                 const snapshotExact =
                     snapshotSessions.find((s: any) => s.sessionId === sessionId) ?? null;
                 const snapshotSameConnection = snapshotSessions.filter(
                     (s: any) => String(s.connectionId) === String(state.dbConnectionId)
                 );
-                const picked = chooseSuspendLogBuffer({
-                    recentOutput: frozenRecentOutput,
-                    snapshotExact,
-                    snapshotSameConnection,
-                });
+                const picked = vtSerialized
+                    ? { buffer: vtSerialized, source: 'recent' as const }
+                    : chooseSuspendLogBuffer({
+                        recentOutput: frozenRecentOutput,
+                        snapshotExact,
+                        snapshotSameConnection,
+                    });
 
                 let initialBufferToPass: string | undefined = undefined;
                 if (picked.buffer) {
-                    // 内存里是 PTY 原始字节（已带 \r\n，TUI 里可能只有 \n），
+                    // VT 序列化产物与内存缓冲均已保留真实换行语义，
                     // 不能再做换行归一化；快照里是 xterm 序列化文本，需要补 \r。
                     const payload =
                         picked.source === 'recent'
@@ -272,7 +276,7 @@ export class WorkspaceSyncService {
                     initialBufferToPass = payload;
                     try {
                         console.log(
-                            `[WorkspaceSyncService] 为挂起会话 ${sessionId} 写终端历史（来源: ${picked.source}, 字符数: ${payload.length}）...`
+                            `[WorkspaceSyncService] 为挂起会话 ${sessionId} 写终端历史（来源: ${vtSerialized ? 'headless-vt' : picked.source}, 字符数: ${payload.length}）...`
                         );
                         await temporaryLogStorageService.ensureLogDirectoryExists();
                         await temporaryLogStorageService.overwriteLog(state.suspendLogPath, payload);
@@ -307,10 +311,12 @@ export class WorkspaceSyncService {
                 const sshClientToPass = state.sshClient;
                 const channelToPass = state.sshShellStream;
                 const paneStreamsToPass = state.paneStreams;
-                // 同步分离 SSH 主通道与所有分屏副终端通道，防止旧客户端关闭时误杀分屏 Shell
+                const emulatorToPass = state.terminalEmulator;
+                // 同步分离 SSH 主通道、所有分屏副终端通道与 Headless VT，防止旧客户端关闭时误杀分屏 Shell 或释放 VT
                 state.sshClient = undefined as any;
                 state.sshShellStream = undefined;
                 state.paneStreams = undefined;
+                state.terminalEmulator = undefined;
                 state.isMarkedForSuspend = true;
                 state.isSuspendedByService = true;
 
@@ -326,6 +332,7 @@ export class WorkspaceSyncService {
                         initialBuffer: initialBufferToPass,
                         deltaBuffer: windowDelta || undefined,
                         utf8Decoder: state.outDecoder,
+                        terminalEmulator: emulatorToPass,
                         paneStreams: paneStreamsToPass,
                         // 打上本轮编号：下一轮接管才知道它是"上一轮留下的孤儿"
                         takeoverRound,
@@ -333,6 +340,7 @@ export class WorkspaceSyncService {
                     console.log(`[WorkspaceSyncService] 会话 ${sessionId} 成功由 SshSuspendService 接管挂起，suspendId: ${newSuspendId} (分屏数: ${paneStreamsToPass?.size || 0})`);
                 } catch (err: any) {
                     console.error(`[WorkspaceSyncService] 挂起旧客户端会话 ${sessionId} 失败:`, err);
+                    try { emulatorToPass?.dispose(); } catch {}
                     channelToPass?.end();
                     sshClientToPass?.end();
                     if (paneStreamsToPass) {

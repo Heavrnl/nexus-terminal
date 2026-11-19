@@ -27,6 +27,7 @@ import { useConnectionsStore } from '../../connections.store';
 import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 import { useTerminalHighlightStore } from '../../terminal-highlight.store'; 
 import { createTerminalStreamFilter } from '../../../utils/terminal-stream';
+import { writeTerminalReplay } from '../../../utils/terminalReplaySilence';
 import type { SuspendedSshSession } from '../../../types/ssh-suspend.types'; 
 import i18n from '../../../i18n'; 
 import type { ComposerTranslation } from 'vue-i18n'; 
@@ -761,7 +762,7 @@ const handleSshOutputCachedChunk = (payload: SshOutputCachedChunkPayload): void 
         highlight: (text) => highlightStore.highlight(text) as string,
       });
       const writeData = filter.write(rawData) + filter.flush();
-      session.terminalManager.terminalInstance.value.write(writeData);
+      writeTerminalReplay(session.terminalManager.terminalInstance.value as any, writeData);
     } else {
       // 终端实例尚未就绪：暂存原始未高亮数据，等待 handleTerminalReady 通过 mainWriteFilter 单次处理，避免二次高亮叠加
       if (!session.pendingOutput) {

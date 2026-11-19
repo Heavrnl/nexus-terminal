@@ -1,4 +1,5 @@
 import { Client, Channel, ClientChannel } from 'ssh2';
+import type { BackendTerminalEmulator } from '../websocket/terminal-emulator';
 
 /**
  * 后端 SSH 会话状态
@@ -39,6 +40,8 @@ export interface SuspendSessionDetails {
   inMemoryBytes?: number;
   /** 挂起期间的流式 UTF-8 解码器（跨包拼接多字节中文/Emoji，避免出现 U+FFFD） */
   utf8Decoder?: { write(buf: Buffer): string; end(): string };
+  /** 服务端无头终端状态机（与在线态无缝接力，full 模式恢复时直接序列化纯净屏幕状态） */
+  terminalEmulator?: BackendTerminalEmulator;
   /**
    * `inMemoryBuffer` 里有几块是「挂起那一刻客户端屏幕上已经有了的」历史。
    *
