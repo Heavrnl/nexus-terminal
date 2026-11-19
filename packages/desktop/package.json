@@ -1,6 +1,6 @@
 {
   "name": "@nexus-terminal/desktop",
-  "version": "0.9.21",
+  "version": "0.9.22",
   "private": true,
   "description": "Tauri v2 Desktop Shell with Node.js Sidecar for Nexus Terminal",
   "scripts": {
