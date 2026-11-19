@@ -116,11 +116,14 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
       }
     }
 
-    if (
-      !terminalBuffer &&
-      (s as any).lastTerminalBuffer &&
-      s.terminalManager?.terminalInstance?.value?.buffer?.active?.type !== 'alternate'
-    ) {
+    const isAlternateScreen = s.terminalManager?.terminalInstance?.value?.buffer?.active?.type === 'alternate';
+
+    if (terminalBuffer && !isAlternateScreen) {
+      // 主屏采集成功时刷新兜底缓存，供后续进入全屏 TUI 备用屏时保留进入前的历史
+      (s as any).lastTerminalBuffer = terminalBuffer;
+    } else if (!terminalBuffer && (s as any).lastTerminalBuffer) {
+      // 处于全屏 TUI 备用屏（如 btop/vim）或终端尚未就绪时，回退保留最近一次主屏历史，
+      // 避免写成空串 '' 在降级恢复时被误判为「主动清屏」
       terminalBuffer = (s as any).lastTerminalBuffer;
     }
 

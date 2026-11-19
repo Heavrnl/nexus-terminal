@@ -1,10 +1,50 @@
-import { PortInfo, ClientState } from './types';
+import { PortInfo, ClientState, AuthenticatedWebSocket } from './types';
 import { SftpService } from '../sftp/sftp.service';
 import { StatusMonitorService } from '../services/status-monitor.service';
 import { clientStates, sftpService, statusMonitorService } from './state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+
+/** 单会话在线态环形输出缓冲上限（1MB） */
+export const MAX_RECENT_OUTPUT_BYTES = 1024 * 1024;
+
+/**
+ * 向会话环形输出缓冲追加 UTF-8 文本，超出上限时从头部安全淘汰并尽量对齐换行边界，
+ * 避免拦腰截断 ANSI / OSC 转义序列导致恢复回放头部出现垃圾控制字符。
+ */
+export function appendRingBuffer(state: ClientState, utf8Data: string, maxBytes: number = MAX_RECENT_OUTPUT_BYTES): void {
+    if (!utf8Data) return;
+    if (!state.recentOutputBuffer) {
+        state.recentOutputBuffer = [];
+        state.recentOutputBytes = 0;
+    }
+    state.recentOutputBuffer.push(utf8Data);
+    state.recentOutputBytes = (state.recentOutputBytes || 0) + Buffer.byteLength(utf8Data, 'utf8');
+
+    let trimmed = false;
+    while (state.recentOutputBytes > maxBytes && state.recentOutputBuffer.length > 1) {
+        const shifted = state.recentOutputBuffer.shift();
+        if (shifted) {
+            state.recentOutputBytes -= Buffer.byteLength(shifted, 'utf8');
+        }
+        trimmed = true;
+    }
+
+    // 发生截断后，若新头部恰好落在半截行/半截转义序列中，向后对齐到第一个换行符并重置 SGR 样式
+    if (trimmed && state.recentOutputBuffer.length > 0) {
+        const head = state.recentOutputBuffer[0];
+        if (head && !head.startsWith('\x1b[0m')) {
+            const firstNl = head.indexOf('\n');
+            if (firstNl >= 0 && firstNl + 1 < head.length) {
+                const oldBytes = Buffer.byteLength(head, 'utf8');
+                const aligned = `\x1b[0m${head.slice(firstNl + 1)}`;
+                state.recentOutputBuffer[0] = aligned;
+                state.recentOutputBytes += Buffer.byteLength(aligned, 'utf8') - oldBytes;
+            }
+        }
+    }
+}
 
 // --- 解析 Ports 字符串的辅助函数 ---
 export function parsePortsString(portsString: string | undefined | null): PortInfo[] {
@@ -68,12 +108,27 @@ export function parsePortsString(portsString: string | undefined | null): PortIn
 /**
  * 清理指定会话 ID 关联的所有资源
  * @param sessionId - 会话 ID
+ * @param expectedWs - 可选，发起清理的 WebSocket 引用；若当前活跃会话已换绑新 WS，则跳过清理避免旧 WS 迟到 close 误杀新会话
  */
-export const cleanupClientConnection = async (sessionId: string | undefined) => { // Made async
+export const cleanupClientConnection = async (sessionId: string | undefined, expectedWs?: AuthenticatedWebSocket) => { // Made async
     if (!sessionId) return;
 
     const state = clientStates.get(sessionId);
-    if (state) {
+    if (!state) return;
+
+    // 核心并发守卫：弱网半开旧 WS 迟到触发 close/error 时，绝不能清理已换绑新 WS 的活跃会话
+    if (expectedWs && state.ws !== expectedWs) {
+        console.log(`WebSocket: 会话 ${sessionId} 已绑定新 WebSocket，忽略旧 WebSocket 的清理请求。`);
+        return;
+    }
+
+    // 防止与 suspendOtherClientsSessions 或重复 close/error 事件并发重入
+    if (state.isHandingOverToSuspend) {
+        console.log(`WebSocket: 会话 ${sessionId} 正在移交挂起中，跳过重复清理。`);
+        return;
+    }
+
+    {
         console.log(`WebSocket: 清理会话 ${sessionId} (用户: ${state.ws.username}, DB 连接 ID: ${state.dbConnectionId})...`);
 
         // 1. 停止状态轮询 (如果存在)
@@ -87,6 +142,9 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         // 无终端（headless）会话同样**绝不自动挂起**：它是文件管理器绑定主机时开的私有通道，
         // 不在标签栏、也不进云端快照。ws 一断就没有宿主了，谁也不会再来 resume 它 ——
         // 移交进挂起池只会变成「一条我根本没打开过的连接」永久趴在面板里。
+        let frozenInitialBuffer: string | undefined = undefined;
+        let handoverDeltaBuffer: string | undefined = undefined;
+
         if (state.isExplicitlyClosed || state.isHeadless) {
             console.log(
                 state.isHeadless
@@ -105,13 +163,16 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         } else if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
             // 只要不是显式主动关闭，网络断开（包括刷新 1001、网络异常等），均保护性自动转入挂起！
             console.log(`WebSocket: 会话 ${sessionId} 发生网络断开（非显式关闭），自动转入挂起保活模式...`);
-            state.isMarkedForSuspend = true;
+            state.isHandingOverToSuspend = true;
             if (!state.suspendLogPath) {
                 state.suspendLogPath = sessionId;
             }
 
-            // 获取初始缓冲：优先使用内存中积累的真实最近输出 recentOutputBuffer
+            // ⚠️ 必须在任何 await 之前同步冻结「断线前前端已看到的历史」，并清空 recentOutputBuffer
+            // 来专门承接异步写盘窗口内远端新吐出的输出（作为 deltaBuffer，避免 reattach delta 模式下被当成已读历史裁掉！）
             let initialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '';
+            state.recentOutputBuffer = [];
+            state.recentOutputBytes = 0;
 
             // 如果后端内存缓冲为空，尝试从快照终端缓冲区获取保底历史
             if (!initialBuffer) {
@@ -128,33 +189,39 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                 } catch (e) {}
             }
 
-            // 写入日志文件作为初始日志（仅写入初始历史，绝不在此后随意覆盖）
-            if (initialBuffer) {
+            frozenInitialBuffer = initialBuffer || undefined;
+
+            // 写入日志文件作为初始日志（仅写入断线前历史）
+            if (frozenInitialBuffer) {
                 try {
                     await temporaryLogStorageService.ensureLogDirectoryExists();
-                    await temporaryLogStorageService.overwriteLog(state.suspendLogPath, initialBuffer);
+                    await temporaryLogStorageService.overwriteLog(state.suspendLogPath, frozenInitialBuffer);
                 } catch (logErr) {
                     console.warn(`[cleanupClientConnection] 写入挂起初始日志失败:`, logErr);
                 }
             }
+
+            // 收集在异步等待期间远端继续吐出的新输出作为 delta（同时追加到磁盘日志）
+            const deltaText = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '';
+            state.recentOutputBuffer = [];
+            state.recentOutputBytes = 0;
+            if (deltaText) {
+                handoverDeltaBuffer = deltaText;
+                temporaryLogStorageService.writeToLog(state.suspendLogPath, deltaText).catch(() => {});
+            }
+
+            state.isMarkedForSuspend = true;
+        } else if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream) {
+            // 已经提前被标记为待挂起（SSH_MARK_FOR_SUSPEND）：保留内存中已积累的历史
+            state.isHandingOverToSuspend = true;
+            frozenInitialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') || undefined : undefined;
+            state.recentOutputBuffer = [];
+            state.recentOutputBytes = 0;
         }
 
         if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.suspendLogPath && state.ws.userId !== undefined) {
             console.log(`WebSocket: 会话 ${sessionId} 已被标记为待挂起，尝试移交给 SshSuspendService...`);
             try {
-                const initialBufferToPass = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : undefined;
-                const takeoverDetails = {
-                    userId: state.ws.userId,
-                    originalSessionId: sessionId, // sessionId 是原始活动会话的ID
-                    sshClient: state.sshClient,
-                    channel: state.sshShellStream,
-                    connectionName: state.connectionName || '未知连接',
-                    connectionId: String(state.dbConnectionId),
-                    logIdentifier: state.suspendLogPath, // 这是基于 originalSessionId 的日志标识
-                    initialBuffer: initialBufferToPass,
-                    customSuspendName: undefined, // 如果需要，可以从 state 或其他地方获取
-                };
-                
                 // 从 state 中“分离”SSH资源与分屏Shell通道，防止后续意外关闭
                 const sshClientToPass = state.sshClient;
                 const channelToPass = state.sshShellStream;
@@ -165,10 +232,18 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                 state.isSuspendedByService = true; // 标记为已被服务接管（即使是尝试接管）
 
                 const newSuspendId = await sshSuspendService.takeOverMarkedSession({
-                    ...takeoverDetails,
-                    sshClient: sshClientToPass, // 传递分离出来的实例
-                    channel: channelToPass,     // 传递分离出来的实例
-                    paneStreams: paneStreamsToPass, // 传递分屏通道保活
+                    userId: state.ws.userId,
+                    originalSessionId: sessionId,
+                    sshClient: sshClientToPass,
+                    channel: channelToPass,
+                    connectionName: state.connectionName || '未知连接',
+                    connectionId: String(state.dbConnectionId),
+                    logIdentifier: state.suspendLogPath,
+                    initialBuffer: frozenInitialBuffer,
+                    deltaBuffer: handoverDeltaBuffer,
+                    utf8Decoder: state.outDecoder,
+                    customSuspendName: undefined,
+                    paneStreams: paneStreamsToPass,
                 });
 
                 if (newSuspendId) {
@@ -192,6 +267,8 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                 if (state.sshClient) state.sshClient.end(); // 如果引用还在，尝试关闭
                 if (state.sshShellStream) state.sshShellStream.end(); // 如果引用还在，尝试关闭
                 state.isSuspendedByService = false; // 重置标记
+            } finally {
+                state.isHandingOverToSuspend = false;
             }
         } else if (!state.isSuspendedByService && state.sshClient) {
             // 未标记挂起，也未被服务接管，执行常规关闭
@@ -202,6 +279,7 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
             // 已被服务接管（例如通过旧的 startSuspend 流程，或成功移交后），不在此处关闭
             console.log(`WebSocket: 会话 ${sessionId} 的 SSH 连接已由挂起服务管理，跳过关闭。`);
         }
+        state.isHandingOverToSuspend = false;
 
         // 3.5 清理所有多终端分屏通道 (paneStreams)
         if (state.paneStreams && state.paneStreams.size > 0) {
@@ -221,8 +299,10 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
             console.log(`WebSocket: Cleared Docker status interval for session ${sessionId}.`);
         }
 
-        // 5. 从状态 Map 中移除
-        clientStates.delete(sessionId);
+        // 5. 从状态 Map 中移除（仅当当前映射仍是本 state 实例时才删除，避免误删异步期间重连的新会话）
+        if (clientStates.get(sessionId) === state) {
+            clientStates.delete(sessionId);
+        }
 
         // 6. 清除 WebSocket 上的 sessionId 关联 (可选，因为 ws 可能已关闭)
         if (state.ws && state.ws.sessionId === sessionId) {
@@ -230,7 +310,5 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         }
 
         console.log(`WebSocket: 会话 ${sessionId} 已清理。`);
-    } else {
-        // console.warn(`[WebSocket Utils] cleanupClientConnection: No state found for session ID ${sessionId}.`);
     }
 };

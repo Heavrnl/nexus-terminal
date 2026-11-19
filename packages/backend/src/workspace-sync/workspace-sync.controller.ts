@@ -55,7 +55,11 @@ export class WorkspaceSyncController {
      */
     public async saveState(req: Request, res: Response): Promise<void> {
         const userId = req.session?.userId || 1;
-        const { clientId, state } = req.body as { clientId: string; state: WorkspaceSyncStatePayload };
+        const { clientId, state, saveSeq } = req.body as {
+            clientId: string;
+            state: WorkspaceSyncStatePayload;
+            saveSeq?: number;
+        };
 
         if (!clientId || typeof clientId !== 'string') {
             res.status(400).json({ success: false, message: '缺少有效的 clientId' });
@@ -68,15 +72,16 @@ export class WorkspaceSyncController {
         }
 
         try {
-            const result = await workspaceSyncService.saveState(userId, clientId, state);
+            const result = await workspaceSyncService.saveState(userId, clientId, state, saveSeq);
             res.json({
                 success: true,
                 message: result.accepted
-                    ? '工作区已保存'
+                    ? (result.staleIgnored ? '迟到的旧版本快照已忽略' : '工作区已保存')
                     : '当前客户端不是工作区租约持有者，本次保存已忽略',
                 data: {
                     updatedAt: Math.floor(Date.now() / 1000),
                     accepted: result.accepted,
+                    staleIgnored: result.staleIgnored === true,
                     activeClientId: result.activeClientId
                 }
             });
@@ -92,6 +97,12 @@ export class WorkspaceSyncController {
     public async destroySession(req: Request, res: Response): Promise<void> {
         const userId = req.session?.userId || 1;
         const sessionId = req.params.sessionId;
+        const headerClientId = req.headers['x-workspace-client-id'];
+        const clientId =
+            (typeof headerClientId === 'string' && headerClientId.trim())
+            || (typeof req.query?.clientId === 'string' && req.query.clientId.trim())
+            || (typeof req.body?.clientId === 'string' && req.body.clientId.trim())
+            || undefined;
 
         if (!sessionId) {
             res.status(400).json({ success: false, message: '缺少 sessionId' });
@@ -99,7 +110,15 @@ export class WorkspaceSyncController {
         }
 
         try {
-            const result = await workspaceSyncService.destroySessionCompletely(userId, sessionId);
+            const result = await workspaceSyncService.destroySessionCompletely(userId, sessionId, clientId);
+            if (result.accepted === false) {
+                res.status(409).json({
+                    success: false,
+                    message: '当前客户端不是工作区租约持有者，拒绝销毁云端快照会话',
+                    data: result
+                });
+                return;
+            }
             res.json({
                 success: true,
                 message: '会话已强制彻底销毁并清除数据库记录',

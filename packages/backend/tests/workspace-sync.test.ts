@@ -165,6 +165,31 @@ test('shouldPruneTakeoverSuspend：没有 originalSessionId 的不动（信息�
   assert.equal(shouldPruneTakeoverSuspend({ takeoverRound: 1 }, 3, keep), false);
 });
 
+test('shouldPruneTakeoverSuspend：多端并发抢接管时，宽限保护期内刚挂起的会话不误杀，超期后正常清理', () => {
+  const now = Date.parse('2026-11-19T08:00:00.000Z');
+  const justSuspended = new Date(now - 500).toISOString();
+  const expiredSuspended = new Date(now - 20_000).toISOString();
+
+  assert.equal(
+    shouldPruneTakeoverSuspend(
+      { takeoverRound: 1, originalSessionId: 'fresh-live', suspendStartTime: justSuspended },
+      2,
+      keep,
+      now
+    ),
+    false
+  );
+  assert.equal(
+    shouldPruneTakeoverSuspend(
+      { takeoverRound: 1, originalSessionId: 'stale-orphan', suspendStartTime: expiredSuspended },
+      2,
+      keep,
+      now
+    ),
+    true
+  );
+});
+
 // --- 接管时该不该把会话移交挂起 ---
 
 const liveSession = { hasSshClient: true, hasShellStream: true };

@@ -469,20 +469,30 @@ export const closeSession = async (
   //
   // 注意：接管/恢复/卸载期间不能动云端（canTouchCloud 在第 0 步已判定）。
   if (canTouchCloud && !isRemoteSession) {
+    const workspaceSyncStore = useWorkspaceSyncStore();
     if (!suspended) {
-      apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
+      // 携带本端租约 clientId，防止被接管旧端的在途删除请求篡改新端云端快照
+      apiClient.delete(`/workspace-sync/sessions/${sessionId}`, {
+        headers: {
+          'X-Workspace-Client-Id': workspaceSyncStore.clientId,
+        },
+      }).then((res) => {
         console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
       }).catch((err) => {
+        const respData = err?.response?.data?.data;
+        if (err?.response?.status === 409 && respData?.accepted === false) {
+          workspaceSyncStore.handleTakeoverKickout(respData.activeClientId || '');
+          return;
+        }
         console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
       });
     } else {
       console.log(`[SessionActions] 会话 ${sessionId} 已挂起，跳过原子销毁，仅从云端快照移除`);
     }
 
-    // 5. 立即同步当前剩余会话至云端快照
+    // 5. 短防抖同步当前剩余会话至云端快照：单次关闭 150ms 落盘，批量关闭（关闭其他/左/右）自然合并为一次写入
     try {
-      const workspaceSyncStore = useWorkspaceSyncStore();
-      workspaceSyncStore.saveWorkspaceToCloud();
+      workspaceSyncStore.triggerDebouncedSave(150);
     } catch (syncErr) {
       console.warn('[SessionActions] 关闭会话后触发工作区云端持久化异常:', syncErr);
     }

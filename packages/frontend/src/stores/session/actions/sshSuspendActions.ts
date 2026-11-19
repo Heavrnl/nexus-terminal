@@ -753,22 +753,21 @@ const handleSshOutputCachedChunk = (payload: SshOutputCachedChunkPayload): void 
     // TUI（agy / btop）里只用 LF 换行时那样会把行首顶到第 0 列，画面错位后
     // 它自己按行重绘就会留下重复行。
     const rawData = payload.data;
-    const highlightStore = useTerminalHighlightStore();
-    const filter = createTerminalStreamFilter({
-      highlight: (text) => highlightStore.highlight(text) as string,
-    });
-    const writeData = filter.write(rawData) + filter.flush();
 
     if (session.terminalManager.terminalInstance.value) {
-      // 终端实例已就绪，高亮写入
+      // 终端实例已就绪，过一次流式过滤器高亮后写入
+      const highlightStore = useTerminalHighlightStore();
+      const filter = createTerminalStreamFilter({
+        highlight: (text) => highlightStore.highlight(text) as string,
+      });
+      const writeData = filter.write(rawData) + filter.flush();
       session.terminalManager.terminalInstance.value.write(writeData);
     } else {
-      // 终端实例尚未就绪，暂存输出
+      // 终端实例尚未就绪：暂存原始未高亮数据，等待 handleTerminalReady 通过 mainWriteFilter 单次处理，避免二次高亮叠加
       if (!session.pendingOutput) {
         session.pendingOutput = [];
       }
-      session.pendingOutput.push(writeData);
-      // console.log(`[${t('term.sshSuspend')}] (会话: ${payload.frontendSessionId}) 终端实例未就绪，已暂存数据块 (长度: ${normalizedData.length})。当前暂存块数: ${session.pendingOutput.length}`);
+      session.pendingOutput.push(rawData);
     }
 
     // isLastChunk 逻辑应该在数据被处理（写入或暂存）后执行

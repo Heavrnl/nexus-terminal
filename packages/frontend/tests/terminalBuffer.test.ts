@@ -47,9 +47,12 @@ test('cleanTrailingPromptForReconnect：空输入返回空串', () => {
   assert.equal(cleanTrailingPromptForReconnect(''), '');
 });
 
-test('looksLikePromptLine：识别常见提示符，普通输出不误判', () => {
+test('looksLikePromptLine：识别常见提示符，普通输出与 HTML/Markdown 尾符不误判', () => {
   assert.equal(looksLikePromptLine('root@localhost:~# '), true);
   assert.equal(looksLikePromptLine('user@host:~$'), true);
   assert.equal(looksLikePromptLine('total 12'), false);
   assert.equal(looksLikePromptLine(''), false);
+  assert.equal(looksLikePromptLine('</div>'), false);
+  assert.equal(looksLikePromptLine('#'), false);
+  assert.equal(looksLikePromptLine(`${'a'.repeat(130)}#`), false);
 });

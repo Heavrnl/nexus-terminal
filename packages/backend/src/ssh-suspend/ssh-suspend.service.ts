@@ -1,5 +1,6 @@
 import { Client, Channel, ClientChannel } from 'ssh2';
 import { EventEmitter } from 'events';
+import { StringDecoder } from 'node:string_decoder';
 import { v4 as uuidv4 } from 'uuid';
 import {
   SuspendSessionDetails,
@@ -10,6 +11,49 @@ import {
 import { temporaryLogStorageService, TemporaryLogStorageService } from './temporary-log-storage.service';
 import { ClientState } from '../websocket/types';
 import { shouldPruneTakeoverSuspend } from '../workspace-sync/workspace-sync.pure';
+
+/** 挂起态单会话内存缓冲上限（4MB），防止后台日志洪流导致后端 OOM */
+const MAX_SUSPEND_MEMORY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * 将一段文本追加到挂起会话的内存环形缓冲，并在超出上限时按块从头部安全淘汰。
+ * 淘汰同时维护 `historyChunks` 计数，保证就地接回（delta 模式）的切片索引始终准确。
+ */
+function appendToSuspendMemory(details: SuspendSessionDetails, text: string): void {
+  if (!text) return;
+  if (!details.inMemoryBuffer) {
+    details.inMemoryBuffer = [];
+    details.inMemoryBytes = 0;
+  }
+  const chunkBytes = Buffer.byteLength(text, 'utf8');
+  details.inMemoryBuffer.push(text);
+  details.inMemoryBytes = (details.inMemoryBytes || 0) + chunkBytes;
+
+  while (details.inMemoryBytes > MAX_SUSPEND_MEMORY_BYTES && details.inMemoryBuffer.length > 1) {
+    const shifted = details.inMemoryBuffer.shift();
+    if (shifted) {
+      details.inMemoryBytes -= Buffer.byteLength(shifted, 'utf8');
+    }
+    if (details.historyChunks && details.historyChunks > 0) {
+      details.historyChunks--;
+    }
+  }
+
+  // 单块本身超过上限的极端情况：保留尾部并尽量对齐到换行符后，再补 SGR 重置避免残缺转义序列
+  if (details.inMemoryBytes > MAX_SUSPEND_MEMORY_BYTES && details.inMemoryBuffer.length === 1) {
+    const single = details.inMemoryBuffer[0];
+    const cutStart = Math.max(0, single.length - MAX_SUSPEND_MEMORY_BYTES);
+    const nextNl = single.indexOf('\n', cutStart);
+    const trimmed = nextNl !== -1 && nextNl + 1 < single.length
+      ? `\x1b[0m${single.slice(nextNl + 1)}`
+      : `\x1b[0m${single.slice(cutStart)}`;
+    details.inMemoryBuffer[0] = trimmed;
+    details.inMemoryBytes = Buffer.byteLength(trimmed, 'utf8');
+    if (details.historyChunks && details.historyChunks > 0) {
+      details.historyChunks = 0;
+    }
+  }
+}
 // clientStates 的直接访问已移除，因为takeOverMarkedSession现在从调用者接收所需信息
 
 /**
@@ -51,7 +95,12 @@ export class SshSuspendService extends EventEmitter {
     connectionName: string;
     connectionId: string;
     logIdentifier: string;
+    /** 断线/接管前前端已经展示过的历史内容（就地接回 delta 模式会跳过它） */
     initialBuffer?: string;
+    /** 断线后、异步移交完成前这段窗口内新到达的远端输出（delta 模式必须回放它） */
+    deltaBuffer?: string;
+    /** 从在线态接力传入的 UTF-8 流式解码器，避免交接瞬间切断跨包多字节字符 */
+    utf8Decoder?: { write(buf: Buffer): string; end(): string };
     customSuspendName?: string;
     paneStreams?: Map<string, any>;
     /** 手动挂起（用户关标签）标记，见 SuspendSessionDetails.manuallySuspended */
@@ -68,6 +117,8 @@ export class SshSuspendService extends EventEmitter {
       connectionId,
       logIdentifier,
       initialBuffer,
+      deltaBuffer,
+      utf8Decoder: inheritedDecoder,
       customSuspendName,
       paneStreams,
       manuallySuspended,
@@ -105,6 +156,7 @@ export class SshSuspendService extends EventEmitter {
       }
     }
 
+    const utf8Decoder = inheritedDecoder || new StringDecoder('utf8');
     const sessionDetails: SuspendSessionDetails = {
       sshClient,
       channel,
@@ -116,15 +168,26 @@ export class SshSuspendService extends EventEmitter {
       backendSshStatus: 'hanging',
       originalSessionId,
       userId,
-      inMemoryBuffer: initialBuffer ? [initialBuffer] : [],
+      inMemoryBuffer: [],
+      inMemoryBytes: 0,
+      utf8Decoder,
       // 第 0 块是前端已经显示过的历史；就地接回时不能重放它
-      historyChunks: initialBuffer ? 1 : 0,
+      historyChunks: 0,
       historyChars: initialBuffer ? initialBuffer.length : 0,
       pendingResumeBuffer: undefined,
       paneStreams: paneStreams && paneStreams.size > 0 ? new Map(paneStreams) : undefined,
       manuallySuspended: manuallySuspended === true,
       takeoverRound,
     };
+
+    if (initialBuffer) {
+      appendToSuspendMemory(sessionDetails, initialBuffer);
+      sessionDetails.historyChunks = sessionDetails.inMemoryBuffer?.length || 0;
+    }
+    if (deltaBuffer) {
+      // 断线后、异步写盘期间新到达的输出属于 delta，必须排在 historyChunks 之后
+      appendToSuspendMemory(sessionDetails, deltaBuffer);
+    }
 
     /**
      * 同一条前端会话被挂起两次（工作区接管 与 ws 断开清理抢跑）会留下两份条目，
@@ -155,18 +218,20 @@ export class SshSuspendService extends EventEmitter {
     channel.on('data', (data: Buffer) => {
       const currentDetails = userSessions.get(suspendSessionId);
       if (currentDetails?.backendSshStatus === 'hanging') {
-        // 如果正在恢复过渡，暂存到 pendingResumeBuffer 绝不丢弃
+        // 如果正在恢复过渡，暂存原始 Buffer 到 pendingResumeBuffer 绝不丢弃
         if (currentDetails.pendingResumeBuffer) {
           currentDetails.pendingResumeBuffer.push(data);
         } else {
-          const str = data.toString('utf-8');
-          if (!currentDetails.inMemoryBuffer) currentDetails.inMemoryBuffer = [];
-          currentDetails.inMemoryBuffer.push(str);
+          // 必须走 StringDecoder 跨包拼接多字节 UTF-8（中文/Emoji），绝不能逐块 data.toString('utf-8')
+          const str = currentDetails.utf8Decoder ? currentDetails.utf8Decoder.write(data) : data.toString('utf8');
+          if (str) {
+            appendToSuspendMemory(currentDetails, str);
+            // 异步写入磁盘日志作为双轨保底（底层按 suspendSessionId 串行队列落盘）
+            this.logStorageService.writeToLog(logIdentifier, str).catch(err => {
+              console.error(`[SshSuspendService ERROR] channel.on('data') for suspendSessionId=${suspendSessionId}, log=${logIdentifier}: Failed to write to log:`, err);
+            });
+          }
         }
-        // 异步写入磁盘日志作为双轨保底
-        this.logStorageService.writeToLog(logIdentifier, data.toString('utf-8')).catch(err => {
-          console.error(`[SshSuspendService ERROR] channel.on('data') for suspendSessionId=${suspendSessionId}, log=${logIdentifier}: Failed to write to log:`, err);
-        });
       }
     });
 
@@ -340,6 +405,7 @@ export class SshSuspendService extends EventEmitter {
     connectionName: string;
     originalConnectionId: string;
     paneStreams?: Map<string, any>;
+    utf8Decoder?: { write(buf: Buffer): string; end(): string };
     getPendingResumeData?: () => Buffer[];
   } | null> {
     const userSessions = this.getUserSessions(userId);
@@ -354,6 +420,8 @@ export class SshSuspendService extends EventEmitter {
     }
 
     // 1. 先激活过渡队列，防止旧通道在移除监听器或切换期间发生数据丢失
+    //    注意：不在此处调用 utf8Decoder.end()，而是把同一个解码器实例原样接力给恢复后的实时流，
+    //    保证跨挂起/恢复边界的多字节 UTF-8 字符（中文/Emoji）无缝续接、绝不产出 U+FFFD。
     session.pendingResumeBuffer = [];
 
     // 2. 优先从内存缓冲中无缝拼接完整数据，避免异步磁盘 I/O 排队未落盘导致的尾部数据丢失
@@ -380,7 +448,7 @@ export class SshSuspendService extends EventEmitter {
     this.removeChannelListeners(session.channel, session.sshClient);
     
     // 保存返回的会话关键信息与过渡期缓冲
-    const { sshClient, channel, connectionName, connectionId: originalConnectionId, paneStreams } = session;
+    const { sshClient, channel, connectionName, connectionId: originalConnectionId, paneStreams, utf8Decoder } = session;
     const pendingData = session.pendingResumeBuffer;
 
     userSessions.delete(suspendSessionId);
@@ -396,6 +464,7 @@ export class SshSuspendService extends EventEmitter {
       connectionName,
       originalConnectionId,
       paneStreams,
+      utf8Decoder,
       getPendingResumeData: () => pendingData || [],
     };
   }

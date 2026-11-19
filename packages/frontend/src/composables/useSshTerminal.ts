@@ -293,14 +293,21 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 });
             }
 
-            // 向后端请求开辟/复用独立的 Shell 通道！
-            console.log(`[会话 ${sessionId}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} 打开/复用独立 Shell 通道...`);
+            // 向后端请求开辟/复用独立的 Shell 通道（附带稳定先序序号 paneIndex，刷新重编 paneId 后仍可精准复用保活通道）
+            let paneIndex: number | undefined = undefined;
+            try {
+                const layoutStore = useLayoutStore();
+                const idx = layoutStore.getSessionTerminalPaneOrder(activeSid).indexOf(effectivePaneId);
+                if (idx >= 0) paneIndex = idx;
+            } catch {}
+            console.log(`[会话 ${activeSid}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} (paneIndex=${paneIndex ?? 'n/a'}) 打开/复用独立 Shell 通道...`);
             sendMessage({
                 type: 'ssh:pane_open',
-                sessionId,
+                sessionId: activeSid,
                 payload: {
-                    sessionId,
+                    sessionId: activeSid,
                     paneId: effectivePaneId,
+                    paneIndex,
                     cols: term.cols || 80,
                     rows: term.rows || 24,
                 }
@@ -531,12 +538,19 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             console.log(`[会话 ${sessionId}][SSH终端模块] 主会话已连接，正在为 ${terminalPanes.value.size - 1} 个分屏副终端打开独立 Shell...`);
             for (const [pId, entry] of terminalPanes.value.entries()) {
                 if (pId !== primaryPaneId.value) {
+                    let paneIndex: number | undefined = undefined;
+                    try {
+                        const layoutStore = useLayoutStore();
+                        const idx = layoutStore.getSessionTerminalPaneOrder(incomingSessionId || sessionId).indexOf(pId);
+                        if (idx >= 0) paneIndex = idx;
+                    } catch {}
                     sendMessage({
                         type: 'ssh:pane_open',
                         sessionId,
                         payload: {
                             sessionId,
                             paneId: pId,
+                            paneIndex,
                             cols: entry.terminal.cols || 80,
                             rows: entry.terminal.rows || 24,
                         }

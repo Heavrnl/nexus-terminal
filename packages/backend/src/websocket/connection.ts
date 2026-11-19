@@ -26,7 +26,7 @@ import {
 } from './types';
 import { SshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { SftpService } from '../sftp/sftp.service';
-import { cleanupClientConnection } from './utils';
+import { appendRingBuffer, cleanupClientConnection } from './utils';
 import { clientStates } from './state';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service'; 
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
@@ -109,36 +109,46 @@ async function activateResumedSession(params: {
     });
 
     // 1. 第一步：先向前端发送挂起与历史日志数据块 SSH_OUTPUT_CACHED_CHUNK
-    //    日志里存的是 PTY 原始字节，原样回放，不要再做 `\n` → `\r\n`
-    //    的"规范化"——TUI 里只用 LF 换行时会被顶到第 0 列，画面错位后
-    //    它按行重绘就会留下重复行。
+    //    按 128KB 分片发送，避免数 MB 历史打成一个超大单帧 JSON 阻塞弱网/代理；
+    //    切分点注意避开 UTF-16 代理对（emoji），防止把 4 字节字符切成半个 surrogate。
+    //    日志里存的是 PTY 原始字节，原样回放，不要再做 `\n` → `\r\n` 的"规范化"。
     const logData = result.logData || '';
     console.log(`[SSH Suspend Backend] 准备发送${replay === 'delta' ? '断线期间新增' : '恢复'}日志给前端 (长度: ${logData.length}, 会话: ${newFrontendSessionId})`);
-    if (logData) {
-        const logChunkResponse: SshOutputCachedChunk = {
-            type: 'SSH_OUTPUT_CACHED_CHUNK',
-            payload: { frontendSessionId: newFrontendSessionId, data: logData, isLastChunk: true }
-        };
-        if (ws.readyState === WebSocket.OPEN) {
+    if (logData && ws.readyState === WebSocket.OPEN) {
+        const CHUNK_CHARS = 128 * 1024;
+        let offset = 0;
+        while (offset < logData.length && ws.readyState === WebSocket.OPEN) {
+            let end = Math.min(offset + CHUNK_CHARS, logData.length);
+            // 若正好落在高代理码元上，向后多带 1 个码元保持代理对完整
+            if (end < logData.length) {
+                const code = logData.charCodeAt(end - 1);
+                if (code >= 0xd800 && code <= 0xdbff) {
+                    end++;
+                }
+            }
+            const slice = logData.slice(offset, end);
+            const isLastChunk = end >= logData.length;
+            const logChunkResponse: SshOutputCachedChunk = {
+                type: 'SSH_OUTPUT_CACHED_CHUNK',
+                payload: { frontendSessionId: newFrontendSessionId, data: slice, isLastChunk }
+            };
             ws.send(JSON.stringify(logChunkResponse));
+            offset = end;
         }
     }
 
     // 2. 第二步：发送恢复过渡期间暂存的数据（若有）
+    //    接力复用同一 StringDecoder，避免跨恢复边界把多字节 UTF-8 切成 U+FFFD
+    const liveDecoder = result.utf8Decoder || new StringDecoder('utf8');
+    newSessionState.outDecoder = liveDecoder;
+
     if (typeof (result as any).getPendingResumeData === 'function') {
         const pendingBuffers: Buffer[] = (result as any).getPendingResumeData();
         if (pendingBuffers && pendingBuffers.length > 0) {
             console.log(`[SSH Suspend Backend] 正在回放恢复过渡期间暂存的数据块 (${pendingBuffers.length} 块)`);
-            const pendingDecoder = new StringDecoder('utf8');
             for (const buf of pendingBuffers) {
-                const utf8Str = pendingDecoder.write(buf);
-                if (!newSessionState.recentOutputBuffer) newSessionState.recentOutputBuffer = [];
-                newSessionState.recentOutputBuffer.push(utf8Str);
-                newSessionState.recentOutputBytes = (newSessionState.recentOutputBytes || 0) + Buffer.byteLength(utf8Str);
-                while (newSessionState.recentOutputBytes > 1024 * 1024 && newSessionState.recentOutputBuffer.length > 1) {
-                    const shifted = newSessionState.recentOutputBuffer.shift();
-                    if (shifted) newSessionState.recentOutputBytes -= Buffer.byteLength(shifted);
-                }
+                const utf8Str = liveDecoder.write(buf);
+                appendRingBuffer(newSessionState, utf8Str);
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'ssh:output',
@@ -152,19 +162,9 @@ async function activateResumedSession(params: {
 
     // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲
     result.channel.removeAllListeners('data');
-    const liveDecoder = new StringDecoder('utf8');
     result.channel.on('data', (data: Buffer) => {
         const utf8Data = liveDecoder.write(data);
-        if (!newSessionState.recentOutputBuffer) {
-            newSessionState.recentOutputBuffer = [];
-            newSessionState.recentOutputBytes = 0;
-        }
-        newSessionState.recentOutputBuffer.push(utf8Data);
-        newSessionState.recentOutputBytes = (newSessionState.recentOutputBytes || 0) + Buffer.byteLength(utf8Data);
-        while (newSessionState.recentOutputBytes > 1024 * 1024 && newSessionState.recentOutputBuffer.length > 1) {
-            const shifted = newSessionState.recentOutputBuffer.shift();
-            if (shifted) newSessionState.recentOutputBytes -= Buffer.byteLength(shifted);
-        }
+        appendRingBuffer(newSessionState, utf8Data);
 
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -180,12 +180,12 @@ async function activateResumedSession(params: {
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ssh:disconnected', payload: { sessionId: newFrontendSessionId } }));
         }
-        cleanupClientConnection(newFrontendSessionId);
+        cleanupClientConnection(newFrontendSessionId, ws);
     });
     result.sshClient.on('error', (err: Error) => {
         console.error(`[WebSocket Handler] 恢复后的 SSH 客户端错误 (会话: ${newFrontendSessionId}):`, err);
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:error', payload: { sessionId: newFrontendSessionId, error: err.message } }));
-        cleanupClientConnection(newFrontendSessionId);
+        cleanupClientConnection(newFrontendSessionId, ws);
     });
 
     // 4. 第四步：发送 ssh:connected 与 SSH_SUSPEND_RESUMED_NOTIF 通知前端会话已激活
@@ -785,20 +785,21 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                 if (code === 1000 || reasonStr.includes('关闭') || reasonStr.includes('主动') || reasonStr.includes('manual')) {
                     if (ws.sessionId) {
                         const existing = clientStates.get(ws.sessionId);
-                        if (existing) {
+                        // 仅当该状态仍属于当前 ws 时才标记显式关闭，避免旧 ws 关闭污染新 ws 会话
+                        if (existing && existing.ws === ws) {
                             existing.isExplicitlyClosed = true;
                             existing.isMarkedForSuspend = false;
                         }
                     }
                 }
                 workspaceSyncService.unregisterSocket(ws.userId || 1, ws);
-                cleanupClientConnection(ws.sessionId);
+                cleanupClientConnection(ws.sessionId, ws);
             });
 
             ws.on('error', (error) => {
                 console.error(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 发生错误:`, error);
                 workspaceSyncService.unregisterSocket(ws.userId || 1, ws);
-                cleanupClientConnection(ws.sessionId); // Ensure cleanup on error too
+                cleanupClientConnection(ws.sessionId, ws); // Ensure cleanup on error too
             });
         }
     });

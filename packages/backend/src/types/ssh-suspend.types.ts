@@ -35,6 +35,10 @@ export interface SuspendSessionDetails {
   userId: number;
   /** 内存中的输出缓冲（保证挂起与恢复期间 100% 连续无丢失） */
   inMemoryBuffer?: string[];
+  /** 内存缓冲当前累计字节数（用于实施上限保护，防止挂起期日志洪流 OOM） */
+  inMemoryBytes?: number;
+  /** 挂起期间的流式 UTF-8 解码器（跨包拼接多字节中文/Emoji，避免出现 U+FFFD） */
+  utf8Decoder?: { write(buf: Buffer): string; end(): string };
   /**
    * `inMemoryBuffer` 里有几块是「挂起那一刻客户端屏幕上已经有了的」历史。
    *

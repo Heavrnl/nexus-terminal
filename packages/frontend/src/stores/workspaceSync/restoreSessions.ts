@@ -42,6 +42,8 @@ export async function restoreSessionsFromSnapshot(
 
   const { snapshot, availableSuspended } = deps;
   const sessionIdMap = new Map<string, string>();
+  /** 并发兜底认领本地已有会话时的同步占位集，防止两个并发任务抢到同一个会话 */
+  const claimedExistingIds = new Set<string>();
 
   if (!snapshot.sessions || snapshot.sessions.length === 0) {
     return sessionIdMap;
@@ -204,10 +206,11 @@ export async function restoreSessionsFromSnapshot(
           sessionStore.openNewSession(plan.connInfo.id, undefined, shouldActivateThis) || null;
       }
 
-      // 仍无目标：看本地是否已有属于该连接且未被映射的会话兜底
+      // 仍无目标：看本地是否已有属于该连接且未被映射/未被占用的会话兜底
       if (!targetSessionId) {
         const matchedExisting = Array.from(sessionStore.sessions.values()).find(
           (existingSession) => {
+            if (claimedExistingIds.has(existingSession.sessionId)) return false;
             if (Array.from(sessionIdMap.values()).includes(existingSession.sessionId)) return false;
             if (plan.connInfo && String(existingSession.connectionId) === String(plan.connInfo.id))
               return true;
@@ -216,6 +219,7 @@ export async function restoreSessionsFromSnapshot(
           }
         );
         if (matchedExisting) {
+          claimedExistingIds.add(matchedExisting.sessionId);
           targetSessionId = matchedExisting.sessionId;
           if (shouldActivateThis) {
             sessionStore.activateSession(targetSessionId);
@@ -247,9 +251,9 @@ export async function restoreSessionsFromSnapshot(
               `为新连接会话 ${targetSessionId} 回放快照保存的终端屏幕历史 (字符数: ${s.terminalBuffer.length})`
             );
             const cleanedBuffer = cleanTrailingPromptForReconnect(s.terminalBuffer);
-            const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
 
             if (sessionState.terminalManager?.terminalInstance?.value) {
+              const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
               sessionState.terminalManager.terminalInstance.value.write(highlightedData);
               try {
                 sessionState.terminalManager.terminalInstance.value.refresh(
@@ -260,10 +264,11 @@ export async function restoreSessionsFromSnapshot(
                 /* 终端尚未布局完成时 refresh 可能抛错，忽略 */
               }
             } else {
+              // 终端尚未就绪时暂存原始未高亮文本，交由 handleTerminalReady 里的 mainWriteFilter 统一单次高亮，避免双重高亮
               if (!sessionState.pendingOutput) {
                 sessionState.pendingOutput = [];
               }
-              sessionState.pendingOutput.push(highlightedData);
+              sessionState.pendingOutput.push(cleanedBuffer);
             }
           }
         }
@@ -293,15 +298,17 @@ export async function restoreSessionsFromSnapshot(
               const pId = key.startsWith('pane#') ? order[Number(key.slice(5))] : key;
               if (!pId || pId === 'primary') return;
               const paneEntry = panesMap.get(pId);
-              if (paneEntry?.instance?.value && buf) {
+              // PaneTerminalInstance 持有的是 terminal 字段（非 instance.value）
+              const paneTerminal = paneEntry?.terminal;
+              if (paneTerminal && buf) {
                 logSync(
                   `为分屏终端 ${pId} (会话 ${targetSessionId}) 回放快照保存的屏幕历史 (字符数: ${buf.length})`
                 );
                 const cleaned = cleanTrailingPromptForReconnect(buf);
                 const highlighted = highlightStore.highlight(cleaned) as string;
-                paneEntry.instance.value.write(highlighted);
+                paneTerminal.write(highlighted);
                 try {
-                  paneEntry.instance.value.refresh(0, paneEntry.instance.value.rows - 1);
+                  paneTerminal.refresh(0, paneTerminal.rows - 1);
                 } catch {
                   /* 同上 */
                 }

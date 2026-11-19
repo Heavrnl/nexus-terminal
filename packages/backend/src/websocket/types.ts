@@ -38,6 +38,7 @@ export interface ClientState { // 导出以便 Service 可以导入
      */
     isHeadless?: boolean;
     isSuspendedByService?: boolean; // 标记此会话是否已被 SshSuspendService 接管
+    isHandingOverToSuspend?: boolean; // 标记此会话正处于异步移交挂起的临界区，防止并发重入
     isMarkedForSuspend?: boolean; // 标记此会话是否已被用户请求挂起（等待断开连接）
     suspendLogPath?: string;      // 如果标记挂起，则存储日志路径 (基于原始 sessionId)
     pendingDimensions?: { cols: number; rows: number }; // 暂存 Shell 就绪前收到的终端尺寸
@@ -45,14 +46,18 @@ export interface ClientState { // 导出以便 Service 可以导入
     closeReason?: string;
     recentOutputBuffer?: string[]; // 内存中维护的最近终端输出缓冲（环形保留，避免断线/刷新丢失未同步数据）
     recentOutputBytes?: number;    // 缓冲累计字节数
+    /** 跨在线/挂起/恢复全生命周期接力复用的流式 UTF-8 解码器，杜绝交接瞬间切断多字节字符 */
+    outDecoder?: { write(buf: Buffer): string; end(): string };
     // 多终端分屏独立 Shell 通道映射 (key 为 paneId)
     paneStreams?: Map<string, PaneStreamState>;
     // 暂存连接就绪前收到的分屏打开请求
-    pendingPaneOpens?: Map<string, { cols: number; rows: number; term: string }>;
+    pendingPaneOpens?: Map<string, { cols: number; rows: number; term: string; paneIndex?: number }>;
 }
 
 export interface PaneStreamState {
     paneId: string;
+    /** 该分屏在布局树中的稳定先序序号（刷新重编 paneId 后仍可按序号复用） */
+    paneIndex?: number;
     stream: ClientChannel;
     isReady: boolean;
     pendingDimensions?: { cols: number; rows: number };

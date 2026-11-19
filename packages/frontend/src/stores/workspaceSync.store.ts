@@ -374,8 +374,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       multiLineCommandState: multiLineCommandState.value,
     });
 
-  // 防抖计时器
+  // 防抖计时器与串行保存队列（弱网乱序防护）
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 本客户端单调递增的快照保存序号，用于后端拦截弱网迟到的旧快照 */
+  let localSaveSeq = 0;
+  /** 当前是否有正在飞行中的云端保存请求 */
+  let inFlightSavePromise: Promise<boolean> | null = null;
+  /** 飞行期间是否又有新的状态变更待补发（合并为结束后的一次最新快照） */
+  let pendingResaveRequested = false;
 
   const triggerDebouncedSave = (delayMs: number = 800) => {
     if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return;
@@ -385,94 +391,116 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
 
     saveTimer = setTimeout(async () => {
+      saveTimer = null;
       await saveWorkspaceToCloud();
     }, delayMs);
   };
 
-  // 保存工作区到云端 (仅 Web 端有效)
+  // 保存工作区到云端 (仅 Web 端有效；内置串行队列 + 单调 saveSeq 彻底防止弱网乱序覆盖)
   const saveWorkspaceToCloud = async (): Promise<boolean> => {
     if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return false;
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    try {
-      const snapshot = collectCurrentWorkspaceState();
-      // 本次保存真正落地后，这一批"已关闭待清理"记录就没用了（只清本次保存之前记下的）
-      const pendingAtSaveStart = readPendingRemovedSessions();
-      // 首屏/恢复前的"空会话"绝不允许覆盖云端已有的快照。
-      // 否则页面刚加载、会话还没恢复完时，任意一次 watcher 触发都会把空列表写上去，
-      // 下次刷新就"会话全没了"（这个问题以前随机出现，就是这个空窗期）。
-      if (snapshot.sessions.length === 0 && !hasRestoredOnce) {
-        logSync('跳过空快照保存：尚未完成首次恢复');
-        return false;
-      }
-      isSyncing.value = true;
-      logSync('正在将工作区快照保存至云端...', {
-        sessionsCount: snapshot.sessions.length,
-        tabsCount: snapshot.fileEditor.tabs.length,
-        tabs: snapshot.fileEditor.tabs.map(t => `${t.filename}(${t.selectedEncoding})`),
-        fileManagerPath: snapshot.fileManager.currentPath,
-      });
 
-      // 保存到后端数据库
-      //
-      // 请求体走 gzip：快照里 84% 的体积是终端 buffer（ANSI 文本），
-      // gzip 压缩比在 8 倍左右。后端 `express.json()` 的 inflate 默认开启，
-      // 收到 `Content-Encoding: gzip` 会自动解压，后端代码不需要改。
-      //
-      // 必须带 transformRequest 恒等函数：axios 默认会把对象 JSON.stringify，
-      // 虽然对 Uint8Array 会跳过，但显式声明能避免不同版本行为差异。
-      const requestBody = { clientId: clientId.value, state: snapshot };
-      const json = JSON.stringify(requestBody);
-      const compressed = await gzipText(json);
-      // 空工作区这类极小的快照压完反而更大，此时直接用明文
-      const useCompressed = Boolean(compressed && compressed.byteLength < json.length);
-      if (compressed && useCompressed) {
-        logSync(
-          `快照压缩上传: ${(json.length / 1024).toFixed(0)}KB -> ${(compressed.byteLength / 1024).toFixed(0)}KB `
-          + `(${(json.length / compressed.byteLength).toFixed(1)}x)`
-        );
-      }
-      const res = useCompressed
-        ? await apiClient.post('/workspace-sync/save', compressed!, {
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Encoding': 'gzip',
-            },
-            transformRequest: [(data) => data],
-          })
-        : await apiClient.post('/workspace-sync/save', requestBody);
-
-      if (res.data?.success) {
-        const payload = res.data.data as { accepted?: boolean; activeClientId?: string | null } | undefined;
-        if (payload && payload.accepted === false) {
-          /**
-           * 租约已被接管的客户端调用过 claim，本次写入被后端拒绝。
-           * 这里必须让本端立刻进入遮罩：否则被接管的旧页面还会继续用"旧状态"覆盖云端，
-           * 表现就是——在另一个页面关掉的会话，刷新后又回来了。
-           */
-          logSyncWarn(`本次保存被拒绝：工作区租约已归 ${payload.activeClientId || '其它客户端'}，当前端进入接管遮罩`);
-          isTakenOver.value = true;
-          takeoverByClientId.value = payload.activeClientId || null;
-          if (saveTimer) {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-          }
-          return false;
-        }
-        lastSyncTime.value = Date.now();
-        removePendingRemovedSessions(pendingAtSaveStart);
-        logSync('工作区快照已成功持久化至云端数据库！时间:', new Date().toLocaleTimeString());
-        return true;
-      }
-      return false;
-    } catch (err: any) {
-      logSyncWarn('保存工作区到云端失败:', err.message);
-      return false;
-    } finally {
-      isSyncing.value = false;
+    // 已有保存请求在途：只记脏，等当前请求结束后自动用最新状态补发一次，绝不并发竞态
+    if (inFlightSavePromise) {
+      pendingResaveRequested = true;
+      return inFlightSavePromise;
     }
+
+    const executeSave = async (): Promise<boolean> => {
+      let lastResult = false;
+      do {
+        pendingResaveRequested = false;
+        if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) {
+          break;
+        }
+        try {
+          const snapshot = collectCurrentWorkspaceState();
+          // 本次保存真正落地后，这一批"已关闭待清理"记录就没用了（只清本次保存之前记下的）
+          const pendingAtSaveStart = readPendingRemovedSessions();
+          // 首屏/恢复前的"空会话"绝不允许覆盖云端已有的快照。
+          // 否则页面刚加载、会话还没恢复完时，任意一次 watcher 触发都会把空列表写上去，
+          // 下次刷新就"会话全没了"（这个问题以前随机出现，就是这个空窗期）。
+          if (snapshot.sessions.length === 0 && !hasRestoredOnce) {
+            logSync('跳过空快照保存：尚未完成首次恢复');
+            lastResult = false;
+            continue;
+          }
+          isSyncing.value = true;
+          const seq = ++localSaveSeq;
+          logSync('正在将工作区快照保存至云端...', {
+            saveSeq: seq,
+            sessionsCount: snapshot.sessions.length,
+            tabsCount: snapshot.fileEditor.tabs.length,
+            tabs: snapshot.fileEditor.tabs.map(t => `${t.filename}(${t.selectedEncoding})`),
+            fileManagerPath: snapshot.fileManager.currentPath,
+          });
+
+          // 保存到后端数据库（带单调 saveSeq 供后端防乱序覆盖）
+          const requestBody = { clientId: clientId.value, saveSeq: seq, state: snapshot };
+          const json = JSON.stringify(requestBody);
+          const compressed = await gzipText(json);
+          // 空工作区这类极小的快照压完反而更大，此时直接用明文
+          const useCompressed = Boolean(compressed && compressed.byteLength < json.length);
+          if (compressed && useCompressed) {
+            logSync(
+              `快照压缩上传: ${(json.length / 1024).toFixed(0)}KB -> ${(compressed.byteLength / 1024).toFixed(0)}KB `
+              + `(${(json.length / compressed.byteLength).toFixed(1)}x)`
+            );
+          }
+          const res = useCompressed
+            ? await apiClient.post('/workspace-sync/save', compressed!, {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Encoding': 'gzip',
+                },
+                transformRequest: [(data) => data],
+              })
+            : await apiClient.post('/workspace-sync/save', requestBody);
+
+          if (res.data?.success) {
+            const payload = res.data.data as { accepted?: boolean; activeClientId?: string | null } | undefined;
+            if (payload && payload.accepted === false) {
+              /**
+               * 租约已被接管的客户端调用过 claim，本次写入被后端拒绝。
+               * 这里必须让本端立刻进入遮罩：否则被接管的旧页面还会继续用"旧状态"覆盖云端，
+               * 表现就是——在另一个页面关掉的会话，刷新后又回来了。
+               */
+              logSyncWarn(`本次保存被拒绝：工作区租约已归 ${payload.activeClientId || '其它客户端'}，当前端进入接管遮罩`);
+              isTakenOver.value = true;
+              takeoverByClientId.value = payload.activeClientId || null;
+              pendingResaveRequested = false;
+              if (saveTimer) {
+                clearTimeout(saveTimer);
+                saveTimer = null;
+              }
+              lastResult = false;
+              break;
+            }
+            lastSyncTime.value = Date.now();
+            removePendingRemovedSessions(pendingAtSaveStart);
+            logSync('工作区快照已成功持久化至云端数据库！时间:', new Date().toLocaleTimeString());
+            lastResult = true;
+          } else {
+            lastResult = false;
+          }
+        } catch (err: any) {
+          logSyncWarn('保存工作区到云端失败:', err.message);
+          lastResult = false;
+        } finally {
+          isSyncing.value = false;
+        }
+      } while (pendingResaveRequested);
+      return lastResult;
+    };
+
+    inFlightSavePromise = executeSave().finally(() => {
+      inFlightSavePromise = null;
+    });
+    return inFlightSavePromise;
   };
 
   // 声明接管 (Claim Lease) (仅 Web 端有效)
@@ -513,6 +541,30 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         saveTimer = null;
       }
     }
+  };
+
+  /** 恢复解锁兜底计时器（仅用于 deferTail 后调用方长时间未触发 runPendingWorkspaceTail 的极端兜底） */
+  let restoreUnlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * 真正完成恢复（含 SFTP、编辑器、文件管理器收尾）后解除 `isRestoring` 锁，并触发沉淀保存。
+   * 绝不能在 `runPendingWorkspaceTail` 完成前用固定 1.5s 提前解锁 —— 否则慢 SFTP 场景下会把尚未恢复出来的
+   * 空编辑器标签和空文件管理器路径覆盖写回云端数据库。
+   */
+  const scheduleRestoreUnlock = (delayMs: number = 300) => {
+    if (restoreUnlockTimer) {
+      clearTimeout(restoreUnlockTimer);
+      restoreUnlockTimer = null;
+    }
+    const notifStore = useUiNotificationsStore();
+    restoreUnlockTimer = setTimeout(() => {
+      restoreUnlockTimer = null;
+      isRestoring.value = false;
+      notifStore.setSilenced(false);
+      if (syncEnabled.value && !isTakenOver.value && !isUnloading.value) {
+        triggerDebouncedSave(300);
+      }
+    }, delayMs);
   };
 
   // 恢复工作区状态快照到前端各个模块
@@ -725,35 +777,24 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       // 两件事是并行的，而不是先给用户看一个空工作区、再花几百毫秒往里填。
       if (opts?.deferTail) {
         pendingWorkspaceTail = runTail;
+        // 兜底：若始终未进入工作区调用 runPendingWorkspaceTail，12s 后自动释放恢复锁
+        scheduleRestoreUnlock(12000);
       } else {
         await runTail();
+        scheduleRestoreUnlock(300);
       }
 
       hasRestoredOnce = true;
       logSync('工作区首屏状态已就位（会话/顺序/激活/文件管理器路径）。');
     } catch (err: any) {
       logSyncError('恢复工作区发生错误:', err);
-    } finally {
-      setTimeout(() => {
-        isRestoring.value = false;
-        notifStore.setSilenced(false);
-        /**
-         * 恢复收尾：把"新会话 ID"沉淀回云端快照。
-         *
-         * 必须放在 isRestoring 放开之后 —— 以前是在恢复结束时 schedule 一个 1000ms 的保存，
-         * 而 isRestoring 要到 1500ms 才放开，那次保存永远被自己拦掉，
-         * 快照里就一直留着上一轮的旧 sessionId（关闭会话时按 ID 剔除会因此对不上）。
-         */
-        if (syncEnabled.value && !isTakenOver.value) {
-          triggerDebouncedSave(300);
-        }
-      }, 1500);
+      scheduleRestoreUnlock(300);
     }
   };
 
   /**
    * 补跑恢复流程里「欠着」的慢活儿（等 SFTP / 编辑器 / 文件管理器面板 / 弹窗显隐）。
-   * 幂等：同一批只跑一次。
+   * 幂等：同一批只跑一次。收尾完成后才真正解除 `isRestoring` 锁。
    */
   const runPendingWorkspaceTail = async (): Promise<void> => {
     if (tailTask) return tailTask;
@@ -769,6 +810,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         logSyncError('恢复收尾（SFTP/编辑器/文件管理器）失败:', err);
       } finally {
         tailTask = null;
+        scheduleRestoreUnlock(300);
       }
     })();
     return tailTask;
@@ -865,9 +907,15 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         return;
       }
 
-      // 没有预取（例如直接落在 /connections 再切进工作区）：这里补上，语义与预取一致
-      await prefetchWorkspaceSnapshot();
-      void runPendingWorkspaceTail();
+      // 没有预取（例如直接落在 /connections 再切进工作区，或预取时弱网失败）：这里补上，语义与预取一致
+      const restored = await prefetchWorkspaceSnapshot();
+      if (restored) {
+        void runPendingWorkspaceTail();
+      } else {
+        // 快照为空或首屏预取失败时，仍需补一次接管租约，避免本端成为无租约客户端被后续保存误判踢出
+        await claimTakeover();
+        hasRestoredOnce = true;
+      }
     } catch (err: any) {
       logSyncWarn('初始化工作区同步失败:', err.message);
     } finally {

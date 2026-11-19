@@ -4,7 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { AuthenticatedWebSocket, ClientState } from '../types';
 import { clientStates, sftpService, statusMonitorService, auditLogService, notificationService } from '../state';
 import * as SshService from '../../services/ssh.service';
-import { cleanupClientConnection } from '../utils';
+import { appendRingBuffer, cleanupClientConnection } from '../utils';
 import { temporaryLogStorageService } from '../../ssh-suspend/temporary-log-storage.service';
 import { startDockerStatusPolling } from './docker.handler';
 import WebSocket from 'ws';
@@ -40,10 +40,10 @@ export async function handleSshConnect(
         ? payload.sessionId.trim()
         : (ws.sessionId || uuidv4());
 
-    // 若当前服务中仍残留该会话的历史状态（例如网络断开未触发 close），安全清理旧连接
+    // 若当前服务中仍残留该会话的历史状态（例如网络断开未触发 close），安全等待旧连接清理完毕再注册新状态
     if (clientStates.has(newSessionId)) {
         console.log(`[SSH Handler] 检测到会话 ${newSessionId} 已存在旧状态，执行重连前置清理...`);
-        cleanupClientConnection(newSessionId);
+        await cleanupClientConnection(newSessionId);
     }
 
     ws.sessionId = newSessionId; // 立即为 WebSocket 绑定当前确定好的 sessionId
@@ -131,6 +131,7 @@ export async function handleSshConnect(
                 // U+FFFD（"�"），agy 这类中文输出多的 CLI 尤其明显。
                 // 日志与环形缓冲需要文本，交给 StringDecoder 跨块拼接。
                 const outDecoder = new StringDecoder('utf8');
+                newState.outDecoder = outDecoder;
                 stream.on('data', (data: Buffer) => {
                     const utf8Data = outDecoder.write(data);
                     if (ws.readyState === WebSocket.OPEN) {
@@ -139,20 +140,10 @@ export async function handleSshConnect(
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
-                        if (!currentState.recentOutputBuffer) {
-                            currentState.recentOutputBuffer = [];
-                            currentState.recentOutputBytes = 0;
-                        }
-                        currentState.recentOutputBuffer.push(utf8Data);
-                        currentState.recentOutputBytes = (currentState.recentOutputBytes || 0) + Buffer.byteLength(utf8Data);
-                        // 环形缓冲保留上限 1MB (1024 * 1024 字节)
-                        while (currentState.recentOutputBytes > 1024 * 1024 && currentState.recentOutputBuffer.length > 1) {
-                            const shifted = currentState.recentOutputBuffer.shift();
-                            if (shifted) currentState.recentOutputBytes -= Buffer.byteLength(shifted);
-                        }
+                        appendRingBuffer(currentState, utf8Data);
 
-                        // 如果会话被标记为待挂起，则同时将输出写入日志
-                        if (currentState.isMarkedForSuspend && currentState.suspendLogPath) {
+                        // 如果会话被标记为待挂起（且不在异步写盘交接窗口内），则同时将输出写入日志
+                        if (currentState.isMarkedForSuspend && !currentState.isHandingOverToSuspend && currentState.suspendLogPath) {
                             temporaryLogStorageService.writeToLog(currentState.suspendLogPath, utf8Data).catch(err => {
                                 console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的日志失败 (路径: ${currentState.suspendLogPath}):`, err);
                             });
@@ -168,18 +159,9 @@ export async function handleSshConnect(
 
                     const currentState = clientStates.get(newSessionId);
                     if (currentState) {
-                        if (!currentState.recentOutputBuffer) {
-                            currentState.recentOutputBuffer = [];
-                            currentState.recentOutputBytes = 0;
-                        }
-                        currentState.recentOutputBuffer.push(utf8ErrData);
-                        currentState.recentOutputBytes = (currentState.recentOutputBytes || 0) + Buffer.byteLength(utf8ErrData);
-                        while (currentState.recentOutputBytes > 1024 * 1024 && currentState.recentOutputBuffer.length > 1) {
-                            const shifted = currentState.recentOutputBuffer.shift();
-                            if (shifted) currentState.recentOutputBytes -= Buffer.byteLength(shifted);
-                        }
+                        appendRingBuffer(currentState, utf8ErrData);
 
-                        if (currentState.isMarkedForSuspend && currentState.suspendLogPath) {
+                        if (currentState.isMarkedForSuspend && !currentState.isHandingOverToSuspend && currentState.suspendLogPath) {
                             temporaryLogStorageService.writeToLog(currentState.suspendLogPath, `[STDERR] ${utf8ErrData}`).catch(err => {
                                 console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的 STDERR 日志失败 (路径: ${currentState.suspendLogPath}):`, err);
                             });
@@ -191,7 +173,7 @@ export async function handleSshConnect(
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'ssh:disconnected', payload: 'Shell 通道已关闭。' }));
                     }
-                    cleanupClientConnection(newSessionId);
+                    cleanupClientConnection(newSessionId, ws);
                 });
 
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
@@ -208,7 +190,7 @@ export async function handleSshConnect(
                 if (newState.pendingPaneOpens && newState.pendingPaneOpens.size > 0) {
                     console.log(`WebSocket: 会话 ${newSessionId} 处理连接就绪前暂存的 ${newState.pendingPaneOpens.size} 个分屏打开请求...`);
                     for (const [pId, pOpts] of newState.pendingPaneOpens.entries()) {
-                        openPaneShell(ws, newSessionId, newState, pId, pOpts.cols, pOpts.rows, pOpts.term);
+                        openPaneShell(ws, newSessionId, newState, pId, pOpts.cols, pOpts.rows, pOpts.term, pOpts.paneIndex);
                     }
                     newState.pendingPaneOpens.clear();
                 }
@@ -246,14 +228,14 @@ export async function handleSshConnect(
 
         sshClient.on('close', () => {
             console.log(`SSH: 会话 ${newSessionId} 的客户端连接已关闭。`);
-            cleanupClientConnection(newSessionId);
+            cleanupClientConnection(newSessionId, ws);
         });
         sshClient.on('error', (err: Error) => {
             console.error(`SSH: 会话 ${newSessionId} 的客户端连接错误:`, err);
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'ssh:error', payload: `SSH 连接错误: ${err.message}` }));
             }
-            cleanupClientConnection(newSessionId);
+            cleanupClientConnection(newSessionId, ws);
         });
 
     } catch (connectError: any) {
@@ -340,7 +322,8 @@ export function openPaneShell(
     paneId: string,
     cols: number = 80,
     rows: number = 24,
-    term: string = 'xterm-256color'
+    term: string = 'xterm-256color',
+    paneIndex?: number
 ): void {
     if (!state.sshClient) {
         console.warn(`[openPaneShell] 会话 ${sessionId} 缺少活动 sshClient，无法为 ${paneId} 打开 Shell`);
@@ -372,6 +355,7 @@ export function openPaneShell(
 
         const paneState = {
             paneId,
+            paneIndex,
             stream,
             isReady: true,
         };
@@ -443,13 +427,36 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
     const cols = payload?.cols || 80;
     const rows = payload?.rows || 24;
     const term = payload?.term || 'xterm-256color';
+    const paneIndex = typeof payload?.paneIndex === 'number' && Number.isInteger(payload.paneIndex)
+        ? payload.paneIndex
+        : undefined;
 
-    // 情况 A：SSH 已连接就绪，立即派生打开
+    // 情况 A：SSH 已连接就绪，立即派生打开或复用保活通道
     if (state && state.sshClient && state.isShellReady) {
-        // 如果该 paneId 已经从挂起保活中恢复或 stream 仍在活动，重新绑定 WebSocket 并通知前端就绪，避免重新创建 Shell 导致重复登录
-        const existingPane = state.paneStreams?.get(paneId);
+        // 优先按 paneId 精确命中；若刷新/跨端导致 paneId 重编，再按稳定的 paneIndex 复用保活通道并重绑新 paneId
+        let matchedKey: string | undefined = state.paneStreams?.has(paneId) ? paneId : undefined;
+        let existingPane = matchedKey ? state.paneStreams?.get(matchedKey) : undefined;
+        if (!existingPane && paneIndex !== undefined && state.paneStreams) {
+            for (const [k, p] of state.paneStreams.entries()) {
+                if (p && p.isReady && p.stream && p.paneIndex === paneIndex) {
+                    matchedKey = k;
+                    existingPane = p;
+                    break;
+                }
+            }
+        }
         if (existingPane && existingPane.stream && existingPane.isReady) {
-            console.log(`WebSocket: 会话 ${sessionId} 的分屏 ${paneId} 存在保活活动 Shell 通道，复用现有通道并重定向数据流`);
+            if (matchedKey && matchedKey !== paneId && state.paneStreams) {
+                state.paneStreams.delete(matchedKey);
+                existingPane.paneId = paneId;
+                state.paneStreams.set(paneId, existingPane);
+                console.log(`WebSocket: 会话 ${sessionId} 按 paneIndex=${paneIndex} 复用保活分屏通道并重绑 paneId: ${matchedKey} -> ${paneId}`);
+            } else {
+                console.log(`WebSocket: 会话 ${sessionId} 的分屏 ${paneId} 存在保活活动 Shell 通道，复用现有通道并重定向数据流`);
+            }
+            if (paneIndex !== undefined) {
+                existingPane.paneIndex = paneIndex;
+            }
 
             existingPane.stream.removeAllListeners('data');
             existingPane.stream.removeAllListeners('close');
@@ -513,14 +520,14 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
             }
             return;
         }
-        openPaneShell(ws, sessionId, state, paneId, cols, rows, term);
+        openPaneShell(ws, sessionId, state, paneId, cols, rows, term, paneIndex);
     } else if (state) {
         // 情况 B：会话正在握手连接中，暂存打开请求，连接成功发 ssh:connected 后自动消费
         console.log(`WebSocket: 会话 ${sessionId} 收到分屏 ${paneId} 打开请求，SSH 正在握手，加入暂存等待队列...`);
         if (!state.pendingPaneOpens) {
             state.pendingPaneOpens = new Map();
         }
-        state.pendingPaneOpens.set(paneId, { cols, rows, term });
+        state.pendingPaneOpens.set(paneId, { cols, rows, term, paneIndex });
     } else {
         console.warn(`WebSocket: 收到分屏打开请求，但未找到对应的活动会话 (sessionId: ${sessionId}, paneId: ${paneId})`);
     }

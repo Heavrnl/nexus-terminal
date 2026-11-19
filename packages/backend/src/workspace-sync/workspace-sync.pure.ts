@@ -68,7 +68,12 @@ export interface TakeoverSuspendLike {
   takeoverRound?: number;
   manuallySuspended?: boolean;
   originalSessionId?: string;
+  /** 挂起开始时间（ISO 字符串），用于在多端并发抢接管时提供短暂宽限期，防止误杀刚移交的活会话 */
+  suspendStartTime?: string;
 }
+
+/** 接管遗留挂起清理的默认宽限保护期（15 秒，覆盖多端并发抢接管与弱网恢复认领窗口） */
+export const TAKEOVER_PRUNE_GRACE_MS = 15_000;
 
 /**
  * 「上一轮接管留下的、这一轮恢复再也用不到的」自动挂起条目 → 该清掉。
@@ -78,15 +83,18 @@ export interface TakeoverSuspendLike {
  * 不参与同步的客户端会话）永远没人认领 —— 反复接管几次，挂起面板里就堆出一串
  * 看起来毫无缘由的会话。
  *
- * 只清三类都不满足的条目：
+ * 只清四类都不满足的条目：
  *   1. 用户手动挂起的（关标签右键「挂起会话」）→ 永远归挂起面板
  *   2. 不是接管产生的（断线 / 刷新自动挂起）→ 有 `originalSessionId`，刷新时还要认领
  *   3. 本轮刚挂起来的 → 新端马上要 resume 它
+ *   4. 仍在宽限保护期内（刚挂起不到 graceMs）→ 防止多端同时发 claim 时后一轮瞬间杀掉前一轮刚移交的活会话
  */
 export function shouldPruneTakeoverSuspend(
   entry: TakeoverSuspendLike,
   currentRound: number,
-  keepOriginalSessionIds: ReadonlySet<string>
+  keepOriginalSessionIds: ReadonlySet<string>,
+  nowMs: number = Date.now(),
+  graceMs: number = TAKEOVER_PRUNE_GRACE_MS
 ): boolean {
   if (entry.manuallySuspended === true) return false;
   const round = entry.takeoverRound;
@@ -94,7 +102,15 @@ export function shouldPruneTakeoverSuspend(
   if (round >= currentRound) return false;
   const original = entry.originalSessionId;
   if (!original) return false;
-  return !keepOriginalSessionIds.has(original);
+  if (keepOriginalSessionIds.has(original)) return false;
+
+  if (entry.suspendStartTime && graceMs > 0) {
+    const startedAt = Date.parse(entry.suspendStartTime);
+    if (Number.isFinite(startedAt) && nowMs - startedAt < graceMs) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** 参与「该不该在接管时移交挂起」判定的字段（结构类型，便于单测） */

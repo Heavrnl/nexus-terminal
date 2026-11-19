@@ -45,7 +45,6 @@ const handleReclaim = async () => {
     if (restoreSuccess) {
       workspaceSyncStore.isTakenOver = false;
       workspaceSyncStore.takeoverByClientId = null;
-      workspaceSyncStore.triggerDebouncedSave(500);
     } else {
       // 容灾保底：若热恢复异常，降级为刷新重载
       window.location.reload();
