@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue';
-import MonacoEditor from './MonacoEditor.vue';
-import MobileMarkdownSplitEditor from './MobileMarkdownSplitEditor.vue';
+import { ref, computed, defineAsyncComponent, onBeforeUnmount } from 'vue';
 import MarkdownPreview from './MarkdownPreview.vue';
+
+const MonacoEditor = defineAsyncComponent(() => import('./MonacoEditor.vue'));
+const MobileMarkdownSplitEditor = defineAsyncComponent(() => import('./MobileMarkdownSplitEditor.vue'));
 
 const props = withDefaults(
   defineProps<{
@@ -37,8 +38,8 @@ const emit = defineEmits<{
 }>();
 
 // 组件引用
-const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | null>(null);
-const mobileMarkdownSplitEditorRef = ref<InstanceType<typeof MobileMarkdownSplitEditor> | null>(null);
+const monacoEditorRef = ref<any>(null);
+const mobileMarkdownSplitEditorRef = ref<any>(null);
 const markdownPreviewRef = ref<InstanceType<typeof MarkdownPreview> | null>(null);
 
 // 分屏比例拖拽状态 (20% ~ 80%)

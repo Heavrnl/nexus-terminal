@@ -68,6 +68,9 @@ export const openFileInSession = (
                 }
                 console.log(`[EditorActions ${sessionId}] 使用 primary-editor sftpManager 读取文件 ${fileInfo.fullPath}`);
 
+                if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+                    void import('../../../components/MonacoEditor.vue');
+                }
                 const fileData: SftpReadFileSuccessPayload = await sftpManager.readFile(fileInfo.fullPath);
                 console.log(`[EditorActions ${sessionId}] 文件 ${fileInfo.fullPath} 读取成功。后端使用编码: ${fileData.encodingUsed}`);
 
@@ -124,6 +127,14 @@ export const closeEditorTabInSession = (sessionId: string, tabId: string) => {
     }
 
     // TODO: 检查 isDirty 状态，提示保存？
+
+    // 显式清空大文本与原始 Base64 缓冲区，帮助 V8 GC 及时回收堆内存
+    const closingTab = session.editorTabs.value[tabIndex];
+    if (closingTab) {
+        closingTab.content = '';
+        closingTab.originalContent = '';
+        closingTab.rawContentBase64 = null;
+    }
 
     session.editorTabs.value.splice(tabIndex, 1);
     console.log(`[EditorActions] 已从会话 ${sessionId} 中移除标签页: ${tabId}`);

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, type PropType, ref, watch, defineExpose, onMounted, onBeforeUnmount, toRef } from 'vue';
+import { computed, defineAsyncComponent, type PropType, ref, watch, defineExpose, onMounted, onBeforeUnmount, toRef } from 'vue';
 import { storeToRefs } from 'pinia';
 import SingleEditorPane from './SingleEditorPane.vue';
-import MobileFileEditorContainer from './MobileFileEditorContainer.vue';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useSessionStore } from '../stores/session.store';
@@ -10,6 +9,8 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useAppearanceStore } from '../stores/appearance.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import { useSplitEditor, type SplitDirection, type PaneId } from '../composables/useSplitEditor';
+
+const MobileFileEditorContainer = defineAsyncComponent(() => import('./MobileFileEditorContainer.vue'));
 
 const props = defineProps({
   tabs: {
@@ -79,6 +80,12 @@ watch(
 const currentSessionName = computed(() => {
   if (!props.sessionId) return null;
   return sessionStore.sessions.get(props.sessionId)?.connectionName ?? null;
+});
+
+// 宿主会话是否处于当前激活态（仅当前可见会话挂载真实 MonacoEditor 实例，彻底消除多会话重复实例内存翻倍）
+const isHostSessionActive = computed(() => {
+  if (!props.sessionId) return true;
+  return sessionStore.activeSessionId === props.sessionId;
 });
 
 // 处理主/副窗格的标签激活
@@ -277,6 +284,7 @@ onBeforeUnmount(() => {
         :session-name="currentSessionName"
         :font-family="currentEditorFontFamily"
         :font-size="currentEditorFontSize"
+        :is-host-active="isHostSessionActive"
         @activate-tab="(id: string) => handleActivateTab('primary', id)"
         @close-tab="handleCloseTab"
         @close-other-tabs="handleCloseOtherTabs"
@@ -326,6 +334,7 @@ onBeforeUnmount(() => {
         :session-name="currentSessionName"
         :font-family="currentEditorFontFamily"
         :font-size="currentEditorFontSize"
+        :is-host-active="isHostSessionActive"
         @activate-tab="(id: string) => handleActivateTab('secondary', id)"
         @close-tab="handleCloseTab"
         @close-other-tabs="handleCloseOtherTabs"

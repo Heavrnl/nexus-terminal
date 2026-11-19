@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import SingleEditorPane from './SingleEditorPane.vue';
-import MobileFileEditorOverlay from './MobileFileEditorOverlay.vue';
+
+const MobileFileEditorOverlay = defineAsyncComponent(() => import('./MobileFileEditorOverlay.vue'));
 import type { FileTab } from '../stores/fileEditor.store';
 import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';

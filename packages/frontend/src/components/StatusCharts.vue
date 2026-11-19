@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, type PropType } from 'vue'; 
+import { ref, shallowRef, watch, onMounted, computed, type PropType } from 'vue'; 
 import { useI18n } from 'vue-i18n';
 import { Line } from 'vue-chartjs';
 import { useSessionStore } from '../stores/session.store'; 
@@ -110,7 +110,13 @@ const MB_TO_GB_THRESHOLD = 1024; // For memory
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
-const { sessions } = storeToRefs(sessionStore); // 获取响应式的 sessions
+const { sessions, activeSessionId: globalActiveSessionId } = storeToRefs(sessionStore); // 获取响应式的 sessions 与当前可见会话 ID
+
+// 判断本 StatusCharts 所属会话是否当前在前台可见；隐藏会话冻结 Chart.js 离屏重绘以降低 CPU 与内存分配，切回瞬间同帧补绘
+const isChartVisible = computed(() => {
+  if (!props.activeSessionId) return true;
+  return globalActiveSessionId.value === props.activeSessionId;
+});
 
 const networkRateUnitIsMB = ref(false);
 const memoryUnitIsGB = ref(false);
@@ -176,9 +182,9 @@ const latestTxVal = computed(() => {
   return '0.0';
 });
 
-// --- 图表数据结构，现在 data 指向 computed 属性 ---
-const cpuChartData = computed(() => ({
-  labels: initialLabels, // 标签保持不变
+// --- 图表数据结构：通过 shallowRef + 可见性门控，隐藏会话暂停离屏 Canvas 重绘，切回同帧补齐全部历史 ---
+const buildCpuChartData = () => ({
+  labels: initialLabels,
   datasets: [
     {
       label: t('statusMonitor.cpuUsageLabel', 'CPU 使用率 (%)'),
@@ -186,70 +192,31 @@ const cpuChartData = computed(() => ({
       borderColor: '#38bdf8',
       borderWidth: 1.5,
       fill: true,
-      data: currentCpuHistory.value.map(v => v ?? 0), // 将 null 映射为 0 用于图表
+      data: currentCpuHistory.value.map(v => v ?? 0),
       tension: 0.25,
       pointRadius: 0,
       pointHoverRadius: 4,
     },
   ],
-}));
-
-// 动态计算内存图表数据（转换单位）
-const memoryChartData = computed(() => {
-    const historyMB = currentMemUsedHistory.value;
-    let displayData: (number | null)[];
-
-    // 检查是否需要转换为 GB (基于当前值或历史峰值)
-    const currentTotalMB = props.serverStatus?.memTotal ?? 0;
-    const historyPeakMB = Math.max(...historyMB.filter((v): v is number => v !== null), 0);
-    const requiresGB = currentTotalMB >= MB_TO_GB_THRESHOLD || historyPeakMB >= MB_TO_GB_THRESHOLD;
-    memoryUnitIsGB.value = requiresGB; // 更新单位标志
-
-    if (requiresGB) {
-        displayData = historyMB.map(mb => mb === null ? null : parseFloat((mb / MB_TO_GB_THRESHOLD).toFixed(1)));
-    } else {
-        displayData = historyMB.map(mb => mb === null ? null : parseFloat(mb.toFixed(1)));
-    }
-
-    return {
-        labels: initialLabels,
-        datasets: [
-            {
-                label: t('statusMonitor.memoryUsageLabelUnit', { unit: requiresGB ? 'GB' : 'MB' }),
-                backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                borderColor: 'rgba(255, 99, 132, 1)',
-                borderWidth: 1,
-                data: displayData.map(v => v ?? 0), // 将 null 映射为 0
-                tension: 0.1,
-                pointRadius: 0,
-                pointHoverRadius: 5,
-            },
-        ],
-    };
 });
 
-
-// 动态计算网络图表数据（转换单位）
-const networkChartData = computed(() => {
+const buildNetworkChartData = () => {
     const historyRxBps = currentNetRxHistory.value;
     const historyTxBps = currentNetTxHistory.value;
-    let displayRxData: (number | null)[];
-    let displayTxData: (number | null)[];
 
-    // 检查是否需要转换为 MB/s (基于当前值或历史峰值)
     const currentRxKB = (props.serverStatus?.netRxRate ?? 0) / 1024;
     const currentTxKB = (props.serverStatus?.netTxRate ?? 0) / 1024;
     const historyPeakRxKB = Math.max(...historyRxBps.filter((v): v is number => v !== null).map(bps => bps / 1024), 0);
     const historyPeakTxKB = Math.max(...historyTxBps.filter((v): v is number => v !== null).map(bps => bps / 1024), 0);
     const requiresMB = currentRxKB >= KB_TO_MB_THRESHOLD || currentTxKB >= KB_TO_MB_THRESHOLD ||
                        historyPeakRxKB >= KB_TO_MB_THRESHOLD || historyPeakTxKB >= KB_TO_MB_THRESHOLD;
-    networkRateUnitIsMB.value = requiresMB; // 更新单位标志
+    networkRateUnitIsMB.value = requiresMB;
 
     const divisor = requiresMB ? (1024 * 1024) : 1024;
     const precision = requiresMB ? 2 : 1;
 
-    displayRxData = historyRxBps.map(bps => bps === null ? null : parseFloat((bps / divisor).toFixed(precision)));
-    displayTxData = historyTxBps.map(bps => bps === null ? null : parseFloat((bps / divisor).toFixed(precision)));
+    const displayRxData = historyRxBps.map(bps => bps === null ? null : parseFloat((bps / divisor).toFixed(precision)));
+    const displayTxData = historyTxBps.map(bps => bps === null ? null : parseFloat((bps / divisor).toFixed(precision)));
 
     return {
         labels: initialLabels,
@@ -260,7 +227,7 @@ const networkChartData = computed(() => {
                 borderColor: '#10b981',
                 borderWidth: 1.5,
                 fill: true,
-                data: displayRxData.map(v => v ?? 0), // 将 null 映射为 0
+                data: displayRxData.map(v => v ?? 0),
                 tension: 0.25,
                 pointRadius: 0,
                 pointHoverRadius: 4,
@@ -271,10 +238,58 @@ const networkChartData = computed(() => {
                 borderColor: '#f97316',
                 borderWidth: 1.5,
                 fill: true,
-                data: displayTxData.map(v => v ?? 0), // 将 null 映射为 0
+                data: displayTxData.map(v => v ?? 0),
                 tension: 0.25,
                 pointRadius: 0,
                 pointHoverRadius: 4,
+            },
+        ],
+    };
+};
+
+const cpuChartData = shallowRef(buildCpuChartData());
+const networkChartData = shallowRef(buildNetworkChartData());
+
+watch(
+  [isChartVisible, currentCpuHistory],
+  ([visible]) => {
+    if (!visible) return;
+    cpuChartData.value = buildCpuChartData();
+  },
+  { flush: 'post' }
+);
+
+watch(
+  [isChartVisible, currentNetRxHistory, currentNetTxHistory],
+  ([visible]) => {
+    if (!visible) return;
+    networkChartData.value = buildNetworkChartData();
+  },
+  { flush: 'post' }
+);
+
+// 兼容保留（避免下方未被引用变量告警，按需延迟计算）
+const memoryChartData = computed(() => {
+    const historyMB = currentMemUsedHistory.value;
+    const currentTotalMB = props.serverStatus?.memTotal ?? 0;
+    const historyPeakMB = Math.max(...historyMB.filter((v): v is number => v !== null), 0);
+    const requiresGB = currentTotalMB >= MB_TO_GB_THRESHOLD || historyPeakMB >= MB_TO_GB_THRESHOLD;
+    memoryUnitIsGB.value = requiresGB;
+    const displayData = requiresGB
+        ? historyMB.map(mb => mb === null ? null : parseFloat((mb / MB_TO_GB_THRESHOLD).toFixed(1)))
+        : historyMB.map(mb => mb === null ? null : parseFloat(mb.toFixed(1)));
+    return {
+        labels: initialLabels,
+        datasets: [
+            {
+                label: t('statusMonitor.memoryUsageLabelUnit', { unit: requiresGB ? 'GB' : 'MB' }),
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1,
+                data: displayData.map(v => v ?? 0),
+                tension: 0.1,
+                pointRadius: 0,
+                pointHoverRadius: 5,
             },
         ],
     };

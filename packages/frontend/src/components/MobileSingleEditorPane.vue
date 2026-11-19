@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, type PropType } from 'vue';
+import { computed, defineAsyncComponent, ref, watch, nextTick, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import MarkdownSplitEditor from './MarkdownSplitEditor.vue';
 import MarkdownViewToggle from './MarkdownViewToggle.vue';
-import CodeMirrorMobileEditor from './CodeMirrorMobileEditor.vue';
-import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import type { FileTab } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
 import { isImageFilePath } from '../constants/fileTypes';
 import type { PaneId } from '../composables/useSplitEditor';
+
+const MarkdownSplitEditor = defineAsyncComponent(() => import('./MarkdownSplitEditor.vue'));
+const CodeMirrorMobileEditor = defineAsyncComponent(() => import('./CodeMirrorMobileEditor.vue'));
+const ImageViewer = defineAsyncComponent(() => import('./ImageViewer.vue'));
 
 const props = defineProps({
   paneId: {
@@ -75,8 +76,8 @@ const localContent = ref('');
 const encodingSelectRef = ref<HTMLSelectElement | null>(null);
 
 // 编辑器引用
-const markdownEditorRef = ref<InstanceType<typeof MarkdownSplitEditor> | null>(null);
-const codeMirrorMobileEditorRef = ref<InstanceType<typeof CodeMirrorMobileEditor> | null>(null);
+const markdownEditorRef = ref<any>(null);
+const codeMirrorMobileEditorRef = ref<any>(null);
 
 // 文件类型判断
 const isImageFile = computed(() => isImageFilePath(activeTab.value?.filePath));

@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch, defineExpose, nextTick, type PropType } from 'vue';
+import { computed, defineAsyncComponent, ref, watch, defineExpose, nextTick, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import MonacoEditor from './MonacoEditor.vue';
-import MarkdownSplitEditor from './MarkdownSplitEditor.vue';
 import MarkdownViewToggle from './MarkdownViewToggle.vue';
-import MobileSingleEditorPane from './MobileSingleEditorPane.vue';
-import ImageViewer from './ImageViewer.vue';
 import FileEditorTabs from './FileEditorTabs.vue';
 import type { FileTab } from '../stores/fileEditor.store';
 import { useSessionStore } from '../stores/session.store';
@@ -13,6 +9,12 @@ import { useSettingsStore } from '../stores/settings.store';
 import { FILE_ENCODING_OPTIONS } from '../constants/fileEncodings';
 import { isImageFilePath } from '../constants/fileTypes';
 import type { SplitDirection, PaneId } from '../composables/useSplitEditor';
+
+// 重型编辑器组件按需异步加载：未打开任何文件时不下载、不解析 3.7MB Monaco / CodeMirror / Markdown 引擎
+const MonacoEditor = defineAsyncComponent(() => import('./MonacoEditor.vue'));
+const MarkdownSplitEditor = defineAsyncComponent(() => import('./MarkdownSplitEditor.vue'));
+const MobileSingleEditorPane = defineAsyncComponent(() => import('./MobileSingleEditorPane.vue'));
+const ImageViewer = defineAsyncComponent(() => import('./ImageViewer.vue'));
 
 const props = defineProps({
   paneId: {
@@ -50,6 +52,15 @@ const props = defineProps({
   fontSize: {
     type: Number,
     default: 14,
+  },
+  /**
+   * 宿主会话当前是否处于可见激活态。
+   * 多会话工作区用 v-show 常驻多个 LayoutRenderer，当后台隐藏会话收到共享编辑器标签时，
+   * 绝不应在后台重复创建 N 份 MonacoEditor 与 Web Worker。
+   */
+  isHostActive: {
+    type: Boolean,
+    default: true,
   },
 });
 
@@ -103,8 +114,8 @@ const localContent = ref('');
 const encodingSelectRef = ref<HTMLSelectElement | null>(null);
 
 // 编辑器引用
-const monacoEditorRef = ref<InstanceType<typeof MonacoEditor> | InstanceType<typeof MarkdownSplitEditor> | null>(null);
-const mobileSingleEditorPaneRef = ref<InstanceType<typeof MobileSingleEditorPane> | null>(null);
+const monacoEditorRef = ref<any>(null);
+const mobileSingleEditorPaneRef = ref<any>(null);
 
 // 文件类型判断
 const isImageFile = computed(() => isImageFilePath(activeTab.value?.filePath));
@@ -447,14 +458,14 @@ defineExpose({
 
       <!-- 图片专用视图 -->
       <ImageViewer
-        v-else-if="activeTab && isImageFile"
+        v-else-if="props.isHostActive && activeTab && isImageFile"
         :key="`img-${activeTab.id}-${props.paneId}`"
         :tab="activeTab"
       />
 
       <!-- Markdown 视图 (含分屏预览) -->
       <MarkdownSplitEditor
-        v-else-if="activeTab && isMarkdownFile"
+        v-else-if="props.isHostActive && activeTab && isMarkdownFile"
         ref="monacoEditorRef"
         :key="`md-${activeTab.id}-${props.paneId}`"
         v-model="localContent"
@@ -471,9 +482,9 @@ defineExpose({
         @update:scroll-position="handleEditorScroll"
       />
 
-      <!-- 桌面端 Monaco Editor -->
+      <!-- 桌面端 Monaco Editor（仅当前可见会话实例化，防止多会话叠加创建 N 份 Monaco + Worker） -->
       <MonacoEditor
-        v-else-if="activeTab"
+        v-else-if="props.isHostActive && activeTab"
         ref="monacoEditorRef"
         :key="`monaco-${activeTab.id}-${props.paneId}`"
         v-model="localContent"
@@ -488,6 +499,9 @@ defineExpose({
         @update:font-size="handleFontSizeUpdate"
         @update:scroll-position="handleEditorScroll"
       />
+
+      <!-- 后台隐藏态轻量占位（保持 DOM 结构零重排，不占 Monaco 内存） -->
+      <div v-else-if="activeTab" class="editor-placeholder"></div>
 
       <!-- 空白占位 -->
       <div v-else class="editor-placeholder">{{ t('fileManager.selectFileToEdit') }}</div>

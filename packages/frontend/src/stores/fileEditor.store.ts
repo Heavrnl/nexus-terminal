@@ -226,6 +226,11 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
 
         // 读取文件内容
         try {
+            // 与 SFTP 拉取并行预热 Monaco 异步 chunk，让首次打开文件几乎 0 体感等待
+            if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+                void import('../components/MonacoEditor.vue');
+            }
+
             // 调用 sftpManager.readFile 获取原始数据和编码
             // 大文件会持续推进度：这里顺手记到 tab 上，界面显示"正在读取 45%"，
             // 也避免用户以为卡死（超时判定在后端有进度时会被不断续命，不会半路切断）
@@ -430,6 +435,10 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
         }
 
         console.log(`[文件编辑器 Store] 关闭标签页: ${tabId}`);
+        // 显式清空大文本字段引用，协助 V8 立即回收已关闭大文件占用的堆内存
+        tabToClose.content = '';
+        tabToClose.originalContent = '';
+        tabToClose.rawContentBase64 = null;
         tabs.value.delete(tabId);
 
         // 如果关闭的是当前激活的标签页，则切换到另一个标签页
@@ -453,6 +462,11 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
     const closeAllTabs = () => {
         // 简单处理：直接关闭所有，不检查修改状态（实际应用需要确认）
          console.log('[文件编辑器 Store] 关闭所有标签页...');
+         for (const tab of tabs.value.values()) {
+             tab.content = '';
+             tab.originalContent = '';
+             tab.rawContentBase64 = null;
+         }
          tabs.value.clear();
          activeTabId.value = null;
          // setEditorVisibility('closed'); // 移除：容器可见性由外部控制
