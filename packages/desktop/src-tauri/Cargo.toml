@@ -1,6 +1,6 @@
 [package]
 name = "nexus-terminal-desktop"
-version = "0.9.22"
+version = "0.9.23"
 description = "Nexus Terminal - Lightweight Desktop Client powered by Tauri v2"
 authors = ["Nexus Terminal Team"]
 edition = "2021"
