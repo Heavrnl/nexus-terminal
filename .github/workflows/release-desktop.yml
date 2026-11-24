@@ -23,8 +23,13 @@ permissions:
   contents: write
 
 jobs:
+  remote-agent:
+    name: Build nexus-mux multi-platform binaries
+    uses: ./.github/workflows/build-remote-agent.yml
+
   build-windows:
     name: Build Windows Desktop & Release
+    needs: remote-agent
     runs-on: windows-latest
 
     steps:
@@ -33,6 +38,12 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 下载多平台 nexus-mux 托管代理产物（内置进安装包）
+        uses: actions/download-artifact@v4
+        with:
+          name: nexus-mux-bundle
+          path: packages/remote-agent/dist
 
       - name: 解析版本号并按需自动创建 Git Tag
         id: tag_step

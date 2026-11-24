@@ -1232,6 +1232,48 @@ const definedMigrations: Migration[] = [
                 }
             }
         }
+    },
+    {
+        id: 34,
+        name: 'Add session_hosting_mode to connections and create remote_hosted_sessions table',
+        check: async (db: Database): Promise<boolean> => {
+            const hasCol = await columnExists(db, 'connections', 'session_hosting_mode');
+            const hasTable = await tableExists(db, 'remote_hosted_sessions');
+            return !hasCol || !hasTable;
+        },
+        sql: `
+            CREATE TABLE IF NOT EXISTS remote_hosted_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uuid TEXT UNIQUE NOT NULL,
+                remote_session_id TEXT UNIQUE NOT NULL,
+                connection_uuid TEXT NULL,
+                connection_id INTEGER NULL,
+                connection_name TEXT NOT NULL DEFAULT '',
+                custom_name TEXT NULL,
+                manually_suspended INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'hanging',
+                exit_code INTEGER NULL,
+                owner_namespace TEXT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_hlc TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_hosted_sessions_uuid ON remote_hosted_sessions(uuid);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_hosted_sessions_remote_id ON remote_hosted_sessions(remote_session_id);
+            CREATE INDEX IF NOT EXISTS idx_remote_hosted_sessions_conn_uuid ON remote_hosted_sessions(connection_uuid);
+        `,
+        execute: async (db: Database): Promise<void> => {
+            const hasCol = await columnExists(db, 'connections', 'session_hosting_mode');
+            if (!hasCol) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run(
+                        `ALTER TABLE connections ADD COLUMN session_hosting_mode TEXT NOT NULL DEFAULT 'auto'`,
+                        (err) => (err ? reject(err) : resolve())
+                    );
+                });
+            }
+            console.log('[Migrations] Migration 34: connections.session_hosting_mode 与 remote_hosted_sessions 表已就绪。');
+        }
     }
 
 ];

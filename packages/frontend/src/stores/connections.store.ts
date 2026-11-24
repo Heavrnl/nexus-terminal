@@ -31,6 +31,8 @@ export interface ConnectionInfo {
     sftp_sudo_enabled?: number | boolean;
     /** 只读：后端是否已存 sudo 密码（密码本身不回传） */
     has_sudo_password?: number | boolean;
+    /** SSH 会话托管策略：auto = 跟随全局目标机托管，legacy = 禁用代理强制走传统模式 */
+    session_hosting_mode?: 'auto' | 'legacy' | null;
     /** 进入 Docker 容器的命令模板：'' = 自动探测；支持 {id}/{name}/{shell} 占位符 */
 }
 

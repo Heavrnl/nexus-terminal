@@ -2,13 +2,17 @@ import { Request } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { StringDecoder } from 'node:string_decoder';
 import { AuthenticatedWebSocket, ClientState } from '../types';
-import { clientStates, sftpService, statusMonitorService, auditLogService, notificationService } from '../state';
+import { clientStates, sftpService, statusMonitorService, auditLogService, notificationService, settingsService } from '../state';
 import * as SshService from '../../services/ssh.service';
 import { appendRingBuffer, cleanupClientConnection } from '../utils';
 import { BackendTerminalEmulator } from '../terminal-emulator';
 import { OutputCoalescer } from '../output-coalescer';
 import { temporaryLogStorageService } from '../../ssh-suspend/temporary-log-storage.service';
 import { startDockerStatusPolling } from './docker.handler';
+import { agentDeployerService } from '../../remote-agent/agent-deployer.service';
+import { MuxTransport } from '../../remote-agent/mux-transport';
+import { getOrCreateOwnerNamespace } from '../../remote-agent/owner-namespace.service';
+import { remoteHostedSessionRepository } from '../../remote-agent/remote-hosted-session.repository';
 import WebSocket from 'ws';
 
 export async function handleSshConnect(
@@ -80,17 +84,281 @@ export async function handleSshConnect(
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: '正在获取连接信息...' }));
         connInfo = await SshService.getConnectionDetails(dbConnectionId);
         newState.connectionName = connInfo!.name;
+        newState.connectionUuid = connInfo!.uuid;
 
         const sshClient = await SshService.establishSshConnection(connInfo);
         newState.sshClient = sshClient;
 
         console.log(`WebSocket: 为用户 ${ws.username} 建立 SSH 传输通道成功 (会话: ${newSessionId}, 连接名称: ${newState.connectionName})`);
 
+        const defaultCols = payload?.cols || 80;
+        const defaultRows = payload?.rows || 24;
+        const requestedTerm = payload?.term || 'xterm-256color';
+
+        // 优先尝试目标服务器自托管代理（nexus-mux），无终端 SFTP 私有通道或禁用/不支持时自动降级传统 Shell
+        let connectedViaRemoteAgent = false;
+        if (!newState.isHeadless && connInfo.session_hosting_mode !== 'legacy') {
+            try {
+                const hostingCfg = await settingsService.getRemoteSessionHostingConfig();
+                if (hostingCfg.enabled) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ssh:status', payload: '正在检测目标机托管代理 (nexus-mux)...' }));
+                    }
+                    const hostCacheKey = `${connInfo.host}:${connInfo.port}:${connInfo.username}`;
+                    const deployRes = await agentDeployerService.ensureAgentReady(sshClient, {
+                        hostCacheKey,
+                        autoDeploy: hostingCfg.autoDeploy,
+                    });
+
+                    if (deployRes.ready && deployRes.platformFamily && deployRes.binaryPath) {
+                        const { ownerNamespace } = await getOrCreateOwnerNamespace();
+                        const syncClientId = String((ws as any).syncClientId || newSessionId);
+                        const muxTransport = await MuxTransport.connect(sshClient, {
+                            platformFamily: deployRes.platformFamily,
+                            binaryPath: deployRes.binaryPath,
+                            ownerNamespace,
+                            clientId: syncClientId,
+                            detachedIdleHours: hostingCfg.detachedIdleHours,
+                        });
+
+                        const requestedRemoteId =
+                            typeof payload?.remoteSessionId === 'string' && payload.remoteSessionId.trim().length > 0
+                                ? payload.remoteSessionId.trim()
+                                : `nx-${uuidv4()}`;
+                        const replayMode: 'full' | 'delta' =
+                            payload?.replay === 'delta' && typeof payload?.lastSeq === 'number' ? 'delta' : 'full';
+                        const lastSeq = typeof payload?.lastSeq === 'number' ? payload.lastSeq : undefined;
+
+                        const initialCols = newState.pendingDimensions?.cols || defaultCols;
+                        const initialRows = newState.pendingDimensions?.rows || defaultRows;
+                        delete newState.pendingDimensions;
+
+                        const persistenceWarning =
+                            deployRes.persistenceWarning || muxTransport.helloAck?.persistenceWarning || undefined;
+
+                        newState.hostingMode = 'remote-agent';
+                        newState.remoteSessionId = requestedRemoteId;
+                        newState.muxTransport = muxTransport;
+                        newState.persistenceWarning = persistenceWarning;
+
+                        let connectedEventSent = false;
+                        const ensureConnectedSent = (meta: {
+                            created: boolean;
+                            currentSeq: number;
+                            replayMode: 'full' | 'delta';
+                        }) => {
+                            if (connectedEventSent) return;
+                            connectedEventSent = true;
+                            newState.isShellReady = true;
+                            newState.lastMuxSeq = meta.currentSeq;
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({
+                                    type: 'ssh:connected',
+                                    sessionId: newSessionId,
+                                    payload: {
+                                        connectionId: dbConnectionIdAsNumber,
+                                        sessionId: newSessionId,
+                                        hostingMode: 'remote-agent',
+                                        remoteSessionId: requestedRemoteId,
+                                        created: meta.created,
+                                        currentSeq: meta.currentSeq,
+                                        replayMode: meta.replayMode,
+                                        persistenceWarning,
+                                    },
+                                }));
+                            }
+                        };
+
+                        const outputCoalescer = new OutputCoalescer({
+                            onFlush: (merged: Buffer) => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'ssh:output',
+                                        payload: merged.toString('base64'),
+                                        encoding: 'base64',
+                                        seq: newState.lastMuxSeq,
+                                    }));
+                                }
+                            },
+                        });
+                        newState.outputCoalescer = outputCoalescer;
+                        const snapshotDecoder = new StringDecoder('utf8');
+
+                        const mainHandle = await muxTransport.openOrAttach(
+                            {
+                                remoteSessionId: requestedRemoteId,
+                                cols: initialCols,
+                                rows: initialRows,
+                                term: requestedTerm,
+                                replay: replayMode,
+                                lastSeq,
+                                connectionUuid: connInfo.uuid,
+                                title: connInfo.name || connInfo.host,
+                                attachOnly: payload?.attachOnly === true,
+                            },
+                            {
+                                onAttached: (handle) => {
+                                    // 同步绑定 muxMainHandle 并下发携带真实 created/currentSeq 的 ssh:connected，
+                                    // 彻底消除 MSG_ATTACHED 与 MSG_SNAPSHOT 同包到达时的微任务竞态丢首条输入问题
+                                    newState.muxMainHandle = handle;
+                                    ensureConnectedSent({
+                                        created: handle.created,
+                                        currentSeq: handle.currentSeq,
+                                        replayMode: handle.replayMode,
+                                    });
+                                },
+                                onSnapshotChunk: (chunk, info) => {
+                                    if (ws.readyState !== WebSocket.OPEN) return;
+                                    if (info.isDelta) {
+                                        if (chunk.length > 0) {
+                                            ws.send(JSON.stringify({
+                                                type: 'ssh:output',
+                                                payload: chunk.toString('base64'),
+                                                encoding: 'base64',
+                                                seq: newState.lastMuxSeq,
+                                            }));
+                                        }
+                                    } else {
+                                        const text = chunk.length > 0 ? snapshotDecoder.write(chunk) : '';
+                                        const tail = info.isLast ? snapshotDecoder.end() : '';
+                                        const combined = text + tail;
+                                        if (combined.length > 0 || info.isLast) {
+                                            ws.send(JSON.stringify({
+                                                type: 'SSH_OUTPUT_CACHED_CHUNK',
+                                                payload: {
+                                                    frontendSessionId: newSessionId,
+                                                    data: combined,
+                                                    isLastChunk: info.isLast,
+                                                },
+                                            }));
+                                        }
+                                    }
+                                },
+                                onData: (raw, seq) => {
+                                    newState.lastMuxSeq = seq;
+                                    outputCoalescer.push(raw);
+                                },
+                                onDetached: (reason) => {
+                                    console.log(`[SSH Handler] 目标机托管会话 ${requestedRemoteId} 已脱离 (原因: ${reason})`);
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({
+                                            type: reason === 'taken_over_by_new_attach' ? 'ssh:detached' : 'ssh:disconnected',
+                                            payload: reason === 'taken_over_by_new_attach'
+                                                ? { sessionId: newSessionId, remoteSessionId: requestedRemoteId, reason }
+                                                : '目标机托管会话已终止。',
+                                        }));
+                                    }
+                                    if (reason === 'taken_over_by_new_attach') {
+                                        newState.isMarkedForSuspend = false;
+                                        newState.isExplicitlyClosed = false;
+                                    }
+                                    cleanupClientConnection(newSessionId, ws);
+                                },
+                                onExited: (info) => {
+                                    console.log(`[SSH Handler] 目标机托管会话 ${requestedRemoteId} 进程已退出 (code=${info.exitCode})`);
+                                    remoteHostedSessionRepository
+                                        .updateStatus(requestedRemoteId, 'exited', info.exitCode ?? null)
+                                        .catch(() => {});
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({
+                                            type: 'ssh:disconnected',
+                                            payload: `Shell 进程已退出 (退出码: ${info.exitCode ?? '未知'})。`,
+                                        }));
+                                    }
+                                    cleanupClientConnection(newSessionId, ws);
+                                },
+                                onError: (err) => {
+                                    console.error(`[SSH Handler] 目标机托管通道错误 (${requestedRemoteId}):`, err);
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify({ type: 'ssh:error', payload: `托管会话错误: ${err.message}` }));
+                                    }
+                                },
+                            }
+                        );
+
+                        newState.muxMainHandle = mainHandle;
+                        ensureConnectedSent({
+                            created: mainHandle.created,
+                            currentSeq: mainHandle.currentSeq,
+                            replayMode: mainHandle.replayMode,
+                        });
+
+                        // 从挂起列表恢复到前台后，清理可能存在的手动挂起占位条目
+                        if (!mainHandle.created) {
+                            remoteHostedSessionRepository.deleteByRemoteSessionId(requestedRemoteId).catch(() => {});
+                        }
+
+                        muxTransport.on('close', () => {
+                            if (ws.readyState === WebSocket.OPEN && !newState.isExplicitlyClosed) {
+                                ws.send(JSON.stringify({ type: 'ssh:disconnected', payload: '目标机托管通道已断开（会话在目标机保持运行）。' }));
+                            }
+                            cleanupClientConnection(newSessionId, ws);
+                        });
+
+                        connectedViaRemoteAgent = true;
+                        console.log(
+                            `WebSocket: 会话 ${newSessionId} 已通过目标机 nexus-mux v${deployRes.version} (${deployRes.os}-${deployRes.arch}) ${mainHandle.created ? '创建' : '接管'}托管会话 ${requestedRemoteId}。`
+                        );
+
+                        if (newState.pendingPaneOpens && newState.pendingPaneOpens.size > 0) {
+                            for (const [pId, pOpts] of newState.pendingPaneOpens.entries()) {
+                                openPaneShell(
+                                    ws,
+                                    newSessionId,
+                                    newState,
+                                    pId,
+                                    pOpts.cols,
+                                    pOpts.rows,
+                                    pOpts.term,
+                                    pOpts.paneIndex,
+                                    pOpts.remotePaneSessionId
+                                );
+                            }
+                            newState.pendingPaneOpens.clear();
+                        }
+
+                        auditLogService.logAction('SSH_CONNECT_SUCCESS', {
+                            userId: ws.userId,
+                            username: ws.username,
+                            connectionId: dbConnectionIdAsNumber,
+                            sessionId: newSessionId,
+                            ip: newState.ipAddress,
+                            connectionName: connInfo!.name,
+                            hostingMode: 'remote-agent',
+                            remoteSessionId: requestedRemoteId,
+                        });
+                        notificationService.sendNotification('SSH_CONNECT_SUCCESS', {
+                            userId: ws.userId,
+                            username: ws.username,
+                            connectionId: dbConnectionIdAsNumber,
+                            sessionId: newSessionId,
+                            ip: newState.ipAddress,
+                        });
+
+                        sftpService.initializeSftpSession(newSessionId)
+                            .then(() => console.log(`SFTP: 会话 ${newSessionId} 异步初始化成功。`))
+                            .catch(sftpInitError => console.error(`WebSocket: 会话 ${newSessionId} 异步初始化 SFTP 失败:`, sftpInitError));
+                        statusMonitorService.startStatusPolling(newSessionId);
+                        startDockerStatusPolling(newSessionId);
+                    } else {
+                        console.log(`[SSH Handler] 主机 ${connInfo.name} 降级至传统后端托管模式: ${deployRes.fallbackReason || '未启用'}`);
+                    }
+                }
+            } catch (agentErr: any) {
+                console.warn(`[SSH Handler] 启动目标机 nexus-mux 托管失败，自动无缝降级至传统 SSH Shell:`, agentErr?.message || agentErr);
+                try { newState.muxTransport?.destroy(); } catch {}
+                newState.muxTransport = undefined;
+                newState.muxMainHandle = undefined;
+                newState.remoteSessionId = undefined;
+                newState.hostingMode = 'legacy';
+            }
+        }
+
+        if (!connectedViaRemoteAgent) {
+        newState.hostingMode = 'legacy';
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: 'SSH 连接成功，正在打开 Shell...' }));
         try {
-            const defaultCols = payload?.cols || 80; // Use provided cols or default
-            const defaultRows = payload?.rows || 24; // Use provided rows or default
-            sshClient.shell({ term: payload?.term || 'xterm-256color', cols: defaultCols, rows: defaultRows }, (err, stream) => {
+            sshClient.shell({ term: requestedTerm, cols: defaultCols, rows: defaultRows }, (err, stream) => {
                 if (err) {
                     console.error(`SSH: 会话 ${newSessionId} 打开 Shell 失败:`, err);
                     auditLogService.logAction('SSH_SHELL_FAILURE', {
@@ -207,7 +475,8 @@ export async function handleSshConnect(
                     sessionId: newSessionId,
                     payload: {
                         connectionId: dbConnectionIdAsNumber,
-                        sessionId: newSessionId
+                        sessionId: newSessionId,
+                        hostingMode: 'legacy',
                     }
                 }));
                 console.log(`WebSocket: 会话 ${newSessionId} SSH 连接和 Shell 建立成功。`);
@@ -251,6 +520,7 @@ export async function handleSshConnect(
             }
             cleanupClientConnection(newSessionId);
         }
+        } // end if (!connectedViaRemoteAgent)
 
         sshClient.on('close', () => {
             console.log(`SSH: 会话 ${newSessionId} 的客户端连接已关闭。`);
@@ -282,7 +552,12 @@ export async function handleSshConnect(
             reason: connectError.message
         });
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:error', payload: `连接失败: ${connectError.message}` }));
-        ws.close(1011, `SSH Connection Failed: ${connectError.message}`);
+        // RFC 6455 规定 WebSocket Close Reason 不能超过 123 字节 UTF-8，超长会抛 RangeError 阻断正常关闭
+        const rawCloseReason = `SSH Connection Failed: ${connectError.message || 'unknown'}`;
+        const safeCloseReason = Buffer.byteLength(rawCloseReason, 'utf8') <= 110
+            ? rawCloseReason
+            : Buffer.from(rawCloseReason, 'utf8').subarray(0, 110).toString('utf8');
+        ws.close(1011, safeCloseReason);
     }
 }
 
@@ -290,13 +565,17 @@ export function handleSshInput(ws: AuthenticatedWebSocket, payload: any): void {
     const sessionId = ws.sessionId;
     const state = sessionId ? clientStates.get(sessionId) : undefined;
 
-    if (!state || !state.sshShellStream) {
+    if (!state || (!state.sshShellStream && !state.muxMainHandle)) {
         console.warn(`WebSocket: 收到来自 ${ws.username} (会话: ${sessionId}) 的 SSH 输入，但无活动 Shell。`);
         return;
     }
     const data = payload?.data;
-    if (typeof data === 'string' && state.isShellReady) { // Check isShellReady
-        state.sshShellStream.write(data);
+    if (typeof data === 'string' && state.isShellReady) {
+        if (state.hostingMode === 'remote-agent' && state.muxMainHandle) {
+            state.muxMainHandle.write(data);
+        } else if (state.sshShellStream) {
+            state.sshShellStream.write(data);
+        }
     } else if (!state.isShellReady) {
         console.warn(`WebSocket: 会话 ${sessionId} 收到 SSH 输入，但 Shell 尚未就绪。`);
     }
@@ -317,7 +596,9 @@ export function handleSshResize(ws: AuthenticatedWebSocket, payload: any): void 
         return;
     }
 
-    if (state.isShellReady && state.sshShellStream) {
+    if (state.isShellReady && state.hostingMode === 'remote-agent' && state.muxMainHandle) {
+        state.muxMainHandle.resize(cols, rows);
+    } else if (state.isShellReady && state.sshShellStream) {
         console.log(`SSH: 会话 ${sessionId} 调整终端大小: ${cols}x${rows}`);
         state.sshShellStream.setWindow(rows, cols, 0, 0);
         state.terminalEmulator?.resize(cols, rows);
@@ -350,7 +631,8 @@ export function openPaneShell(
     cols: number = 80,
     rows: number = 24,
     term: string = 'xterm-256color',
-    paneIndex?: number
+    paneIndex?: number,
+    remotePaneSessionId?: string
 ): void {
     if (!state.sshClient) {
         console.warn(`[openPaneShell] 会话 ${sessionId} 缺少活动 sshClient，无法为 ${paneId} 打开 Shell`);
@@ -361,8 +643,133 @@ export function openPaneShell(
     }
     const existingPane = state.paneStreams.get(paneId);
     if (existingPane) {
-        try { existingPane.stream?.end(); } catch (e) {}
+        try { existingPane.muxHandle?.detach(); } catch {}
+        try { existingPane.stream?.end(); } catch {}
         state.paneStreams.delete(paneId);
+    }
+
+    // 目标机自托管模式：在既有 muxTransport 单通道上多路复用独立分屏 PTY（零额外 sshd MaxSessions 消耗）
+    if (state.hostingMode === 'remote-agent' && state.muxTransport && !state.muxTransport.isClosed()) {
+        const targetRemotePaneId =
+            (remotePaneSessionId && remotePaneSessionId.trim()) || `nx-pane-${uuidv4()}`;
+        console.log(`SSH: 会话 ${sessionId} 通过 nexus-mux 多路复用为分屏 ${paneId} 打开/接管 PTY (${targetRemotePaneId}, ${cols}x${rows})...`);
+
+        let readySent = false;
+        const sendPaneReady = () => {
+            if (readySent) return;
+            readySent = true;
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_ready',
+                    sessionId,
+                    payload: {
+                        paneId,
+                        hostingMode: 'remote-agent',
+                        remotePaneSessionId: targetRemotePaneId,
+                    },
+                }));
+            }
+        };
+
+        state.muxTransport
+            .openOrAttach(
+                {
+                    remoteSessionId: targetRemotePaneId,
+                    cols,
+                    rows,
+                    term,
+                    replay: 'full',
+                    connectionUuid: state.connectionUuid,
+                    title: `${state.connectionName || 'Shell'} #${paneIndex ?? paneId}`,
+                },
+                {
+                    onAttached: (muxHandle) => {
+                        state.paneStreams!.set(paneId, {
+                            paneId,
+                            paneIndex,
+                            muxHandle,
+                            remotePaneSessionId: targetRemotePaneId,
+                            lastMuxSeq: muxHandle.currentSeq,
+                            isReady: true,
+                        });
+                        sendPaneReady();
+                    },
+                    onSnapshotChunk: (chunk) => {
+                        sendPaneReady();
+                        if (chunk.length > 0 && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ssh:pane_output',
+                                sessionId,
+                                payload: {
+                                    paneId,
+                                    data: chunk.toString('base64'),
+                                },
+                                encoding: 'base64',
+                            }));
+                        }
+                    },
+                    onData: (raw, seq) => {
+                        const p = state.paneStreams?.get(paneId);
+                        if (p) p.lastMuxSeq = seq;
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ssh:pane_output',
+                                sessionId,
+                                payload: {
+                                    paneId,
+                                    data: raw.toString('base64'),
+                                },
+                                encoding: 'base64',
+                            }));
+                        }
+                    },
+                    onDetached: () => {
+                        state.paneStreams?.delete(paneId);
+                    },
+                    onExited: () => {
+                        state.paneStreams?.delete(paneId);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ssh:pane_closed',
+                                sessionId,
+                                payload: { paneId },
+                            }));
+                        }
+                    },
+                    onError: (err) => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'ssh:pane_error',
+                                sessionId,
+                                payload: { paneId, error: err.message },
+                            }));
+                        }
+                    },
+                }
+            )
+            .then((muxHandle) => {
+                state.paneStreams!.set(paneId, {
+                    paneId,
+                    paneIndex,
+                    muxHandle,
+                    remotePaneSessionId: targetRemotePaneId,
+                    lastMuxSeq: muxHandle.currentSeq,
+                    isReady: true,
+                });
+                sendPaneReady();
+                console.log(`SSH: 会话 ${sessionId} 分屏 ${paneId} 已通过 nexus-mux 就绪 (${targetRemotePaneId})。`);
+            })
+            .catch((err: any) => {
+                console.error(`SSH: 会话 ${sessionId} 通过 nexus-mux 打开分屏 ${paneId} 失败:`, err);
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'ssh:pane_error',
+                        sessionId,
+                        payload: { paneId, error: err?.message || String(err) },
+                    }));
+                }
+            });
+        return;
     }
 
     console.log(`SSH: 会话 ${sessionId} 正在为分屏终端 ${paneId} 打开独立 Shell (${cols}x${rows})...`);
@@ -457,6 +864,10 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
     const paneIndex = typeof payload?.paneIndex === 'number' && Number.isInteger(payload.paneIndex)
         ? payload.paneIndex
         : undefined;
+    const remotePaneSessionId =
+        typeof payload?.remotePaneSessionId === 'string' && payload.remotePaneSessionId.trim().length > 0
+            ? payload.remotePaneSessionId.trim()
+            : undefined;
 
     // 情况 A：SSH 已连接就绪，立即派生打开或复用保活通道
     if (state && state.sshClient && state.isShellReady) {
@@ -465,12 +876,34 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
         let existingPane = matchedKey ? state.paneStreams?.get(matchedKey) : undefined;
         if (!existingPane && paneIndex !== undefined && state.paneStreams) {
             for (const [k, p] of state.paneStreams.entries()) {
-                if (p && p.isReady && p.stream && p.paneIndex === paneIndex) {
+                if (p && p.isReady && (p.stream || p.muxHandle) && p.paneIndex === paneIndex) {
                     matchedKey = k;
                     existingPane = p;
                     break;
                 }
             }
+        }
+        if (existingPane && existingPane.muxHandle && existingPane.isReady) {
+            if (matchedKey && matchedKey !== paneId && state.paneStreams) {
+                state.paneStreams.delete(matchedKey);
+                existingPane.paneId = paneId;
+                state.paneStreams.set(paneId, existingPane);
+            }
+            if (typeof cols === 'number' && typeof rows === 'number' && cols > 0 && rows > 0) {
+                try { existingPane.muxHandle.resize(cols, rows); } catch {}
+            }
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_ready',
+                    sessionId,
+                    payload: {
+                        paneId,
+                        hostingMode: 'remote-agent',
+                        remotePaneSessionId: existingPane.remotePaneSessionId,
+                    },
+                }));
+            }
+            return;
         }
         if (existingPane && existingPane.stream && existingPane.isReady) {
             if (matchedKey && matchedKey !== paneId && state.paneStreams) {
@@ -547,14 +980,14 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
             }
             return;
         }
-        openPaneShell(ws, sessionId, state, paneId, cols, rows, term, paneIndex);
+        openPaneShell(ws, sessionId, state, paneId, cols, rows, term, paneIndex, remotePaneSessionId);
     } else if (state) {
         // 情况 B：会话正在握手连接中，暂存打开请求，连接成功发 ssh:connected 后自动消费
         console.log(`WebSocket: 会话 ${sessionId} 收到分屏 ${paneId} 打开请求，SSH 正在握手，加入暂存等待队列...`);
         if (!state.pendingPaneOpens) {
             state.pendingPaneOpens = new Map();
         }
-        state.pendingPaneOpens.set(paneId, { cols, rows, term, paneIndex });
+        state.pendingPaneOpens.set(paneId, { cols, rows, term, paneIndex, remotePaneSessionId });
     } else {
         console.warn(`WebSocket: 收到分屏打开请求，但未找到对应的活动会话 (sessionId: ${sessionId}, paneId: ${paneId})`);
     }
@@ -572,13 +1005,17 @@ export function handleSshPaneInput(ws: AuthenticatedWebSocket, payload: any, inc
     }
 
     const paneState = state.paneStreams.get(paneId);
-    if (!paneState || !paneState.stream || !paneState.isReady) {
+    if (!paneState || (!paneState.stream && !paneState.muxHandle) || !paneState.isReady) {
         console.warn(`WebSocket: 分屏终端 ${paneId} 尚未就绪，忽略输入。`);
         return;
     }
 
     if (typeof data === 'string') {
-        paneState.stream.write(data);
+        if (paneState.muxHandle) {
+            paneState.muxHandle.write(data);
+        } else if (paneState.stream) {
+            paneState.stream.write(data);
+        }
     }
 }
 
@@ -591,9 +1028,13 @@ export function handleSshPaneResize(ws: AuthenticatedWebSocket, payload: any, in
     if (!state || !state.paneStreams) return;
 
     const paneState = state.paneStreams.get(paneId);
-    if (paneState && paneState.stream && paneState.isReady) {
+    if (paneState && paneState.isReady) {
         if (typeof cols === 'number' && typeof rows === 'number' && cols > 0 && rows > 0) {
-            paneState.stream.setWindow(rows, cols, 0, 0);
+            if (paneState.muxHandle) {
+                paneState.muxHandle.resize(cols, rows);
+            } else if (paneState.stream) {
+                paneState.stream.setWindow(rows, cols, 0, 0);
+            }
         }
     }
 }
@@ -608,6 +1049,7 @@ export function handleSshPaneClose(ws: AuthenticatedWebSocket, payload: any, inc
     const paneState = state.paneStreams.get(paneId);
     if (paneState) {
         try {
+            paneState.muxHandle?.kill();
             paneState.stream?.destroy();
         } catch (e) {}
         state.paneStreams.delete(paneId);

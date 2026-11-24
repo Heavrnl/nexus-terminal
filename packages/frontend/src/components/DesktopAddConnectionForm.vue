@@ -148,6 +148,7 @@ onUnmounted(() => {
             @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
             :add-jump-host="addJumpHost"
             :remove-jump-host="removeJumpHost"
+            :is-edit-mode="isEditMode"
           />
         </template>
 

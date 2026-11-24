@@ -42,6 +42,20 @@ export function useWorkspaceSettings() {
     errorMessage: () => t('settings.commandInputSync.error.saveFailed', '保存同步目标失败'),
   });
 
+  // --- 目标机托管活跃脱离会话空闲回收时长（小时，0 = 永不自动强杀）---
+  const remoteSessionDetachedIdleHours = useNumberSettingControl({
+    key: 'remoteSessionDetachedIdleHours',
+    defaultValue: 0,
+    validate: (value) => {
+      if (value !== null && value !== undefined && (!Number.isInteger(value) || value < 0 || value > 8760)) {
+        throw new Error(t('settings.remoteHosting.error.invalidIdleHours', '请输入 0 到 8760 之间的整数（0 表示永不自动回收）。'));
+      }
+    },
+    serialize: (value) => (value === null || value === undefined ? '0' : String(value)),
+    successMessage: () => t('settings.remoteHosting.success.idleHoursSaved', '空闲回收时长已保存。'),
+    errorMessage: () => t('settings.remoteHosting.error.idleHoursSaveFailed', '保存空闲回收时长失败。'),
+  });
+
   // --- 终端回滚行数（0 = 不限制，空值回落 5000）---
   const terminalScrollbackLimit = useNumberSettingControl({
     key: 'terminalScrollbackLimit',
@@ -121,6 +135,12 @@ export function useWorkspaceSettings() {
     terminalScrollbackLimitMessage: terminalScrollbackLimit.message,
     terminalScrollbackLimitSuccess: terminalScrollbackLimit.success,
     handleUpdateTerminalScrollbackLimit: terminalScrollbackLimit.save,
+
+    remoteSessionDetachedIdleHoursLocal: remoteSessionDetachedIdleHours.local,
+    remoteSessionDetachedIdleHoursLoading: remoteSessionDetachedIdleHours.loading,
+    remoteSessionDetachedIdleHoursMessage: remoteSessionDetachedIdleHours.message,
+    remoteSessionDetachedIdleHoursSuccess: remoteSessionDetachedIdleHours.success,
+    handleUpdateRemoteSessionDetachedIdleHours: remoteSessionDetachedIdleHours.save,
 
     terminalRightClickBehaviorLocal: terminalRightClickBehavior.local,
     terminalRightClickBehaviorLoading: terminalRightClickBehavior.loading,

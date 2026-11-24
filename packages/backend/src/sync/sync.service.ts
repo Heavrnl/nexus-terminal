@@ -63,6 +63,7 @@ export interface SyncExchangePayload {
     users?: SyncEntityItem[];
     terminal_themes?: SyncEntityItem[];
     favorite_paths?: SyncEntityItem[];
+    remote_hosted_sessions?: SyncEntityItem[];
     workspace_sync?: SyncEntityItem[];
     command_history?: SyncEntityItem[];
   };
@@ -179,7 +180,7 @@ export const syncService = {
         `SELECT c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method,
                 c.encrypted_password, c.encrypted_private_key, c.encrypted_passphrase,
                 c.proxy_type, c.notes, c.jump_chain, c.background_color, c.file_protocol,
-                c.startup_command, c.sftp_sudo_enabled, c.encrypted_sudo_password,
+                c.startup_command, c.sftp_sudo_enabled, c.encrypted_sudo_password, c.session_hosting_mode,
                 c.created_at, c.updated_at,
                 p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
          FROM connections c
@@ -226,6 +227,7 @@ export const syncService = {
             startup_command: r.startup_command || '',
             sftp_sudo_enabled: r.sftp_sudo_enabled ? 1 : 0,
             encrypted_sudo_password: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_sudo_password, apiKey),
+            session_hosting_mode: r.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
             folder_uuids: tagUuids,
             file_highlights: highlightRows,
             created_at: r.created_at,
@@ -434,6 +436,35 @@ export const syncService = {
       });
     }
 
+    // 15. 导出 remote_hosted_sessions (目标机自托管挂起会话元数据，跟随 connections.hosts 模块)
+    let remote_hosted_sessions: SyncEntityItem[] = [];
+    if (en('connections.hosts')) {
+      const hostedRows = await allDb<any>(
+        db,
+        `SELECT uuid, remote_session_id, owner_namespace, connection_uuid, connection_name,
+                custom_name, status, exit_code, manually_suspended, created_at, updated_at
+         FROM remote_hosted_sessions
+         WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      remote_hosted_sessions = hostedRows.map(r => ({
+        uuid: r.uuid || r.remote_session_id,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: {
+          remote_session_id: r.remote_session_id,
+          owner_namespace: r.owner_namespace || null,
+          connection_uuid: r.connection_uuid || null,
+          connection_name: r.connection_name || '',
+          custom_name: r.custom_name || null,
+          status: r.status || 'hanging',
+          exit_code: r.exit_code ?? null,
+          manually_suspended: r.manually_suspended ? 1 : 0,
+          created_at: r.created_at || r.updated_at,
+          updated_at: r.updated_at,
+        }
+      }));
+    }
+
     return {
       entities: {
         folders,
@@ -447,6 +478,7 @@ export const syncService = {
         users,
         terminal_themes,
         favorite_paths,
+        remote_hosted_sessions,
         workspace_sync,
         command_history
       },
@@ -823,8 +855,8 @@ export const syncService = {
                                      encrypted_password, encrypted_private_key, encrypted_passphrase,
                                      proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
                                      file_protocol, startup_command, sftp_sudo_enabled, encrypted_sudo_password,
-                                     created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                     session_hosting_mode, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               item.uuid,
               item.data.name || null,
@@ -846,6 +878,7 @@ export const syncService = {
               item.data.startup_command || '',
               item.data.sftp_sudo_enabled ? 1 : 0,
               localEncSudo,
+              item.data.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
               item.data.created_at || item.updated_at,
               item.updated_at
             ]
@@ -858,7 +891,8 @@ export const syncService = {
             `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                    encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                    proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?, background_color = ?,
-                                   file_protocol = ?, startup_command = ?, sftp_sudo_enabled = ?, encrypted_sudo_password = ?, updated_at = ?
+                                   file_protocol = ?, startup_command = ?, sftp_sudo_enabled = ?, encrypted_sudo_password = ?,
+                                   session_hosting_mode = ?, updated_at = ?
              WHERE uuid = ?`,
             [
               item.data.name || null,
@@ -880,6 +914,7 @@ export const syncService = {
               item.data.startup_command || '',
               item.data.sftp_sudo_enabled ? 1 : 0,
               localEncSudo,
+              item.data.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
               item.updated_at,
               item.uuid
             ]
@@ -1209,6 +1244,78 @@ export const syncService = {
       }
     }
 
+    // --- 步骤 11.5: 合并 remote_hosted_sessions (目标机自托管挂起会话元数据) ---
+    if (en('connections.hosts') && entities.remote_hosted_sessions && entities.remote_hosted_sessions.length > 0) {
+      const appliedHlc = `${String(Date.now()).padStart(13, '0')}-00000-v1apply`;
+      for (const item of entities.remote_hosted_sessions) {
+        const d = item.data;
+        if (!d?.remote_session_id) continue;
+        let resolvedConnectionId: number | null = null;
+        if (d.connection_uuid) {
+          const connRow = await getDb<{ id: number }>(
+            db,
+            `SELECT id FROM connections WHERE uuid = ? LIMIT 1`,
+            [d.connection_uuid]
+          );
+          if (connRow) resolvedConnectionId = connRow.id;
+        }
+        const local = await getDb<{ id: number; updated_at: number }>(
+          db,
+          `SELECT id, updated_at FROM remote_hosted_sessions WHERE remote_session_id = ? LIMIT 1`,
+          [d.remote_session_id]
+        );
+        if (!local) {
+          await runDb(
+            db,
+            `INSERT INTO remote_hosted_sessions (
+               uuid, remote_session_id, owner_namespace, connection_uuid, connection_id, connection_name,
+               custom_name, status, exit_code, manually_suspended, created_at, updated_at, updated_hlc
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              item.uuid || d.remote_session_id,
+              d.remote_session_id,
+              d.owner_namespace || null,
+              d.connection_uuid || null,
+              resolvedConnectionId,
+              d.connection_name || '',
+              d.custom_name || null,
+              d.status || 'hanging',
+              d.exit_code ?? null,
+              d.manually_suspended ? 1 : 0,
+              d.created_at || item.updated_at,
+              item.updated_at,
+              appliedHlc,
+            ]
+          );
+          pushed++;
+        } else if (item.updated_at > (local.updated_at || 0)) {
+          await runDb(
+            db,
+            `UPDATE remote_hosted_sessions
+             SET owner_namespace = ?, connection_uuid = ?, connection_id = COALESCE(?, connection_id),
+                 connection_name = ?, custom_name = ?, status = ?, exit_code = ?,
+                 manually_suspended = ?, updated_at = ?, updated_hlc = ?
+             WHERE id = ?`,
+            [
+              d.owner_namespace || null,
+              d.connection_uuid || null,
+              resolvedConnectionId,
+              d.connection_name || '',
+              d.custom_name || null,
+              d.status || 'hanging',
+              d.exit_code ?? null,
+              d.manually_suspended ? 1 : 0,
+              item.updated_at,
+              appliedHlc,
+              local.id,
+            ]
+          );
+          pushed++;
+          conflictsResolved++;
+        }
+      }
+    }
+
     // --- 步骤 12: 合并 command_history (命令历史，按 command 去重并携带确定性 UUID 与 HLC) ---
     if (en('commandHistory.history') && entities.command_history && entities.command_history.length > 0) {
       let maxV1CmdMs = 0;
@@ -1347,9 +1454,10 @@ export const syncService = {
           await runDb(db, 'DELETE FROM connection_folders');
           await runDb(db, 'DELETE FROM file_color_highlights');
           await runDb(db, 'DELETE FROM port_forwards');
+          await runDb(db, 'DELETE FROM remote_hosted_sessions');
           await runDb(db, 'DELETE FROM connections');
-          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'port_forwards', 'file_color_highlights')`);
-          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'port_forwards', 'file_color_highlights')`);
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'port_forwards', 'file_color_highlights', 'remote_hosted_sessions')`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'port_forwards', 'file_color_highlights', 'remote_hosted_sessions')`);
           await runDb(db, `DELETE FROM sync_pending_references WHERE child_tbl = 'connections'`);
         }
         if (en('connections.folders')) {

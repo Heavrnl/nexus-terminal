@@ -12,6 +12,11 @@ import { temporaryLogStorageService, TemporaryLogStorageService } from './tempor
 import { ClientState } from '../websocket/types';
 import { BackendTerminalEmulator } from '../websocket/terminal-emulator';
 import { shouldPruneTakeoverSuspend } from '../workspace-sync/workspace-sync.pure';
+import { remoteHostedSessionRepository } from '../remote-agent/remote-hosted-session.repository';
+import { agentDeployerService } from '../remote-agent/agent-deployer.service';
+import { getOrCreateOwnerNamespace } from '../remote-agent/owner-namespace.service';
+import * as ConnectionRepository from '../connections/connection.repository';
+import * as SshService from '../services/ssh.service';
 
 /**
  * 挂起态单会话 delta 内存缓冲上限（512KB）。
@@ -348,10 +353,52 @@ export class SshSuspendService extends EventEmitter {
         disconnectionTimestamp: details.disconnectionTimestamp,
         originalSessionId: details.originalSessionId,
         manuallySuspended: details.manuallySuspended === true,
+        hostingMode: 'legacy',
       });
     }
-    // TODO: 增强此方法以从日志目录恢复 'disconnected_by_backend' 的会话状态，
-    // 这需要日志文件包含元数据。
+
+    // 合并数据库中持久化的目标机自托管会话（Web 与桌面端跨端同步、重启不丢失）
+    try {
+      const hostedRecords = await remoteHostedSessionRepository.listAll();
+      if (hostedRecords.length > 0) {
+        const allConns = await ConnectionRepository.findAllConnectionsWithFolders().catch(() => []);
+        const connByUuid = new Map<string, number>();
+        const connByName = new Map<string, number>();
+        for (const c of allConns) {
+          if (c.uuid) connByUuid.set(c.uuid, c.id);
+          if (c.name) connByName.set(c.name.trim().toLowerCase(), c.id);
+        }
+
+        for (const rec of hostedRecords) {
+          const resolvedConnId =
+            (rec.connection_uuid && connByUuid.get(rec.connection_uuid)) ||
+            (rec.connection_name && connByName.get(rec.connection_name.trim().toLowerCase())) ||
+            rec.connection_id ||
+            0;
+          sessionsInfo.push({
+            suspendSessionId: rec.remote_session_id,
+            connectionName: rec.connection_name || '目标机托管会话',
+            connectionId: String(resolvedConnId),
+            connectionUuid: rec.connection_uuid || undefined,
+            suspendStartTime: new Date((rec.created_at || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+            customSuspendName: rec.custom_name || undefined,
+            backendSshStatus: rec.status === 'exited' ? 'disconnected_by_backend' : 'hanging',
+            disconnectionTimestamp:
+              rec.status === 'exited'
+                ? new Date((rec.updated_at || Math.floor(Date.now() / 1000)) * 1000).toISOString()
+                : undefined,
+            originalSessionId: rec.remote_session_id,
+            manuallySuspended: rec.manually_suspended === 1,
+            hostingMode: 'remote-agent',
+            remoteSessionId: rec.remote_session_id,
+            exitCode: rec.exit_code,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn('[SshSuspendService] 读取持久化目标机托管会话失败:', err?.message || err);
+    }
+
     return sessionsInfo;
   }
 
@@ -536,6 +583,33 @@ export class SshSuspendService extends EventEmitter {
     const session = userSessions.get(suspendSessionId);
 
     if (!session || session.backendSshStatus !== 'hanging') {
+      // 检查是否为目标机持久化托管会话（remote_hosted_sessions）
+      if (!session) {
+        const hosted = await remoteHostedSessionRepository.findByRemoteSessionId(suspendSessionId).catch(() => null);
+        if (hosted) {
+          let sshClientToClose: Client | null = null;
+          try {
+            let connId = hosted.connection_id;
+            if (!connId && hosted.connection_uuid) {
+              const allConns = await ConnectionRepository.findAllConnectionsWithFolders().catch(() => []);
+              const matched = allConns.find((c) => c.uuid === hosted.connection_uuid);
+              if (matched) connId = matched.id;
+            }
+            if (connId) {
+              const connDetails = await SshService.getConnectionDetails(connId);
+              const { ownerNamespace } = await getOrCreateOwnerNamespace();
+              sshClientToClose = await SshService.establishSshConnection(connDetails, 10_000);
+              await agentDeployerService.killRemoteHostedSession(sshClientToClose, ownerNamespace, hosted.remote_session_id);
+            }
+          } catch (killErr: any) {
+            console.warn(`[SshSuspendService] 远程终止目标机会话 ${suspendSessionId} 时主机不可达（仍移除本地挂起记录）:`, killErr?.message || killErr);
+          } finally {
+            try { sshClientToClose?.end(); } catch {}
+          }
+          await remoteHostedSessionRepository.deleteByRemoteSessionId(suspendSessionId);
+          return true;
+        }
+      }
       console.warn(`[用户: ${userId}] 尝试终止的会话 ${suspendSessionId} 不存在或不是活跃状态 (${session?.backendSshStatus})。`);
       // 如果会话已断开，但记录还在，也应该能被“终止”（即移除）
       if(session && session.backendSshStatus === 'disconnected_by_backend'){
@@ -597,6 +671,14 @@ export class SshSuspendService extends EventEmitter {
       return false; // 不允许直接移除活跃会话，应先终止
     }
 
+    if (!session) {
+      const deletedHosted = await remoteHostedSessionRepository.deleteByRemoteSessionId(suspendSessionId).catch(() => false);
+      if (deletedHosted) {
+        console.log(`[用户: ${userId}] 已移除目标机托管会话记录 ${suspendSessionId}。`);
+        return true;
+      }
+    }
+
     // 如果会话在内存中（不论状态），则删除
     if (session) {
       try { session.terminalEmulator?.dispose(); } catch {}
@@ -634,6 +716,11 @@ export class SshSuspendService extends EventEmitter {
     const session = userSessions.get(suspendSessionId);
 
     if (!session) {
+      const updatedHosted = await remoteHostedSessionRepository.updateCustomName(suspendSessionId, newCustomName).catch(() => false);
+      if (updatedHosted) {
+        console.log(`[用户: ${userId}] 目标机托管会话 ${suspendSessionId} 自定义名称已更新为: ${newCustomName}`);
+        return true;
+      }
       console.warn(`[用户: ${userId}] 尝试编辑名称的会话 ${suspendSessionId} 不存在。`);
       return false;
     }

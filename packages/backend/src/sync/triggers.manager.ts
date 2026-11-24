@@ -28,7 +28,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
       'name', 'type', 'host', 'port', 'username', 'auth_method',
       'encrypted_password', 'encrypted_private_key', 'encrypted_passphrase',
       'proxy_type', 'proxy_id', 'ssh_key_id', 'notes', 'jump_chain', 'background_color',
-      'file_protocol'
+      'file_protocol', 'session_hosting_mode'
     ]
   },
   {
@@ -106,6 +106,14 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     tableName: 'favorite_paths',
     updateOfColumns: [
       'name', 'path', 'is_file', 'scope', 'connection_uuid'
+    ]
+  },
+  {
+    // 目标服务器自托管会话持久化元数据（跨端共享挂起列表，重启不丢）
+    tableName: 'remote_hosted_sessions',
+    updateOfColumns: [
+      'connection_uuid', 'connection_name', 'custom_name',
+      'manually_suspended', 'status', 'exit_code', 'owner_namespace'
     ]
   }
 ];

@@ -101,6 +101,36 @@ export function broadcastSyncInvalidated(maxSeq?: number): void {
   }
 }
 
+/**
+ * 向所有在线的桌面端同步长连接（/ws/sync）广播工作区租约接管通知，
+ * 令旧桌面端即时弹出接管遮罩并优雅 DETACH 其本地持有的目标机托管会话。
+ */
+export function broadcastWorkspaceTakeover(activeClientId: string): void {
+  if (syncWsClients.size === 0) return;
+
+  const payload = JSON.stringify({
+    type: 'workspace:takeover_kickout',
+    activeClientId,
+    reason: 'taken_over_by_another_device',
+    timestamp: Date.now(),
+  });
+
+  let sent = 0;
+  for (const client of syncWsClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(payload);
+        sent++;
+      } catch (e: any) {
+        console.warn('[SyncBroadcaster] 广播工作区接管通知异常:', e?.message || e);
+      }
+    }
+  }
+  if (sent > 0) {
+    console.log(`[SyncBroadcaster] 已向 ${sent} 个在线桌面端同步连接广播工作区接管信号 (activeClientId=${activeClientId})。`);
+  }
+}
+
 /* 前端 UI 实时事件连接池已抽到 websocket/frontend-events.ts（leaf 模块，供 sftp 等其他层推事件） */
 
 /**

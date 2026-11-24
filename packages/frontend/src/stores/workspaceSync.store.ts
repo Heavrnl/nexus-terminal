@@ -19,7 +19,9 @@ import {
   type SyncedFileTabInfo,
   type SyncedMultiLineCommandInfo,
   type SyncedSessionInfo,
+  type WorkspaceOfflineConflictPayload,
   type WorkspaceSnapshot,
+  type WorkspaceSyncRuntimeMode,
 } from './workspaceSync/types';
 import { collectWorkspaceSnapshot } from './workspaceSync/collectSnapshot';
 import { logSync, logSyncError, logSyncWarn } from './workspaceSync/log';
@@ -42,7 +44,9 @@ export type {
   SyncedFileTabInfo,
   SyncedMultiLineCommandInfo,
   SyncedSessionInfo,
+  WorkspaceOfflineConflictPayload,
   WorkspaceSnapshot,
+  WorkspaceSyncRuntimeMode,
 } from './workspaceSync/types';
 import {
   getLocalStorageSafe,
@@ -103,9 +107,8 @@ const getOrCreateClientId = (): string => {
   return `client_${Date.now()}`;
 };
 
-/** 工作区实时同步是否开启（桌面端恒为 false）。可脱离组件上下文调用。 */
+/** 工作区实时同步是否开启（Web 端与桌面端现已平权支持，桌面端未配云端时自动回落为本地 SQLite 工作区恢复）。可脱离组件上下文调用。 */
 export const isWorkspaceSyncEnabled = (): boolean => {
-  if (isDesktopApp()) return false;
   if (typeof localStorage === 'undefined') return true;
   return localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false';
 };
@@ -182,14 +185,36 @@ export const prewarmWorkspaceSync = (): Promise<void> => {
 export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const sessionStore = useSessionStore();
 
-  // 1. 同步开关：桌面端强制禁用 (false)，Web端默认开启 (true)
+  // 1. 同步开关：Web 端与桌面端均默认开启（桌面端由本地 Sidecar 透明代理云端或回落本地工作区恢复）
   const syncEnabled = ref<boolean>(
-    isDesktopApp()
-      ? false
-      : (typeof localStorage !== 'undefined'
-          ? localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false'
-          : true)
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false'
+      : true
   );
+
+  // 1.1 运行模式与桌面端离线降级状态
+  const runtimeMode = ref<WorkspaceSyncRuntimeMode>(
+    isDesktopApp() ? 'desktop_local_only' : 'web_cloud'
+  );
+  const offlineMode = ref<boolean>(false);
+  const hasOfflineDirtyChanges = ref<boolean>(false);
+  const offlineConflict = ref<WorkspaceOfflineConflictPayload | null>(null);
+  const isResolvingOfflineConflict = ref<boolean>(false);
+
+  /** 拉取当前后端的工作区同步运行模式（Web 云端 / 桌面云端在线 / 桌面云端离线 / 桌面纯本地） */
+  const fetchRuntimeMode = async (): Promise<void> => {
+    try {
+      const res = await apiClient.get('/workspace-sync/mode');
+      const data = res.data?.data;
+      if (data && typeof data.mode === 'string') {
+        runtimeMode.value = data.mode as WorkspaceSyncRuntimeMode;
+        offlineMode.value = Boolean(data.offlineMode);
+        hasOfflineDirtyChanges.value = Boolean(data.hasOfflineDirtyChanges);
+      }
+    } catch {
+      // 容错：旧版服务端或短暂不可达时保持现有状态
+    }
+  };
 
   // 2. 客户端唯一标识 (基于 sessionStorage，保证单标签页刷新保持、多标签/跨设备互斥)
   const clientId = ref<string>(getOrCreateClientId());
@@ -349,18 +374,18 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
   // 切换同步开关
   const toggleSyncEnabled = async () => {
-    if (isDesktopApp()) return;
     syncEnabled.value = !syncEnabled.value;
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(SYNC_ENABLED_STORAGE_KEY, String(syncEnabled.value));
     }
     if (syncEnabled.value) {
-      logSync('用户开启工作区实时云端同步');
+      logSync('用户开启工作区实时同步');
       // 开启时立即声明接管并保存一次当前工作区
       await claimTakeover();
+      await fetchRuntimeMode();
       triggerDebouncedSave(0);
     } else {
-      logSync('用户关闭工作区实时云端同步');
+      logSync('用户关闭工作区实时同步');
     }
   };
 
@@ -384,7 +409,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   let pendingResaveRequested = false;
 
   const triggerDebouncedSave = (delayMs: number = 800) => {
-    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return;
+    if (!syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return;
 
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -396,9 +421,9 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }, delayMs);
   };
 
-  // 保存工作区到云端 (仅 Web 端有效；内置串行队列 + 单调 saveSeq 彻底防止弱网乱序覆盖)
+  // 保存工作区快照（Web 端直写云端；桌面端由本地 Sidecar 透明代理云端，断网时静默写入本地 SQLite 兜底）
   const saveWorkspaceToCloud = async (): Promise<boolean> => {
-    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return false;
+    if (!syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return false;
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -414,7 +439,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       let lastResult = false;
       do {
         pendingResaveRequested = false;
-        if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) {
+        if (!syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) {
           break;
         }
         try {
@@ -462,7 +487,21 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
             : await apiClient.post('/workspace-sync/save', requestBody);
 
           if (res.data?.success) {
-            const payload = res.data.data as { accepted?: boolean; activeClientId?: string | null } | undefined;
+            const payload = res.data.data as {
+              accepted?: boolean;
+              activeClientId?: string | null;
+              offlineMode?: boolean;
+              mode?: WorkspaceSyncRuntimeMode;
+            } | undefined;
+            if (payload?.mode) {
+              runtimeMode.value = payload.mode;
+            }
+            if (typeof payload?.offlineMode === 'boolean') {
+              offlineMode.value = payload.offlineMode;
+              if (payload.offlineMode) {
+                hasOfflineDirtyChanges.value = true;
+              }
+            }
             if (payload && payload.accepted === false) {
               /**
                * 租约已被接管的客户端调用过 claim，本次写入被后端拒绝。
@@ -503,9 +542,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     return inFlightSavePromise;
   };
 
-  // 声明接管 (Claim Lease) (仅 Web 端有效)
+  // 声明接管 (Claim Lease)（Web 端与桌面端通用，桌面端由 Sidecar 代理至云端或本地落盘）
   const claimTakeover = async (): Promise<boolean> => {
-    if (isDesktopApp()) return false;
     try {
       logSync(`当前客户端 (${clientId.value}) 正在声明工作区接管权...`);
 
@@ -513,7 +551,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       const claimed = await usePrewarm<boolean>(PREWARM_KEYS.claim, () =>
         apiClient
           .post('/workspace-sync/claim', { clientId: clientId.value })
-          .then((res) => !!res.data?.success),
+          .then((res) => {
+            const payload = res.data?.data;
+            if (payload?.mode) runtimeMode.value = payload.mode;
+            if (typeof payload?.offlineMode === 'boolean') offlineMode.value = payload.offlineMode;
+            return !!res.data?.success;
+          }),
       );
 
       if (claimed) {
@@ -529,29 +572,127 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   };
 
-  // 处理被其它客户端接管的踢出通知 (仅 Web 端有效)
+  // 处理被其它客户端接管的踢出通知（Web 端与桌面端互通）
   const handleTakeoverKickout = (targetActiveClientId: string) => {
-    if (isDesktopApp()) return;
     if (targetActiveClientId && targetActiveClientId !== clientId.value) {
       logSyncWarn(`工作区已被新客户端 (${targetActiveClientId}) 接管，当前客户端进入全局遮罩模式`);
+      // 递增恢复代际号，立即作废任何仍在异步进行中的旧恢复任务，杜绝被踢后还继续建标签
+      restoreGeneration++;
+      isRestoring.value = false;
       isTakenOver.value = true;
       takeoverByClientId.value = targetActiveClientId;
+      offlineConflict.value = null;
       if (saveTimer) {
         clearTimeout(saveTimer);
         saveTimer = null;
       }
+      if (restoreUnlockTimer) {
+        clearTimeout(restoreUnlockTimer);
+        restoreUnlockTimer = null;
+      }
     }
+  };
+
+  // 处理桌面端 VPS 断网重连后检测到的离线冲突事件
+  const handleOfflineConflict = (payload: WorkspaceOfflineConflictPayload) => {
+    logSyncWarn('检测到桌面端离线期间云端工作区已被其他设备接管，等待用户选择策略:', payload);
+    offlineMode.value = false;
+    runtimeMode.value = 'desktop_cloud_synced';
+    // 离线冲突弹窗已包含「拉取云端」与「覆盖接管」两种决策，清除旧接管遮罩避免层级冲突
+    isTakenOver.value = false;
+    takeoverByClientId.value = null;
+    hasOfflineDirtyChanges.value = Boolean(payload?.hasOfflineDirtyChanges);
+    offlineConflict.value = {
+      cloudActiveClientId: payload?.cloudActiveClientId ?? null,
+      cloudUpdatedAt: payload?.cloudUpdatedAt ?? 0,
+      localClientId: payload?.localClientId ?? clientId.value,
+      hasOfflineDirtyChanges: Boolean(payload?.hasOfflineDirtyChanges),
+    };
+  };
+
+  // 处理桌面端 VPS 恢复连通且未冲突事件：自动补推离线期间的本地修改
+  const handleCloudReconnected = async (payload?: { shouldFlushSave?: boolean }) => {
+    logSync('桌面端云端工作区同步已恢复连通:', payload);
+    offlineMode.value = false;
+    await fetchRuntimeMode();
+    if (payload?.shouldFlushSave && syncEnabled.value && !isTakenOver.value && !isRestoring.value && !offlineConflict.value) {
+      hasOfflineDirtyChanges.value = false;
+      triggerDebouncedSave(100);
+    }
+  };
+
+  // 处理后端运行模式变化推送
+  const handleModeChanged = (payload?: { mode?: WorkspaceSyncRuntimeMode; offlineMode?: boolean }) => {
+    if (payload?.mode) {
+      runtimeMode.value = payload.mode;
+    }
+    if (typeof payload?.offlineMode === 'boolean') {
+      offlineMode.value = payload.offlineMode;
+    }
+  };
+
+  // 解决桌面端离线重连租约冲突：拉取云端最新 OR 以当前本地覆盖接管
+  const resolveOfflineConflict = async (strategy: 'pull_cloud' | 'push_local'): Promise<boolean> => {
+    if (isResolvingOfflineConflict.value) return false;
+    isResolvingOfflineConflict.value = true;
+    try {
+      const fileEditorStore = useFileEditorStore();
+      if (strategy === 'pull_cloud') {
+        offlineConflict.value = null;
+        isRestoring.value = true;
+        const claimed = await claimTakeover();
+        if (!claimed) {
+          isRestoring.value = false;
+          return false;
+        }
+        sessionStore.cleanupAllSessions();
+        fileEditorStore.closeAllTabs();
+        fileEditorStore.closePopup();
+        const ok = await restoreWorkspaceFromCloud();
+        if (!ok) {
+          // 云端快照为空或跳过恢复时不会进入 scheduleRestoreUnlock，必须立即解锁避免后续保存被永久拦截
+          isRestoring.value = false;
+        }
+        hasOfflineDirtyChanges.value = false;
+        await fetchRuntimeMode();
+        return ok;
+      } else {
+        offlineConflict.value = null;
+        const claimed = await claimTakeover();
+        if (!claimed) return false;
+        const saved = await saveWorkspaceToCloud();
+        if (saved) {
+          hasOfflineDirtyChanges.value = false;
+        }
+        await fetchRuntimeMode();
+        return saved;
+      }
+    } catch (err) {
+      logSyncError('处理桌面端离线重连冲突失败:', err);
+      return false;
+    } finally {
+      isResolvingOfflineConflict.value = false;
+    }
+  };
+
+  const dismissOfflineConflict = () => {
+    offlineConflict.value = null;
   };
 
   /** 恢复解锁兜底计时器（仅用于 deferTail 后调用方长时间未触发 runPendingWorkspaceTail 的极端兜底） */
   let restoreUnlockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 单调递增的恢复代际号：防止高频跨端抢占或连点恢复导致旧恢复任务交错写回，引发重复标签膨胀 */
+  let restoreGeneration = 0;
 
   /**
    * 真正完成恢复（含 SFTP、编辑器、文件管理器收尾）后解除 `isRestoring` 锁，并触发沉淀保存。
    * 绝不能在 `runPendingWorkspaceTail` 完成前用固定 1.5s 提前解锁 —— 否则慢 SFTP 场景下会把尚未恢复出来的
    * 空编辑器标签和空文件管理器路径覆盖写回云端数据库。
    */
-  const scheduleRestoreUnlock = (delayMs: number = 300) => {
+  const scheduleRestoreUnlock = (delayMs: number = 300, expectedGen?: number) => {
+    if (expectedGen !== undefined && expectedGen !== restoreGeneration) {
+      return;
+    }
     if (restoreUnlockTimer) {
       clearTimeout(restoreUnlockTimer);
       restoreUnlockTimer = null;
@@ -559,6 +700,9 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     const notifStore = useUiNotificationsStore();
     restoreUnlockTimer = setTimeout(() => {
       restoreUnlockTimer = null;
+      if (expectedGen !== undefined && expectedGen !== restoreGeneration) {
+        return;
+      }
       isRestoring.value = false;
       notifStore.setSilenced(false);
       if (syncEnabled.value && !isTakenOver.value && !isUnloading.value) {
@@ -604,12 +748,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     const notifStore = useUiNotificationsStore();
     const layoutStore = useLayoutStore();
 
+    const myRestoreGen = ++restoreGeneration;
     isRestoring.value = true;
     // 记录恢复起点：之后只要用户手动切过标签（lastUserSwitchAt > 这个值），
     // 整个恢复流程就不再抢焦点。
     const restoreStartedAt = Date.now();
     notifStore.setSilenced(true);
     logSync('开始从云端快照恢复工作区全量状态...', {
+      restoreGen: myRestoreGen,
       sessionsCount: snapshot.sessions?.length || 0,
       tabsCount: snapshot.fileEditor?.tabs?.length || 0,
       activeSessionId: snapshot.activeSessionId,
@@ -635,6 +781,10 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         }
       })();
       await Promise.all([claimTakeover(), connectionsTask]);
+      if (myRestoreGen !== restoreGeneration) {
+        logSyncWarn(`恢复任务 #${myRestoreGen} 已被更新一轮恢复 (#${restoreGeneration}) 取代，中止旧恢复。`);
+        return;
+      }
 
       // 3. 检查云端挂起会话（旧端被接管时会自动挂起）
       let availableSuspended: any[] = [];
@@ -656,9 +806,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       } catch (e) {
         logSyncWarn('获取挂起会话列表失败:', e);
       }
+      if (myRestoreGen !== restoreGeneration) {
+        logSyncWarn(`恢复任务 #${myRestoreGen} 在挂起列表拉取后已过期，中止旧恢复。`);
+        return;
+      }
 
       // 3. 恢复会话列表并建立 ID 映射（实现见 stores/workspaceSync/restoreSessions.ts）
       const sessionIdMap = await restoreSessionsFromSnapshot({ snapshot, availableSuspended });
+      if (myRestoreGen !== restoreGeneration) {
+        logSyncWarn(`恢复任务 #${myRestoreGen} 在会话恢复后已过期，中止旧恢复收尾。`);
+        return;
+      }
 
       // 同步全局 activeSessionIdMap
       activeSessionIdMap.value = new Map(sessionIdMap);
@@ -778,17 +936,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       if (opts?.deferTail) {
         pendingWorkspaceTail = runTail;
         // 兜底：若始终未进入工作区调用 runPendingWorkspaceTail，12s 后自动释放恢复锁
-        scheduleRestoreUnlock(12000);
+        scheduleRestoreUnlock(12000, myRestoreGen);
       } else {
         await runTail();
-        scheduleRestoreUnlock(300);
+        scheduleRestoreUnlock(300, myRestoreGen);
       }
 
       hasRestoredOnce = true;
       logSync('工作区首屏状态已就位（会话/顺序/激活/文件管理器路径）。');
     } catch (err: any) {
       logSyncError('恢复工作区发生错误:', err);
-      scheduleRestoreUnlock(300);
+      scheduleRestoreUnlock(300, myRestoreGen);
     }
   };
 
@@ -827,12 +985,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
    * 幂等：重复调用返回同一个 promise。
    */
   const prefetchWorkspaceSnapshot = (): Promise<boolean> => {
-    if (isDesktopApp() || !syncEnabled.value) return Promise.resolve(false);
+    if (!syncEnabled.value) return Promise.resolve(false);
     if (prefetchTask) return prefetchTask;
 
     prefetchTask = (async () => {
       try {
-        logSync('正在取用云端工作区快照...');
+        logSync('正在取用工作区快照...');
         // 挂载前预取过就直接用那一枪的结果（它此刻早已 resolve，恢复流程只剩微任务）
         const data = await usePrewarm<any | null>(PREWARM_KEYS.snapshot, () =>
           apiClient
@@ -841,8 +999,11 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         );
         if (!data) return false;
 
+        if (data.mode) runtimeMode.value = data.mode;
+        if (typeof data.offlineMode === 'boolean') offlineMode.value = data.offlineMode;
+
         const { state: cloudState, activeClientId } = data;
-        logSync(`获取到云端快照，最后活跃客户端: ${activeClientId}，当前客户端: ${clientId.value}`);
+        logSync(`获取到工作区快照，最后活跃客户端: ${activeClientId}，当前客户端: ${clientId.value}`);
 
         if (!cloudState || !cloudState.syncEnabled) {
           logSync('云端快照未开启同步或为空，跳过状态恢复');
@@ -888,9 +1049,10 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     { deep: true }
   );
 
-  // 初始化同步服务 (页面加载时调用，仅 Web 端有效)
+  // 初始化同步服务 (页面加载时调用，Web 端与桌面端通用)
   const initSync = async () => {
-    if (isDesktopApp() || !syncEnabled.value) {
+    void fetchRuntimeMode();
+    if (!syncEnabled.value) {
       isInitialized.value = true;
       return;
     }
@@ -924,13 +1086,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   };
 
-  // 从云端获取最新快照并无缝恢复 (仅 Web 端有效)
+  // 从云端/本地拉取最新快照并无缝恢复
   const restoreWorkspaceFromCloud = async (): Promise<boolean> => {
-    if (isDesktopApp()) return false;
     try {
-      logSync('正在从云端拉取最新工作区快照进行恢复...');
+      logSync('正在拉取最新工作区快照进行恢复...');
       const res = await apiClient.get('/workspace-sync');
       if (res.data?.success && res.data?.data) {
+        if (res.data.data.mode) runtimeMode.value = res.data.data.mode;
+        if (typeof res.data.data.offlineMode === 'boolean') offlineMode.value = res.data.data.offlineMode;
         const { state: cloudState } = res.data.data;
         if (cloudState && cloudState.syncEnabled) {
           await restoreWorkspaceFromSnapshot(consumePendingRemovedSessions(cloudState));
@@ -946,6 +1109,11 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
   return {
     syncEnabled,
+    runtimeMode,
+    offlineMode,
+    hasOfflineDirtyChanges,
+    offlineConflict,
+    isResolvingOfflineConflict,
     clientId,
     isTakenOver,
     takeoverByClientId,
@@ -969,11 +1137,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     updateFileManagerState,
     updateMultiLineCommandState,
     toggleSyncEnabled,
+    fetchRuntimeMode,
     collectCurrentWorkspaceState,
     triggerDebouncedSave,
     saveWorkspaceToCloud,
     claimTakeover,
     handleTakeoverKickout,
+    handleOfflineConflict,
+    handleCloudReconnected,
+    handleModeChanged,
+    resolveOfflineConflict,
+    dismissOfflineConflict,
     restoreWorkspaceFromSnapshot,
     restoreWorkspaceFromCloud,
     prefetchWorkspaceSnapshot,

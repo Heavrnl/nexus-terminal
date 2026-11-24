@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   filterRemovedSessions,
   normalizePaneBuffers,
+  normalizeRemotePaneSessionIds,
   resolveSnapshotSessionId,
   stripPrimaryPaneBuffer,
 } from '../src/utils/workspaceSnapshot.ts';
@@ -129,4 +130,32 @@ test('stripPrimaryPaneBuffer：不改入参（兜底缓存可能还被别处引�
   const src = { 'pane#0': 'MAIN', 'pane#1': 'SUB' };
   stripPrimaryPaneBuffer(src, 'pane#0');
   assert.deepEqual(src, { 'pane#0': 'MAIN', 'pane#1': 'SUB' });
+});
+
+// --- 分屏目标机托管会话 ID 规整 ---
+
+test('normalizeRemotePaneSessionIds：剔除主终端并将副终端转为跨刷新稳定键', () => {
+  const result = normalizeRemotePaneSessionIds(
+    { 'terminal-0': 'nx-main', 'terminal-1': 'nx-pane-a', 'terminal-2': 'nx-pane-b' },
+    ['terminal-0', 'terminal-1', 'terminal-2'],
+    'terminal-0'
+  );
+  assert.deepEqual(result, { 'pane#1': 'nx-pane-a', 'pane#2': 'nx-pane-b' });
+});
+
+test('normalizeRemotePaneSessionIds：离线占位时保留已有 pane#N 稳定键且忽略空值', () => {
+  const result = normalizeRemotePaneSessionIds(
+    { 'pane#0': 'nx-main', 'pane#1': 'nx-pane-offline', 'pane#2': '   ' },
+    ['terminal-0', 'terminal-1', 'terminal-2'],
+    'terminal-0'
+  );
+  assert.deepEqual(result, { 'pane#1': 'nx-pane-offline' });
+});
+
+test('normalizeRemotePaneSessionIds：仅主终端或空对象返回 undefined', () => {
+  assert.equal(normalizeRemotePaneSessionIds(null, [], 'terminal-0'), undefined);
+  assert.equal(
+    normalizeRemotePaneSessionIds({ 'terminal-0': 'nx-main' }, ['terminal-0'], 'terminal-0'),
+    undefined
+  );
 });

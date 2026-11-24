@@ -21,6 +21,8 @@ export interface ConnectionBase {
     sftp_sudo_enabled?: number | boolean;
     /** 只读：是否已存了 sudo 密码（密码本身永不回传前端） */
     has_sudo_password?: number | boolean;
+    /** 目标机会话托管模式：auto=跟随全局自动使用 nexus-mux（失败自动降级），legacy=强制传统后端托管 */
+    session_hosting_mode?: 'auto' | 'legacy' | null;
 }
 
 export interface ConnectionWithFolders extends ConnectionBase {
@@ -50,6 +52,7 @@ export interface CreateConnectionInput {
     sftp_sudo_enabled?: boolean;
     /** 明文 sudo 密码，后端负责加密落库；不传/空串表示不设置 */
     sudo_password?: string;
+    session_hosting_mode?: 'auto' | 'legacy' | null;
 }
 
 
@@ -75,6 +78,7 @@ export interface UpdateConnectionInput {
     sftp_sudo_enabled?: boolean;
     /** 明文 sudo 密码，后端负责加密落库；不传/空串表示维持原值 */
     sudo_password?: string;
+    session_hosting_mode?: 'auto' | 'legacy' | null;
 }
 
 
@@ -102,6 +106,7 @@ export interface FullConnectionData {
     startup_command?: string;
     sftp_sudo_enabled?: number | boolean;
     encrypted_sudo_password?: string | null;
+    session_hosting_mode?: 'auto' | 'legacy' | null;
 }
 
 export interface DecryptedConnectionCredentials {

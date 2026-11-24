@@ -32,6 +32,14 @@ export interface SuspendedSshSession {
   manuallySuspended?: boolean;
   /** 产生该挂起条目的原始会话 ID（后端用于对账，UI 不展示）。 */
   originalSessionId?: string;
+  /** 跨端对齐用的主机连接 UUID */
+  connectionUuid?: string;
+  /** 托管模式：目标机代理托管或传统后端内存托管 */
+  hostingMode?: 'remote-agent' | 'legacy';
+  /** 目标机托管会话 ID（nexus-mux session_id） */
+  remoteSessionId?: string;
+  /** 目标机进程自然退出后的退出码 */
+  exitCode?: number | null;
 }
 
 /**

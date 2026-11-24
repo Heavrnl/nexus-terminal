@@ -25,7 +25,7 @@ const layoutStore = useLayoutStore();
 const connectionsStore = useConnectionsStore();
 const workspaceSyncStore = useWorkspaceSyncStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
-const { syncEnabled, isSyncing } = storeToRefs(workspaceSyncStore);
+const { syncEnabled, isSyncing, runtimeMode, offlineMode } = storeToRefs(workspaceSyncStore);
 const { toggleSyncEnabled } = workspaceSyncStore;
 const route = useRoute();
 
@@ -361,9 +361,33 @@ const toggleButtonTitle = computed(() =>
   isHeaderVisible.value ? t('header.hide', '隐藏顶部导航') : t('header.show', '显示顶部导航')
 );
 
-// --- 云端同步按钮状态判定 (Web 部署端专属原生工作区同步) ---
+// --- 工作区同步按钮状态判定（Web 与桌面端统一启用，桌面端细分云端在线 / 云端离线 / 本地恢复三态） ---
 const isSyncActive = computed(() => syncEnabled.value);
 const isSyncInProgress = computed(() => isSyncing.value);
+
+const syncStatusDotClass = computed(() => {
+  if (!syncEnabled.value) return '';
+  if (offlineMode.value || runtimeMode.value === 'desktop_cloud_offline') {
+    return 'bg-amber-500';
+  }
+  if (runtimeMode.value === 'desktop_local_only') {
+    return 'bg-sky-500';
+  }
+  return 'bg-emerald-500';
+});
+
+const syncButtonColorClass = computed(() => {
+  if (!syncEnabled.value) {
+    return 'text-text-secondary hover:text-foreground hover:bg-border cursor-pointer';
+  }
+  if (offlineMode.value || runtimeMode.value === 'desktop_cloud_offline') {
+    return 'text-amber-500 hover:text-amber-400 hover:bg-border cursor-pointer';
+  }
+  if (runtimeMode.value === 'desktop_local_only') {
+    return 'text-sky-500 hover:text-sky-400 hover:bg-border cursor-pointer';
+  }
+  return 'text-emerald-500 hover:text-emerald-400 hover:bg-border cursor-pointer';
+});
 
 const syncButtonTitle = computed(() => {
   if (!syncEnabled.value) {
@@ -372,11 +396,16 @@ const syncButtonTitle = computed(() => {
   if (isSyncing.value) {
     return t('workspaceSync.syncingTooltip', '正在同步工作区到云端...');
   }
+  if (offlineMode.value || runtimeMode.value === 'desktop_cloud_offline') {
+    return t('workspaceSync.offlineTooltip', '云端服务暂时不可达，已切换为本地离线缓存（恢复连通后自动同步）');
+  }
+  if (runtimeMode.value === 'desktop_local_only') {
+    return t('workspaceSync.desktopLocalTooltip', '桌面端本地工作区恢复已开启（配置云端同步后自动升级为跨端实时同步）');
+  }
   return t('workspaceSync.enabledTooltip', '工作区实时云端同步 (已开启，点击可关闭)');
 });
 
 const handleSyncButtonClick = () => {
-  if (isDesktop.value) return;
   toggleSyncEnabled();
 };
 
@@ -464,10 +493,11 @@ onBeforeUnmount(() => {
             @dragover="onTabDragOver(session.sessionId, $event)"
             @dragleave="onTabDragLeave(session.sessionId, $event)"
             @drop="onTabDrop(session.sessionId, $event)"
-            :title="session.connectionName"
+            :title="session.isUnreachablePlaceholder ? `${session.connectionName} · ${$t('workspace.status.unreachablePlaceholderBadge', '离线占位（可右键重试）')}` : (session.hostingMode === 'remote-agent' ? `${session.connectionName} · ${$t('remoteAgent.badge.remoteHosted', '目标机托管')}` : session.connectionName)"
           >
             <!-- 状态指示灯 -->
             <span :class="['w-2 h-2 rounded-full mr-2 flex-shrink-0',
+                           session.isUnreachablePlaceholder ? 'bg-amber-500' :
                            session.isMarkedForSuspend ? 'bg-blue-500' :
                            session.status === 'connected' ? 'bg-green-500' :
                            session.status === 'connecting' ? 'bg-yellow-500 animate-pulse' :
@@ -501,24 +531,19 @@ onBeforeUnmount(() => {
 
     <!-- 桌面端右侧控制按钮区 -->
     <div class="ml-auto flex items-center h-full flex-shrink-0">
-      <!-- 实时同步工作区按钮 (仅在 Web 部署端显示，桌面端彻底隐藏) -->
+      <!-- 实时同步工作区按钮（Web 端与桌面端平权展示） -->
       <button
-        v-if="!isDesktop"
         class="group flex items-center justify-center px-3 h-full border-l border-border transition-colors duration-150"
-        :class="[
-          isSyncActive
-            ? 'text-emerald-500 hover:text-emerald-400 hover:bg-border cursor-pointer'
-            : 'text-text-secondary hover:text-foreground hover:bg-border cursor-pointer'
-        ]"
+        :class="syncButtonColorClass"
         @click="handleSyncButtonClick"
         :title="syncButtonTitle"
       >
         <span class="relative inline-flex items-center justify-center">
           <i class="text-sm fas fa-cloud"></i>
-          <!-- 开启状态：右下角绿色实心圆点 -->
+          <!-- 开启状态：右下角状态实心圆点（绿=云端同步，琥珀=离线降级，蓝=桌面本地恢复） -->
           <span
             v-if="isSyncActive"
-            class="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-header shadow-sm"
+            :class="['absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full ring-2 ring-header shadow-sm', syncStatusDotClass]"
           ></span>
           <!-- 关闭状态：一条带背景镂空间距的斜杠横穿云朵图标 -->
           <span

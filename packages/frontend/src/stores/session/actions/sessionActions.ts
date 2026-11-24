@@ -62,6 +62,12 @@ export const openNewSession = (
          * 目前只有「文件管理器绑定到一台没开终端的主机」会用到（见 fileManagerHosts.store）。
          */
         headless?: boolean;
+        /** 目标机自托管模式：直接接管指定的远端托管会话 ID */
+        remoteSessionId?: string;
+        /** 目标机自托管模式：恢复分屏副终端对应的远端托管 ID 映射 */
+        remotePaneSessionIds?: Record<string, string>;
+        /** 仅尝试接管目标机已有托管会话，找不到时不自动新建 */
+        attachOnly?: boolean;
     }
 ): string | undefined => {
   const { connectionsStore, t } = dependencies;
@@ -112,6 +118,10 @@ export const openNewSession = (
       createdAt: Date.now(),
       headless: options?.headless === true,
       disposables: [],
+      hostingMode: options?.remoteSessionId ? 'remote-agent' : undefined,
+      remoteSessionId: options?.remoteSessionId,
+      remotePaneSessionIds: options?.remotePaneSessionIds ? { ...options.remotePaneSessionIds } : undefined,
+      isUnreachablePlaceholder: false,
   };
 
   const wsManager = createWebSocketConnectionManager(
@@ -123,6 +133,8 @@ export const openNewSession = (
           // 无终端会话：告诉后端这条通道只用于文件管理器，接管工作区时不要把它挂进
           // 挂起池（用户从没在标签栏见过它，挂进池子就是「挂起列表里冒出我没打开过的连接」）
           isHeadless: options?.headless === true,
+          initialRemoteSessionId: options?.remoteSessionId,
+          attachOnly: options?.attachOnly === true,
           getIsMarkedForSuspend: () => {
               return !!newSessionPartial.isMarkedForSuspend;
           }
@@ -207,6 +219,29 @@ export const openNewSession = (
         console.warn(`[SessionActions/ssh:connected] 后端CID ${backendCID} 与会话 ${matchedKey} 的期望CID ${sessionToUpdate.connectionId} 不匹配。终止SID更新。`);
         return;
       }
+
+      // 同步目标机托管元数据并清除离线占位态
+      if (connectedPayload.hostingMode === 'remote-agent' || connectedPayload.hostingMode === 'legacy') {
+        sessionToUpdate.hostingMode = connectedPayload.hostingMode;
+      }
+      if (typeof connectedPayload.remoteSessionId === 'string' && connectedPayload.remoteSessionId.trim()) {
+        sessionToUpdate.remoteSessionId = connectedPayload.remoteSessionId.trim();
+      }
+      if (typeof connectedPayload.currentSeq === 'number') {
+        sessionToUpdate.lastMuxSeq = connectedPayload.currentSeq;
+      }
+      if (typeof connectedPayload.persistenceWarning === 'string' && connectedPayload.persistenceWarning) {
+        sessionToUpdate.persistenceWarning = connectedPayload.persistenceWarning;
+      }
+      sessionToUpdate.isUnreachablePlaceholder = false;
+      sessionToUpdate.unreachableError = undefined;
+      // 触发一次云端/本地快照沉淀，尽快把新分配的 remoteSessionId 写入工作区快照
+      try {
+        const wsSync = useWorkspaceSyncStore();
+        if (wsSync.syncEnabled && !wsSync.isRestoring && !wsSync.isTakenOver) {
+          wsSync.triggerDebouncedSave(500);
+        }
+      } catch {}
 
       if (backendSID && backendSID !== matchedKey) {
         console.log(`[SessionActions/ssh:connected] 会话ID需要更新：从 ${matchedKey} 到 ${backendSID}。`);
@@ -400,8 +435,11 @@ export const closeSession = async (
   }
 
   // 1. 调用实例上的清理和断开方法
-  sessionToClose.wsManager.disconnect();
-  console.log(`[SessionActions] 已为会话 ${sessionId} 调用 wsManager.disconnect()`);
+  // 只有用户真正点关闭标签（非整页拆解/清场、且非挂起）时，才告知后端显式 KILL 目标机托管进程；
+  // 刷新/路由切换/热接管清场（recordRemoval: false）或手动挂起一律优雅 DETACH 保活目标机进程。
+  const shouldExplicitlyTerminateRemote = options?.recordRemoval !== false && !suspended;
+  sessionToClose.wsManager.disconnect({ explicitClose: shouldExplicitlyTerminateRemote });
+  console.log(`[SessionActions] 已为会话 ${sessionId} 调用 wsManager.disconnect(explicitClose=${shouldExplicitlyTerminateRemote})`);
   sessionToClose.sftpManagers.forEach((manager, instanceId) => {
       manager.cleanup();
       console.log(`[SessionActions] 已为会话 ${sessionId} 的 sftpManager (实例 ${instanceId}) 调用 cleanup()`);

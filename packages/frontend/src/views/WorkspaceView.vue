@@ -16,6 +16,7 @@ import TransferProgressModal from '../components/TransferProgressModal.vue';
 import TransferMiniPanel from '../components/TransferMiniPanel.vue';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import WorkspaceTakeoverOverlay from '../components/WorkspaceTakeoverOverlay.vue';
+import WorkspaceOfflineConflictModal from '../components/WorkspaceOfflineConflictModal.vue';
 import type { QuickCommandFE } from '../stores/quickCommands.store';
 import { useSessionStore } from '../stores/session.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
@@ -1049,6 +1050,9 @@ const closeFileManagerModal = () => {
 
     <!-- 工作区多端/多标签互斥接管全局遮罩 -->
     <WorkspaceTakeoverOverlay />
+
+    <!-- 桌面端离线重连后若云端已被他端修改，弹出策略选择框 -->
+    <WorkspaceOfflineConflictModal />
 
   </div>
 </template>

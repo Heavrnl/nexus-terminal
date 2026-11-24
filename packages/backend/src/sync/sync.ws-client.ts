@@ -6,6 +6,9 @@ import { getDataDir } from '../services/storage-path.service';
 import { settingsRepository } from '../settings/settings.repository';
 import { syncThrottleScheduler } from './sync.scheduler';
 import { assertSafeSyncOutboundUrl } from './outbound-url';
+import { broadcastFrontendEvent } from '../websocket/frontend-events';
+import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+import { workspaceSyncRemoteProxy } from '../workspace-sync/workspace-sync.remote-proxy';
 
 /**
  * 桌面端常驻后台的 WebSocket 实时同步长连接客户端
@@ -168,9 +171,10 @@ export class SyncWsClient {
         // 启动 15 秒心跳保活
         this.startHeartbeat();
 
-        // 连接建立瞬间，执行一次 Catch-up 检查，拉取离线期间所有云端变更
+        // 连接建立瞬间，执行一次 Catch-up 检查，拉取离线期间所有云端变更；并比对离线工作区租约
         setTimeout(() => {
           syncThrottleScheduler.flush('ws_connected_catchup');
+          workspaceSyncRemoteProxy.reconcileAfterCloudReconnect().catch(() => {});
         }, 300);
       });
 
@@ -183,6 +187,23 @@ export class SyncWsClient {
             console.log(`[SyncWsClient] 收到云端实时变更失效信号 (seq: ${msg.seq ?? 'latest'})，即刻唤醒本地拉取！`);
             // 毫秒级唤醒本地调度器拉取
             syncThrottleScheduler.flush('ws_remote_notify');
+          } else if (msg.type === 'workspace:takeover_kickout') {
+            const targetActiveClientId = String(msg.activeClientId || '').trim();
+            const localClientId = workspaceSyncRemoteProxy.getLocalClientId();
+            if (targetActiveClientId && targetActiveClientId !== localClientId) {
+              console.log(
+                `[SyncWsClient] 收到云端工作区跨端接管信号 (新持有者: ${targetActiveClientId})，正在优雅 DETACH 本地托管会话并通知前端遮罩...`
+              );
+              workspaceSyncService.detachLocalManagedSessionsForTakeover(targetActiveClientId);
+              broadcastFrontendEvent({
+                type: 'workspace:takeover_kickout',
+                payload: {
+                  activeClientId: targetActiveClientId,
+                  reason: msg.reason || 'taken_over_by_another_device',
+                  timestamp: msg.timestamp || Date.now(),
+                },
+              });
+            }
           } else if (msg.type === 'sync:ready') {
             console.log('[SyncWsClient] 云端确认就绪:', msg.message);
           } else if (msg.type === 'pong') {

@@ -294,26 +294,30 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 terminalOutputBuffer.value = []; // 清空内部缓冲区
             }
         } else {
-            // 如果是分屏副终端，检查是否从云端同步中缓存了历史屏幕缓冲
-            // 快照里存的是 pane#0/pane#1 这类稳定序号键（会话树每次刷新都会重编 paneId），
-            // 先按序号换算，再退回按 paneId 直接取。
+            // 向后端请求开辟/复用独立的 Shell 通道（附带稳定先序序号 paneIndex 与目标机托管分屏 ID）
+            let paneIndex: number | undefined = undefined;
+            try {
+                const layoutStore = useLayoutStore();
+                const idx = layoutStore.getSessionTerminalPaneOrder(activeSid).indexOf(effectivePaneId);
+                if (idx >= 0) paneIndex = idx;
+            } catch {}
+
+            const presetPaneIds = currentSessionState?.remotePaneSessionIds;
+            const presetRemotePaneSessionId =
+                (paneIndex !== undefined ? presetPaneIds?.[`pane#${paneIndex}`] : undefined)
+                ?? presetPaneIds?.[effectivePaneId];
+
+            // 如果是分屏副终端，检查是否从云端同步中缓存了历史屏幕缓冲。
+            // 若该分屏预设了目标机托管 remotePaneSessionId，先等待目标机 VT 快照直接还原（防双份重绘）；
+            // 若后续后端实际走 legacy 降级，会在 handleSshPaneReady 中补回放。
             const paneBufMap = (currentSessionState as any)?.lastTerminalPanesBuffer;
             let cachedPaneBuffer = paneBufMap?.[effectivePaneId];
             const usedKeys: string[] = cachedPaneBuffer ? [effectivePaneId] : [];
-            if (!cachedPaneBuffer && paneBufMap) {
-                try {
-                    const layoutStore = useLayoutStore();
-                    const order = layoutStore.getSessionTerminalPaneOrder(sessionId);
-                    const idx = order.indexOf(effectivePaneId);
-                    if (idx >= 0) {
-                        cachedPaneBuffer = paneBufMap[`pane#${idx}`];
-                        if (cachedPaneBuffer) usedKeys.push(`pane#${idx}`);
-                    }
-                } catch {
-                    /* 忽略 store 异常 */
-                }
+            if (!cachedPaneBuffer && paneBufMap && paneIndex !== undefined) {
+                cachedPaneBuffer = paneBufMap[`pane#${paneIndex}`];
+                if (cachedPaneBuffer) usedKeys.push(`pane#${paneIndex}`);
             }
-            if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
+            if (!presetRemotePaneSessionId && cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
                 console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
                 const paneFilter = getPaneWriteFilter(effectivePaneId);
                 writeTerminalReplay(term as any, paneFilter.write(cachedPaneBuffer.replace(/(\r\n)+$/, '')) + paneFilter.flush());
@@ -328,14 +332,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 });
             }
 
-            // 向后端请求开辟/复用独立的 Shell 通道（附带稳定先序序号 paneIndex，刷新重编 paneId 后仍可精准复用保活通道）
-            let paneIndex: number | undefined = undefined;
-            try {
-                const layoutStore = useLayoutStore();
-                const idx = layoutStore.getSessionTerminalPaneOrder(activeSid).indexOf(effectivePaneId);
-                if (idx >= 0) paneIndex = idx;
-            } catch {}
-            console.log(`[会话 ${activeSid}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} (paneIndex=${paneIndex ?? 'n/a'}) 打开/复用独立 Shell 通道...`);
+            console.log(`[会话 ${activeSid}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} (paneIndex=${paneIndex ?? 'n/a'}, remotePane=${presetRemotePaneSessionId ?? 'new'}) 打开/复用独立 Shell 通道...`);
             sendMessage({
                 type: 'ssh:pane_open',
                 sessionId: activeSid,
@@ -343,6 +340,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                     sessionId: activeSid,
                     paneId: effectivePaneId,
                     paneIndex,
+                    ...(presetRemotePaneSessionId ? { remotePaneSessionId: presetRemotePaneSessionId } : {}),
                     cols: term.cols || 80,
                     rows: term.rows || 24,
                 }
@@ -577,15 +575,21 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         // 主连接就绪，立刻为所有已挂载的分屏副终端打开独立 Shell 通道
         if (terminalPanes.value.size > 1) {
+            const activeSidForPanes = incomingSessionId || sessionId;
+            const currentSessionForPanes = globalSessionsRef.value.get(activeSidForPanes) ?? globalSessionsRef.value.get(sessionId);
+            const presetPaneIds = currentSessionForPanes?.remotePaneSessionIds;
             console.log(`[会话 ${sessionId}][SSH终端模块] 主会话已连接，正在为 ${terminalPanes.value.size - 1} 个分屏副终端打开独立 Shell...`);
             for (const [pId, entry] of terminalPanes.value.entries()) {
                 if (pId !== primaryPaneId.value) {
                     let paneIndex: number | undefined = undefined;
                     try {
                         const layoutStore = useLayoutStore();
-                        const idx = layoutStore.getSessionTerminalPaneOrder(incomingSessionId || sessionId).indexOf(pId);
+                        const idx = layoutStore.getSessionTerminalPaneOrder(activeSidForPanes).indexOf(pId);
                         if (idx >= 0) paneIndex = idx;
                     } catch {}
+                    const presetRemotePaneSessionId =
+                        (paneIndex !== undefined ? presetPaneIds?.[`pane#${paneIndex}`] : undefined)
+                        ?? presetPaneIds?.[pId];
                     sendMessage({
                         type: 'ssh:pane_open',
                         sessionId,
@@ -593,6 +597,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                             sessionId,
                             paneId: pId,
                             paneIndex,
+                            ...(presetRemotePaneSessionId ? { remotePaneSessionId: presetRemotePaneSessionId } : {}),
                             cols: entry.terminal.cols || 80,
                             rows: entry.terminal.rows || 24,
                         }
@@ -686,7 +691,32 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const errorMsg = payload || t('workspace.terminal.unknownSshError'); // 使用 i18n
         console.error(`[会话 ${sessionId}][SSH终端模块] SSH 错误:`, errorMsg);
         isSshConnected.value = false; // 更新状态
+
+        // Split-Horizon 离线占位保护：若是跨端恢复且尚未成功连上目标机，回放快照最后画面并保留离线占位态，
+        // 绝不丢失快照里原有的 remoteSessionId 与终端历史。
+        const currentSessionState = globalSessionsRef.value.get(sessionId);
+        if (currentSessionState && !hasConnectedBefore.value && (currentSessionState.remoteSessionId || (currentSessionState as any).lastTerminalBuffer)) {
+            currentSessionState.isUnreachablePlaceholder = true;
+            currentSessionState.unreachableError = typeof errorMsg === 'string' ? errorMsg : String((errorMsg as any)?.message || errorMsg);
+            const fallbackBuf = (currentSessionState as any).lastTerminalBuffer as string | undefined;
+            if (fallbackBuf && !(currentSessionState as any)._offlineFallbackReplayed && terminalInstance.value) {
+                (currentSessionState as any)._offlineFallbackReplayed = true;
+                writeTerminalReplay(terminalInstance.value as any, mainWriteFilter.write(fallbackBuf) + mainWriteFilter.flush());
+            }
+            terminalInstance.value?.writeln(`\r\n\x1b[33m${getTerminalText('unreachablePlaceholderMsg', { message: currentSessionState.unreachableError })}\x1b[0m`);
+            return;
+        }
+
         terminalInstance.value?.writeln(`\r\n\x1b[31m${getTerminalText('genericErrorMsg', { message: errorMsg })}\x1b[0m`);
+    };
+
+    const handleSshDetached = (payload: MessagePayload, message?: WebSocketMessage) => {
+        const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
+        if (incomingSessionId && incomingSessionId !== sessionId) {
+            return;
+        }
+        isSshConnected.value = false;
+        terminalInstance.value?.writeln(`\r\n\x1b[33m${getTerminalText('detachedByOtherClientMsg')}\x1b[0m`);
     };
 
     const handleSshStatus = (payload: MessagePayload, message?: WebSocketMessage) => {
@@ -761,10 +791,33 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
         if (incomingSessionId && incomingSessionId !== sessionId) return;
         const paneId = payload?.paneId;
-        console.log(`[会话 ${sessionId}][SSH终端模块] 后端分屏终端 ${paneId} Shell 独立通道就绪`);
+        console.log(`[会话 ${sessionId}][SSH终端模块] 后端分屏终端 ${paneId} Shell 独立通道就绪`, payload?.remotePaneSessionId ? `(remotePane=${payload.remotePaneSessionId})` : '');
         const paneEntry = terminalPanes.value.get(paneId);
+        const currentSessionState = globalSessionsRef.value.get(incomingSessionId || sessionId) ?? globalSessionsRef.value.get(sessionId);
+        if (currentSessionState && payload?.remotePaneSessionId && paneId) {
+            if (!currentSessionState.remotePaneSessionIds) {
+                currentSessionState.remotePaneSessionIds = {};
+            }
+            currentSessionState.remotePaneSessionIds[paneId] = String(payload.remotePaneSessionId);
+        }
         if (paneEntry) {
             paneEntry.isReady = true;
+            // 若本次未命中目标机托管（降级 legacy），把前面暂留的分屏快照历史补回放一次
+            if (payload?.hostingMode !== 'remote-agent' && currentSessionState) {
+                const paneBufMap = (currentSessionState as any).lastTerminalPanesBuffer;
+                if (paneBufMap) {
+                    let paneIndex = -1;
+                    try {
+                        paneIndex = useLayoutStore().getSessionTerminalPaneOrder(incomingSessionId || sessionId).indexOf(paneId);
+                    } catch {}
+                    const key = paneBufMap[paneId] ? paneId : (paneIndex >= 0 && paneBufMap[`pane#${paneIndex}`] ? `pane#${paneIndex}` : null);
+                    if (key && typeof paneBufMap[key] === 'string' && paneBufMap[key].length > 0) {
+                        const paneFilter = getPaneWriteFilter(paneId);
+                        writeTerminalReplay(paneEntry.terminal as any, paneFilter.write(paneBufMap[key].replace(/(\r\n)+$/, '')) + paneFilter.flush());
+                        try { delete paneBufMap[key]; } catch {}
+                    }
+                }
+            }
             // 副终端如果是复用后端保活的 Shell（刷新前在跑 btop），前端同样只收到增量数据，
             // 画面会残缺。通道就绪后立刻抖动一次，让它整屏重绘。
             forceTuiRedraw(paneEntry.terminal, 500);
@@ -805,6 +858,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         unregisterHandlers.push(onMessage('ssh:output', handleSshOutput));
         unregisterHandlers.push(onMessage('ssh:connected', handleSshConnected));
         unregisterHandlers.push(onMessage('ssh:disconnected', handleSshDisconnected));
+        unregisterHandlers.push(onMessage('ssh:detached', handleSshDetached));
         unregisterHandlers.push(onMessage('ssh:error', handleSshError));
         unregisterHandlers.push(onMessage('ssh:status', handleSshStatus));
         unregisterHandlers.push(onMessage('info', handleInfoMessage));

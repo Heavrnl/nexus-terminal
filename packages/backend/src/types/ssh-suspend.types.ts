@@ -91,6 +91,8 @@ export interface SuspendedSessionInfo {
   suspendSessionId: string;
   connectionName: string;
   connectionId: string;
+  /** 跨端稳定主机 UUID（用于桌面端/Web 端跨库对齐主机） */
+  connectionUuid?: string;
   suspendStartTime: string;
   customSuspendName?: string;
   backendSshStatus: BackendSshStatus;
@@ -98,4 +100,10 @@ export interface SuspendedSessionInfo {
   originalSessionId?: string;
   /** 是否手动挂起（关标签产生）。恢复工作区时必须跳过这类条目。 */
   manuallySuspended?: boolean;
+  /** 会话托管来源：remote-agent=目标服务器持久化托管，legacy=后端进程内存托管 */
+  hostingMode?: 'remote-agent' | 'legacy';
+  /** 目标机 nexus-mux 会话唯一 ID（当 hostingMode='remote-agent' 时存在） */
+  remoteSessionId?: string;
+  /** 进程退出码（若远端进程已自然退出） */
+  exitCode?: number | null;
 }

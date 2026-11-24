@@ -2,7 +2,11 @@ import { useSessionStore } from '../session.store';
 import { useFileEditorStore } from '../fileEditor.store';
 import { useLayoutStore } from '../layout.store';
 import { useConnectionsStore } from '../connections.store';
-import { normalizePaneBuffers, stripPrimaryPaneBuffer } from '../../utils/workspaceSnapshot';
+import {
+  normalizePaneBuffers,
+  normalizeRemotePaneSessionIds,
+  stripPrimaryPaneBuffer,
+} from '../../utils/workspaceSnapshot';
 import {
   isValidFileManagerSyncPath,
   type SyncedFileManagerInfo,
@@ -118,7 +122,11 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
 
     const isAlternateScreen = s.terminalManager?.terminalInstance?.value?.buffer?.active?.type === 'alternate';
 
-    if (terminalBuffer && !isAlternateScreen) {
+    // Split-Horizon 离线占位保护：当前处于网络不可达占位态时，保留原快照里的上次完整画面，
+    // 绝不用连接报错文本把原本完好的终端历史冲掉。
+    if (s.isUnreachablePlaceholder && (s as any).lastTerminalBuffer) {
+      terminalBuffer = (s as any).lastTerminalBuffer;
+    } else if (terminalBuffer && !isAlternateScreen) {
       // 主屏采集成功时刷新兜底缓存，供后续进入全屏 TUI 备用屏时保留进入前的历史
       (s as any).lastTerminalBuffer = terminalBuffer;
     } else if (!terminalBuffer && (s as any).lastTerminalBuffer) {
@@ -143,7 +151,12 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
       primaryId !== undefined ? (orderIndex >= 0 ? `pane#${orderIndex}` : primaryId) : undefined;
 
     let terminalPanesBuffer: Record<string, string> | undefined = undefined;
-    if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
+    if (s.isUnreachablePlaceholder && (s as any).lastTerminalPanesBuffer) {
+      terminalPanesBuffer = stripPrimaryPaneBuffer(
+        (s as any).lastTerminalPanesBuffer,
+        primaryPaneKey
+      );
+    } else if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
       // 规整（换稳定键 + 摘掉主终端，主终端内容由 terminalBuffer 单独承载）
       terminalPanesBuffer = normalizePaneBuffers(
         (s.terminalManager as any).serializeAllPanes(),
@@ -160,6 +173,15 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
     }
     // 只剩主终端时清掉兜底缓存，否则下次采集又会把含主终端的旧字典捡回来
     (s as any).lastTerminalPanesBuffer = terminalPanesBuffer;
+
+    // 采集目标机托管模式与主/分屏远端会话 ID
+    const effectiveHostingMode = s.hostingMode || s.wsManager?.hostingMode?.value;
+    const effectiveRemoteSessionId = s.remoteSessionId || s.wsManager?.remoteSessionId?.value;
+    const normalizedRemotePaneIds = normalizeRemotePaneSessionIds(
+      s.remotePaneSessionIds,
+      paneOrder,
+      primaryId
+    );
 
     // 会话自身独立的编辑器标签页（shareFileEditorTabs=false 时）
     let sessionSpecificTabs: SyncedFileTabInfo[] | undefined = undefined;
@@ -189,6 +211,10 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
       connectionUuid: matchedConn?.uuid,
       commandInputContent: s.commandInputContent.value || '',
       suspendSessionId: (s as any).suspendSessionId,
+      ...(effectiveHostingMode ? { hostingMode: effectiveHostingMode } : {}),
+      ...(effectiveRemoteSessionId ? { remoteSessionId: effectiveRemoteSessionId } : {}),
+      ...(normalizedRemotePaneIds ? { remotePaneSessionIds: normalizedRemotePaneIds } : {}),
+      ...(s.isUnreachablePlaceholder ? { unreachableOnLastRestore: true } : {}),
       terminalBuffer: terminalBuffer !== undefined ? terminalBuffer : '',
       terminalPanesBuffer,
       primaryTerminalPaneId:

@@ -50,6 +50,8 @@ RUN npm install --omit=dev --prefer-offline
 COPY --from=builder /app/packages/backend/dist ./dist
 COPY --from=builder /app/packages/backend/src/locales ./dist/locales
 COPY --from=builder /app/packages/backend/html-presets ./html-presets
+# 内置多平台目标机托管代理（nexus-mux 静态压缩二进制与 manifest.json）
+COPY packages/remote-agent/dist ./agent-binaries
 # 后端会自动检测 /app/public 下的 index.html 并托管前端 + SPA 回退
 COPY --from=builder /app/packages/frontend/dist ./public
 
@@ -58,6 +60,7 @@ RUN apk del .build-deps
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV NEXUS_DATA_DIR=/app/data
+ENV NEXUS_AGENT_BINARIES_DIR=/app/agent-binaries
 
 EXPOSE 3001
 

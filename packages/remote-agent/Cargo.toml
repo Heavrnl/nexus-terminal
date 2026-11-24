@@ -1,0 +1,40 @@
+[package]
+name = "nexus-mux"
+version = "0.1.0"
+edition = "2021"
+description = "Nexus Terminal 目标服务器轻量级 SSH 会话自托管守护代理"
+license = "ISC"
+
+[[bin]]
+name = "nexus-mux"
+path = "src/main.rs"
+
+[dependencies]
+bytes = "1.10"
+portable-pty = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "io-util", "io-std", "net", "sync", "time", "signal"] }
+uuid = { version = "1.12", features = ["v4"] }
+vt100 = "0.18"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

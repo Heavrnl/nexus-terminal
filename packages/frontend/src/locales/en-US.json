@@ -512,7 +512,11 @@
       "addJumpHost": "Add Jump Host",
       "noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first.",
       "errorDelete": "Failed to delete connection: {error}",
-      "folders": "Folder"
+      "folders": "Folder",
+      "sessionHostingMode": "SSH Session Hosting Mode",
+      "sessionHostingModeAuto": "Auto (Remote Host Managed)",
+      "sessionHostingModeLegacy": "Legacy Direct SSH Only",
+      "sessionHostingModeHint": "In Auto mode, follows global settings to host PTY sessions via the lightweight target agent (nexus-mux) with silent fallback if unsupported."
     },
     "test": {
       "success": "Opened with the system default application (saves sync back automatically)",
@@ -594,7 +598,9 @@
       "wsError": "WebSocket connection error",
       "wsClosed": "WebSocket closed (code: {code})",
       "wsClosedWillRetry": "WebSocket closed (code: {code}), retrying...",
-      "markedForSuspendNoReconnect": "Session marked for suspend, auto-reconnect paused"
+      "markedForSuspendNoReconnect": "Session marked for suspend, auto-reconnect paused",
+      "detachedByOtherClient": "Session taken over by another device or tab",
+      "unreachablePlaceholderBadge": "Offline placeholder (right-click to retry)"
     },
     "terminal": {
       "reconnectingMsg": "Attempting to reconnect...",
@@ -606,7 +612,9 @@
       "genericErrorMsg": "Error: {message}",
       "infoPrefix": "[Info]",
       "errorPrefix": "[Error]",
-      "unknownGenericError": "An unknown error occurred"
+      "unknownGenericError": "An unknown error occurred",
+      "unreachablePlaceholderMsg": "[Offline Placeholder] Target host is currently unreachable ({message}). The last terminal screen is preserved; right-click the tab to reconnect.",
+      "detachedByOtherClientMsg": "[Detached] This remote-hosted session was taken over by another device or tab. Processes continue running on the host."
     }
   },
   "fileEditor": {
@@ -1552,6 +1560,33 @@
       "disabledTip": "Currently disabled: reopening will navigate to the dashboard by default",
       "enabledSuccess": "Page memory enabled: next session will navigate to last visited page",
       "disabledSuccess": "Page memory disabled: next session will open dashboard by default"
+    },
+    "remoteHosting": {
+      "groupTitle": "Remote-Hosted Sessions & Cross-Device Handoff",
+      "bundledTargets": "{count} bundled agent target(s)",
+      "noBundledBinaries": "No bundled agent binaries (auto-fallback)",
+      "enableTitle": "Host SSH Sessions on Target Server",
+      "enableDesc": "Run a lightweight agent (nexus-mux) on the target server to host PTYs and VT screen state independently, enabling seamless Web, mobile, and desktop workspace handoff.",
+      "autoDeployTitle": "Auto-Deploy Agent on First Connect",
+      "autoDeployDesc": "Automatically push and SHA256-verify the matching agent binary over the existing SSH channel with zero extra ports or internet access; silently falls back if unsupported.",
+      "idleHoursTitle": "Detached Session Idle Auto-Reap",
+      "idleHoursHint": "Hours of inactivity after detaching before automatically reaping a running remote-hosted session. Set 0 to never auto-kill active sessions.",
+      "hoursUnit": "hours (0 = never)",
+      "desktopWorkspaceSyncTitle": "Desktop Cloud Workspace Live Sync",
+      "desktopWorkspaceSyncDesc": "Share live workspace state, takeover leases, and remote-hosted sessions with Web when cloud sync is configured; falls back to local workspace restore otherwise.",
+      "currentSyncModeLabel": "Current Workspace Sync Mode",
+      "modeCloudSynced": "Cloud Live Sync (Connected)",
+      "modeCloudOffline": "Cloud Offline Fallback (Local Cache)",
+      "modeLocalOnly": "Local Workspace Restore Only",
+      "success": {
+        "saved": "Settings saved",
+        "idleHoursSaved": "Idle reap duration saved."
+      },
+      "error": {
+        "saveFailed": "Failed to save settings",
+        "invalidIdleHours": "Please enter an integer between 0 and 8760 (0 disables auto-reaping).",
+        "idleHoursSaveFailed": "Failed to save idle reap duration."
+      }
     }
   },
   "notificationController": {
@@ -2432,7 +2467,14 @@
     "reclaiming": "Taking over workspace...",
     "reloading": "Reconnecting...",
     "backToHome": "Back to Home",
-    "safetyNote": "Cloud sessions kept alive securely with seamless roaming"
+    "safetyNote": "Cloud sessions kept alive securely with seamless roaming",
+    "offlineTooltip": "Cloud service temporarily unreachable; using local offline cache (will auto-sync when reconnected)",
+    "desktopLocalTooltip": "Desktop local workspace restore enabled (upgrades to cross-device live sync once cloud sync is configured)",
+    "offlineConflictTitle": "Cloud workspace updated while offline",
+    "offlineConflictDesc": "Desktop has reconnected to the cloud service, but another device modified the cloud workspace while you were offline. Choose how to resolve:",
+    "offlineConflictCloudTime": "Cloud last updated: {time}",
+    "offlineConflictPullCloud": "Pull latest cloud workspace (Recommended)",
+    "offlineConflictPushLocal": "Overwrite cloud with current desktop workspace"
   },
   "portForward": {
     "title": "Port forwarding",
@@ -2453,6 +2495,36 @@
       "local": "Local (-L)",
       "dynamic": "Dynamic SOCKS (-D)",
       "remote": "Remote (-R)"
+    }
+  },
+  "remoteAgent": {
+    "badge": {
+      "remoteHosted": "Remote Hosted",
+      "remoteHostedTooltip": "Hosted locally on the target server by nexus-mux; seamlessly resumable from Web and desktop"
+    },
+    "uninstall": {
+      "button": "Uninstall Remote Agent",
+      "confirmTitle": "Uninstall Target Host Agent",
+      "confirmMessage": "This will stop the nexus-mux daemon on the target host and remove its binary and runtime files (active background hosted sessions on this host will terminate). Continue?",
+      "success": "Remote agent uninstalled and cleaned up",
+      "failed": "Failed to uninstall remote agent: {error}"
+    },
+    "scan": {
+      "button": "Scan Host",
+      "buttonTooltip": "Scan active or orphaned remote-hosted sessions on a target host",
+      "modalTitle": "Scan Remote-Hosted Sessions",
+      "selectHostPlaceholder": "Select an SSH host to scan...",
+      "startScan": "Scan",
+      "scanning": "Scanning...",
+      "includeAllNamespaces": "Include all hosted sessions under the same OS user (cross-account / orphan inspection)",
+      "emptyResult": "No active or retained hosted sessions found on this host.",
+      "statusRunning": "Running",
+      "statusExited": "Exited",
+      "attachedBadge": "Attached",
+      "claimAction": "Attach",
+      "killAction": "Terminate",
+      "killSuccess": "Remote-hosted session terminated",
+      "killFailed": "Failed to terminate remote-hosted session: {error}"
     }
   }
 }

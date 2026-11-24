@@ -2,6 +2,8 @@ import { useSessionStore } from '../session.store';
 import { useLayoutStore } from '../layout.store';
 import { useConnectionsStore } from '../connections.store';
 import { useTerminalHighlightStore } from '../terminal-highlight.store';
+import { useDesktopSyncStore } from '../desktopSync.store';
+import { isDesktopApp } from '../../utils/platform';
 import { getLocalStorageSafe, recordSessionIdAlias as recordAlias } from '../../utils/pendingRemoval';
 import { cleanTrailingPromptForReconnect } from './terminalBuffer';
 import { writeTerminalReplay } from '../../utils/terminalReplaySilence';
@@ -48,6 +50,34 @@ export async function restoreSessionsFromSnapshot(
 
   if (!snapshot.sessions || snapshot.sessions.length === 0) {
     return sessionIdMap;
+  }
+
+  // 桌面端跨端接管保障：若云端快照中包含本机尚未拉取到的主机 UUID（例如在 Web 端刚新建的主机），
+  // 自动触发一次轻量资产拉取后再做连接匹配，避免出现找不到主机配置。
+  if (isDesktopApp()) {
+    const missingAnyUuid = snapshot.sessions.some(
+      (s) =>
+        s.connectionUuid &&
+        !connectionsStore.connections.some((c) => c.uuid && c.uuid === s.connectionUuid)
+    );
+    if (missingAnyUuid) {
+      try {
+        const desktopSyncStore = useDesktopSyncStore();
+        if (!desktopSyncStore.isConfigured) {
+          await desktopSyncStore.fetchConfig();
+        }
+        if (desktopSyncStore.isConfigured) {
+          logSync('检测到快照中包含本地尚未同步的主机 UUID，正在拉取云端主机与密钥资产...');
+          await desktopSyncStore.triggerSync('cloud_to_local', [
+            'connections.hosts',
+            'connections.keys',
+            'connections.proxies',
+          ]);
+        }
+      } catch (err) {
+        logSyncWarn('恢复前补拉桌面端云端主机资产失败（继续使用本地现有配置）:', err);
+      }
+    }
   }
 
   /**
@@ -97,19 +127,41 @@ export async function restoreSessionsFromSnapshot(
    */
   const manualSuspendedOriginalIds = new Set<string>();
   const manualSuspendedIds = new Set<string>();
+  const manualSuspendedRemoteIds = new Set<string>();
   for (const item of availableSuspended || []) {
     if (!item?.manuallySuspended) continue;
     if (item.originalSessionId) manualSuspendedOriginalIds.add(String(item.originalSessionId));
     if (item.suspendSessionId) manualSuspendedIds.add(String(item.suspendSessionId));
+    if (item.remoteSessionId) manualSuspendedRemoteIds.add(String(item.remoteSessionId));
   }
   const isSnapshotEntryManuallySuspended = (s: WorkspaceSnapshot['sessions'][number]) => {
-    if (manualSuspendedOriginalIds.size === 0 && manualSuspendedIds.size === 0) return false;
+    if (
+      manualSuspendedOriginalIds.size === 0 &&
+      manualSuspendedIds.size === 0 &&
+      manualSuspendedRemoteIds.size === 0
+    ) {
+      return false;
+    }
     if (s.sessionId && manualSuspendedOriginalIds.has(String(s.sessionId))) return true;
+    if (s.remoteSessionId && manualSuspendedRemoteIds.has(String(s.remoteSessionId))) return true;
     return !!s.suspendSessionId && manualSuspendedIds.has(String(s.suspendSessionId));
   };
 
+  // 快照级去重：防止高频跨端抢占场景下同一 remoteSessionId 在快照中重复出现导致自我互踢
+  const seenRemoteIds = new Set<string>();
+  const dedupedSnapshotSessions = snapshot.sessions.filter((s) => {
+    const rid = typeof s.remoteSessionId === 'string' ? s.remoteSessionId.trim() : '';
+    if (!rid || s.hostingMode === 'legacy') return true;
+    if (seenRemoteIds.has(rid)) {
+      logSyncWarn(`跳过快照中重复的目标机托管会话条目: ${rid} (${s.sessionId})`);
+      return false;
+    }
+    seenRemoteIds.add(rid);
+    return true;
+  });
+
   // 先同步匹配消费池，为并发恢复做预先规划
-  const restorePlans = snapshot.sessions.map((s) => {
+  const restorePlans = dedupedSnapshotSessions.map((s) => {
     // 多维三级匹配：1. UUID 跨库唯一标识 -> 2. 主机名称（跨端对齐）-> 3. 整数主键 ID（同库兜底）
     let connInfo = undefined;
     if (s.connectionUuid) {
@@ -125,34 +177,49 @@ export async function restoreSessionsFromSnapshot(
       connInfo = connectionsStore.connections.find((c) => c.id === connIdNum);
     }
 
-    let matchedIdx = autoClaimableSuspended.findIndex(
-      (item) => item.originalSessionId && item.originalSessionId === s.sessionId
-    );
-
-    if (matchedIdx === -1 && s.suspendSessionId) {
-      matchedIdx = autoClaimableSuspended.findIndex(
-        (item) => item.suspendSessionId === s.suspendSessionId
-      );
-    }
-
-    if (matchedIdx === -1) {
-      matchedIdx = autoClaimableSuspended.findIndex(
-        (item) =>
-          String(item.connectionId) === String(s.connectionId) ||
-          item.connectionName === s.connectionName
-      );
-    }
+    // 目标机自托管会话直接携带 remoteSessionId 建连接管，不依赖后端内存挂起池
+    const isRemoteAgentRestore = !!s.remoteSessionId && s.hostingMode !== 'legacy';
 
     let matchedSuspended: any = undefined;
-    if (matchedIdx !== -1) {
-      matchedSuspended = autoClaimableSuspended[matchedIdx];
-      autoClaimableSuspended.splice(matchedIdx, 1);
+    if (isRemoteAgentRestore) {
+      // 若自动挂起池里恰好有同 remoteSessionId 的残留项，消费掉以免干扰其他会话
+      const dupIdx = autoClaimableSuspended.findIndex(
+        (item) => item.remoteSessionId && item.remoteSessionId === s.remoteSessionId
+      );
+      if (dupIdx !== -1) {
+        autoClaimableSuspended.splice(dupIdx, 1);
+      }
+    } else {
+      let matchedIdx = autoClaimableSuspended.findIndex(
+        (item) => item.originalSessionId && item.originalSessionId === s.sessionId
+      );
+
+      if (matchedIdx === -1 && s.suspendSessionId) {
+        matchedIdx = autoClaimableSuspended.findIndex(
+          (item) => item.suspendSessionId === s.suspendSessionId
+        );
+      }
+
+      if (matchedIdx === -1) {
+        matchedIdx = autoClaimableSuspended.findIndex(
+          (item) =>
+            !item.remoteSessionId &&
+            (String(item.connectionId) === String(s.connectionId) ||
+              item.connectionName === s.connectionName)
+        );
+      }
+
+      if (matchedIdx !== -1) {
+        matchedSuspended = autoClaimableSuspended[matchedIdx];
+        autoClaimableSuspended.splice(matchedIdx, 1);
+      }
     }
 
     return {
       snapshotSession: s,
       connInfo,
       matchedSuspended,
+      isRemoteAgentRestore,
       isTargetActive: s.sessionId === targetActiveSessionSnapshotId,
       // 这条快照记录就是用户关掉的那张标签（已手动挂起）→ 不恢复，交给挂起面板
       blockedByManualSuspend: !matchedSuspended && isSnapshotEntryManuallySuspended(s),
@@ -180,7 +247,38 @@ export async function restoreSessionsFromSnapshot(
         return;
       }
 
-      if (plan.matchedSuspended) {
+      if (plan.isRemoteAgentRestore && plan.connInfo && s.remoteSessionId) {
+        // 防叠标签与自我互踢：若本页已存在指向同一 remoteSessionId 的残留标签，先优雅脱离清理再重连，
+        // 绝不让同一客户端并存两张相同 remoteSessionId 的标签互相触发 taken_over_by_new_attach。
+        const dupLocalIds: string[] = [];
+        for (const [existingSid, existingSess] of sessionStore.sessions.entries()) {
+          const existingRemoteId =
+            existingSess.remoteSessionId || existingSess.wsManager?.remoteSessionId?.value;
+          if (existingRemoteId === s.remoteSessionId && !claimedExistingIds.has(existingSid)) {
+            dupLocalIds.push(existingSid);
+          }
+        }
+        for (const dupSid of dupLocalIds) {
+          logSync(
+            `恢复目标机托管会话 ${s.remoteSessionId} 前，先优雅清理本页残留重复标签: ${dupSid}`
+          );
+          sessionStore.closeSession(dupSid, { recordRemoval: false });
+        }
+
+        logSync(
+          `目标机托管会话直连接管 (并发): ${plan.connInfo.name || plan.connInfo.host} (本地连接 ID: ${plan.connInfo.id}, remoteSessionId: ${s.remoteSessionId}, isTargetActive=${shouldActivateThis})`
+        );
+        targetSessionId =
+          sessionStore.openNewSession(plan.connInfo.id, undefined, shouldActivateThis, {
+            remoteSessionId: s.remoteSessionId,
+            remotePaneSessionIds: s.remotePaneSessionIds,
+          }) || null;
+        if (targetSessionId) {
+          claimedExistingIds.add(targetSessionId);
+          // 目标机托管会话由目标机 nexus-mux VT 状态机直接下发纯净快照，不提前叠加本地静态 buffer
+          isResumed = true;
+        }
+      } else if (plan.matchedSuspended) {
         logSync(
           `发现匹配的挂起会话，正在并发唤醒接管: ${plan.matchedSuspended.suspendSessionId} (${plan.matchedSuspended.connectionName}, isTargetActive=${shouldActivateThis})`
         );

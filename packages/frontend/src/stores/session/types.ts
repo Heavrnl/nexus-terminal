@@ -78,6 +78,20 @@ export interface SessionState {
    * paneId 是结构序号（terminal-0/terminal-1），跨刷新稳定。
    */
   focusedTerminalPaneId?: string;
+  /** 目标机自托管模式元数据 */
+  hostingMode?: 'remote-agent' | 'legacy';
+  /** 主终端对应的目标机托管会话 ID（nexus-mux session_id） */
+  remoteSessionId?: string;
+  /** 分屏副终端对应的目标机托管会话 ID 映射（paneId 或稳定键 pane#1 -> remotePaneSessionId） */
+  remotePaneSessionIds?: Record<string, string>;
+  /** 目标机托管通道最后收到的字节流序号（弱网 delta 续传游标） */
+  lastMuxSeq?: number;
+  /** 目标机后台保活降级风险提示（例如无 root 无法开启 systemd linger） */
+  persistenceWarning?: string;
+  /** Split-Horizon 网络不可达时的离线占位标记（保留标签与快照，绝不抹除） */
+  isUnreachablePlaceholder?: boolean;
+  /** 离线占位态最近一次建连错误信息 */
+  unreachableError?: string;
 }
 
 // 为标签栏定义包含状态的类型
@@ -87,4 +101,6 @@ export interface SessionTabInfoWithStatus {
   status: WsConnectionStatus; // 添加状态字段
   isMarkedForSuspend?: boolean; // +++ 用于UI指示会话是否已标记待挂起 +++
   kind: SessionKind; // 会话类型：标签栏据此决定渲染终端还是远程画面
+  hostingMode?: 'remote-agent' | 'legacy';
+  isUnreachablePlaceholder?: boolean;
 }

@@ -134,6 +134,16 @@ async function main() {
     console.warn('⚠️ 未找到 html-presets 目录: ' + htmlPresetsSrc);
   }
 
+  // 5.1 同步多平台目标机托管代理二进制 (agent-binaries)
+  const agentBinariesSrc = path.join(rootDir, 'packages', 'remote-agent', 'dist');
+  if (fs.existsSync(path.join(agentBinariesSrc, 'manifest.json'))) {
+    console.log('🤖 正在内置多平台 nexus-mux 托管代理到 resources/server/agent-binaries...');
+    fs.cpSync(agentBinariesSrc, path.join(serverDir, 'agent-binaries'), { recursive: true, force: true });
+    fs.cpSync(agentBinariesSrc, path.join(serverDir, 'dist', 'agent-binaries'), { recursive: true, force: true });
+  } else {
+    console.warn('⚠️ 未找到预编译的 nexus-mux manifest.json（如需内置目标机托管代理请先运行 npm run agent:build）');
+  }
+
   // 5. 准备极简 package.json (已全量 Bundle，零外部运行时依赖)
   const backendPkg = JSON.parse(fs.readFileSync(path.join(backendDir, 'package.json'), 'utf8'));
   const cleanPkg = {

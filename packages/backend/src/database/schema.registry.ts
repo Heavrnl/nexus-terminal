@@ -167,4 +167,17 @@ export const tableDefinitions: TableDefinition[] = [
             }
         }
     },
+    {
+        name: 'remote_hosted_sessions',
+        sql: schemaSql.createRemoteHostedSessionsTableSQL,
+        init: async (db: Database): Promise<void> => {
+            try {
+                await runDb(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_hosted_sessions_uuid ON remote_hosted_sessions(uuid);`);
+                await runDb(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_hosted_sessions_remote_id ON remote_hosted_sessions(remote_session_id);`);
+                await runDb(db, `CREATE INDEX IF NOT EXISTS idx_remote_hosted_sessions_conn_uuid ON remote_hosted_sessions(connection_uuid);`);
+            } catch (err: any) {
+                console.error('[DB Init] 创建 remote_hosted_sessions 索引失败:', err.message);
+            }
+        }
+    },
 ];

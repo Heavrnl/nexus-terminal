@@ -30,8 +30,10 @@ import { appendRingBuffer, cleanupClientConnection } from './utils';
 import { BackendTerminalEmulator } from './terminal-emulator';
 import { OutputCoalescer } from './output-coalescer';
 import { clientStates } from './state';
-import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service'; 
-import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
+import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
+import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+import { remoteHostedSessionRepository } from '../remote-agent/remote-hosted-session.repository';
+import { getOrCreateOwnerNamespace } from '../remote-agent/owner-namespace.service';
 
 // Handlers
 import {
@@ -606,16 +608,58 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
                             let actualSessionId = requestedSessionId || ws.sessionId || '';
                             let stateForSuspend = clientStates.get(actualSessionId);
-                            if ((!stateForSuspend || !stateForSuspend.sshClient || !stateForSuspend.sshShellStream) && ws.sessionId) {
+                            const isUsableForSuspend = (st?: ClientState) =>
+                                Boolean(st && st.sshClient && (st.sshShellStream || (st.hostingMode === 'remote-agent' && st.muxMainHandle)));
+                            if (!isUsableForSuspend(stateForSuspend) && ws.sessionId) {
                                 const fallbackState = clientStates.get(ws.sessionId);
-                                if (fallbackState && fallbackState.sshClient && fallbackState.sshShellStream) {
+                                if (isUsableForSuspend(fallbackState)) {
                                     actualSessionId = ws.sessionId;
                                     stateForSuspend = fallbackState;
                                 }
                             }
 
-                            if (!stateForSuspend || !stateForSuspend.sshClient || !stateForSuspend.sshShellStream) {
+                            if (!stateForSuspend || !isUsableForSuspend(stateForSuspend)) {
                                 replySuspendNow(false, { error: '未找到可挂起的活动 SSH 会话' });
+                                break;
+                            }
+
+                            // 目标机自托管模式（nexus-mux）：持久化挂起元数据并优雅 DETACH，不占后端常驻 SSH
+                            if (stateForSuspend.hostingMode === 'remote-agent' && stateForSuspend.remoteSessionId) {
+                                try {
+                                    const remoteId = stateForSuspend.remoteSessionId;
+                                    const { ownerNamespace } = await getOrCreateOwnerNamespace();
+                                    await remoteHostedSessionRepository.upsert({
+                                        remoteSessionId: remoteId,
+                                        connectionUuid: stateForSuspend.connectionUuid ?? null,
+                                        connectionId: stateForSuspend.dbConnectionId,
+                                        connectionName: stateForSuspend.connectionName || '未知连接',
+                                        manuallySuspended: true,
+                                        status: 'hanging',
+                                        ownerNamespace,
+                                    });
+
+                                    try { stateForSuspend.outputCoalescer?.dispose(true); } catch {}
+                                    stateForSuspend.outputCoalescer = undefined;
+                                    stateForSuspend.isSuspendedByService = true;
+                                    stateForSuspend.isMarkedForSuspend = false;
+                                    try { stateForSuspend.muxTransport?.detachAllAndClose(); } catch {}
+                                    stateForSuspend.muxMainHandle = undefined;
+                                    stateForSuspend.muxTransport = undefined;
+                                    stateForSuspend.paneStreams?.clear();
+                                    try { stateForSuspend.sshClient?.end?.(); } catch {}
+                                    stateForSuspend.sshClient = undefined as any;
+
+                                    console.log(`[SSH_SUSPEND_NOW] 目标机托管会话 ${remoteId} 已持久化挂起并优雅 DETACH（跨端可见）。`);
+                                    replySuspendNow(true, { suspendSessionId: remoteId, hostingMode: 'remote-agent' });
+                                } catch (err: any) {
+                                    console.error(`[SSH_SUSPEND_NOW] 目标机托管会话挂起失败:`, err);
+                                    replySuspendNow(false, { error: err?.message || '挂起失败' });
+                                }
+                                break;
+                            }
+
+                            if (!stateForSuspend.sshShellStream) {
+                                replySuspendNow(false, { error: '未找到可挂起的活动 SSH Shell 通道' });
                                 break;
                             }
 
@@ -810,11 +854,25 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
             ws.on('close', (code, reason) => {
                 const reasonStr = reason ? reason.toString() : '';
                 console.log(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 已断开连接。代码: ${code}, 原因: ${reasonStr}`);
-                if (code === 1000 || reasonStr.includes('关闭') || reasonStr.includes('主动') || reasonStr.includes('manual')) {
-                    if (ws.sessionId) {
-                        const existing = clientStates.get(ws.sessionId);
-                        // 仅当该状态仍属于当前 ws 时才标记显式关闭，避免旧 ws 关闭污染新 ws 会话
-                        if (existing && existing.ws === ws) {
+                if (ws.sessionId) {
+                    const existing = clientStates.get(ws.sessionId);
+                    // 仅当该状态仍属于当前 ws 时才评估显式关闭，避免旧 ws 关闭污染新 ws 会话
+                    if (existing && existing.ws === ws) {
+                        if (existing.hostingMode === 'remote-agent') {
+                            // 目标机自托管模式：只有明确的显式关闭终止（用户关标签）才发 KILL；
+                            // 普通的 code=1000（刷新卸载 / 接管清场 / 断开重连）一律优雅 DETACH，保持目标机进程存活！
+                            if (reasonStr.includes('EXPLICIT_CLOSE_TERMINATE')) {
+                                existing.isExplicitlyClosed = true;
+                                existing.isMarkedForSuspend = false;
+                            }
+                        } else if (
+                            code === 1000 ||
+                            reasonStr.includes('关闭') ||
+                            reasonStr.includes('主动') ||
+                            reasonStr.includes('manual') ||
+                            reasonStr.includes('EXPLICIT_CLOSE_TERMINATE') ||
+                            reasonStr.includes('DETACH_KEEP_REMOTE')
+                        ) {
                             existing.isExplicitlyClosed = true;
                             existing.isMarkedForSuspend = false;
                         }

@@ -87,6 +87,7 @@ const SYNC_ENTITY_TABLES = new Set([
   'appearance_settings',
   'terminal_themes',
   'favorite_paths',
+  'remote_hosted_sessions',
 ]);
 
 /**
@@ -207,6 +208,7 @@ export interface SnapshotResponseResult {
       jump_chain?: any;
       background_color?: string | null;
       file_protocol?: 'sftp' | 'scp' | 'auto';
+      session_hosting_mode?: 'auto' | 'legacy';
       folder_uuids: string[];
       updated_hlc: string;
     }>;
@@ -254,6 +256,20 @@ export interface SnapshotResponseResult {
       scope: 'global' | 'host';
       connection_uuid: string | null;
       last_used_at: number | null;
+      updated_hlc: string;
+    }>;
+    remote_hosted_sessions?: Array<{
+      uuid: string;
+      remote_session_id: string;
+      connection_uuid: string | null;
+      connection_name: string;
+      custom_name: string | null;
+      manually_suspended: number;
+      status: string;
+      exit_code: number | null;
+      owner_namespace: string | null;
+      created_at: number;
+      updated_at: number;
       updated_hlc: string;
     }>;
   };
@@ -599,7 +615,7 @@ export const syncV2Service = {
                   `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                          encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                          proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?,
-                                         background_color = ?, file_protocol = ?, updated_hlc = ?
+                                         background_color = ?, file_protocol = ?, session_hosting_mode = ?, updated_hlc = ?
                    WHERE uuid = ?`,
                   [
                     data.name || null,
@@ -618,6 +634,7 @@ export const syncV2Service = {
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
                     data.file_protocol || 'auto',
+                    data.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
                     effectiveHlc,
                     item.row_id
                   ]
@@ -629,8 +646,8 @@ export const syncV2Service = {
                   `INSERT INTO connections (uuid, name, type, host, port, username, auth_method,
                                            encrypted_password, encrypted_private_key, encrypted_passphrase,
                                            proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
-                                           file_protocol, updated_hlc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                           file_protocol, session_hosting_mode, updated_hlc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     item.row_id,
                     data.name || null,
@@ -649,6 +666,7 @@ export const syncV2Service = {
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
                     data.file_protocol || 'auto',
+                    data.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
                     effectiveHlc
                   ]
                 );
@@ -939,6 +957,74 @@ export const syncV2Service = {
                   ]
                 );
               }
+            } else if (item.tbl === 'remote_hosted_sessions') {
+              const remoteSessionId = typeof data.remote_session_id === 'string' ? data.remote_session_id.trim() : '';
+              if (!remoteSessionId) throw new Error('目标机托管会话缺少 remote_session_id');
+              const connUuid = data.connection_uuid ?? null;
+              let resolvedConnId: number | null = null;
+              if (connUuid) {
+                const cRow = await getDb<{ id: number }>(db, `SELECT id FROM connections WHERE uuid = ? LIMIT 1`, [connUuid]);
+                if (cRow) resolvedConnId = cRow.id;
+              }
+              let rhsId: number | null = existingLive ? (existingLive.id ?? null) : null;
+              if (!rhsId) {
+                const byRemoteId = await getDb<{ id: number }>(
+                  db,
+                  `SELECT id FROM remote_hosted_sessions WHERE remote_session_id = ? LIMIT 1`,
+                  [remoteSessionId]
+                );
+                if (byRemoteId) rhsId = byRemoteId.id;
+              }
+              const nowSec = Math.floor(nowMs / 1000);
+              if (rhsId) {
+                await runDb(
+                  db,
+                  `UPDATE remote_hosted_sessions
+                   SET remote_session_id = ?, connection_uuid = ?, connection_id = COALESCE(?, connection_id),
+                       connection_name = ?, custom_name = ?, manually_suspended = ?, status = ?, exit_code = ?,
+                       owner_namespace = ?, uuid = ?, updated_hlc = ?, updated_at = ?
+                   WHERE id = ?`,
+                  [
+                    remoteSessionId,
+                    connUuid,
+                    resolvedConnId,
+                    data.connection_name || '',
+                    data.custom_name ?? null,
+                    data.manually_suspended ? 1 : 0,
+                    data.status || 'hanging',
+                    data.exit_code ?? null,
+                    data.owner_namespace ?? null,
+                    item.row_id,
+                    effectiveHlc,
+                    data.updated_at || nowSec,
+                    rhsId,
+                  ]
+                );
+              } else {
+                await runDb(
+                  db,
+                  `INSERT INTO remote_hosted_sessions (
+                     uuid, remote_session_id, connection_uuid, connection_id, connection_name,
+                     custom_name, manually_suspended, status, exit_code, owner_namespace,
+                     created_at, updated_at, updated_hlc
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    item.row_id,
+                    remoteSessionId,
+                    connUuid,
+                    resolvedConnId,
+                    data.connection_name || '',
+                    data.custom_name ?? null,
+                    data.manually_suspended ? 1 : 0,
+                    data.status || 'hanging',
+                    data.exit_code ?? null,
+                    data.owner_namespace ?? null,
+                    data.created_at || nowSec,
+                    data.updated_at || nowSec,
+                    effectiveHlc,
+                  ]
+                );
+              }
             }
 
             // 清理墓碑
@@ -1173,6 +1259,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
+                session_hosting_mode: c.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
                 folder_uuids: tagUuids,
                 file_highlights: highlightRows
               }
@@ -1358,6 +1445,29 @@ export const syncV2Service = {
               }
             });
           }
+        } else if (row.tbl === 'remote_hosted_sessions') {
+          const h = await getDb<any>(db, `SELECT * FROM remote_hosted_sessions WHERE uuid = ?`, [row.row_id]);
+          if (h) {
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: h.updated_hlc || `${Date.now()}-00000-server`,
+              data: {
+                remote_session_id: h.remote_session_id,
+                connection_uuid: h.connection_uuid ?? null,
+                connection_name: h.connection_name || '',
+                custom_name: h.custom_name ?? null,
+                manually_suspended: h.manually_suspended ? 1 : 0,
+                status: h.status || 'hanging',
+                exit_code: h.exit_code ?? null,
+                owner_namespace: h.owner_namespace ?? null,
+                created_at: h.created_at,
+                updated_at: h.updated_at,
+              }
+            });
+          }
         }
       }
     }
@@ -1472,6 +1582,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
+                session_hosting_mode: c.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
                 folder_uuids: tagRows.map(t => t.uuid).filter(Boolean),
                 file_highlights: highlightRows
               }
@@ -1652,6 +1763,29 @@ export const syncV2Service = {
                 scope: f.scope === 'host' ? 'host' : 'global',
                 connection_uuid: f.connection_uuid ?? null,
                 last_used_at: f.last_used_at ?? null
+              }
+            });
+          }
+        } else if (r.tbl === 'remote_hosted_sessions') {
+          const h = await getDb<any>(db, `SELECT * FROM remote_hosted_sessions WHERE uuid = ?`, [r.row_id]);
+          if (h) {
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: h.updated_hlc || `${Date.now()}-00000-local`,
+              data: {
+                remote_session_id: h.remote_session_id,
+                connection_uuid: h.connection_uuid ?? null,
+                connection_name: h.connection_name || '',
+                custom_name: h.custom_name ?? null,
+                manually_suspended: h.manually_suspended ? 1 : 0,
+                status: h.status || 'hanging',
+                exit_code: h.exit_code ?? null,
+                owner_namespace: h.owner_namespace ?? null,
+                created_at: h.created_at,
+                updated_at: h.updated_at,
               }
             });
           }
@@ -2075,6 +2209,7 @@ export const syncV2Service = {
         jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
         background_color: c.background_color || null,
         file_protocol: c.file_protocol || 'auto',
+        session_hosting_mode: (c.session_hosting_mode === 'legacy' ? 'legacy' : 'auto') as 'auto' | 'legacy',
         folder_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         file_highlights: highlightRows,
         updated_hlc: c.updated_hlc
@@ -2176,6 +2311,25 @@ export const syncV2Service = {
         updated_hlc: f.updated_hlc || `${Date.now()}-00000-server`
       }));
 
+    // 10.9 提取 remote_hosted_sessions（目标机自托管会话元数据）
+    const rawHostedSessions = await allDb<any>(db, `SELECT * FROM remote_hosted_sessions ORDER BY id ASC`);
+    const remoteHostedSessions = rawHostedSessions
+      .filter(h => !!h.uuid && !!h.remote_session_id)
+      .map(h => ({
+        uuid: h.uuid,
+        remote_session_id: h.remote_session_id,
+        connection_uuid: h.connection_uuid ?? null,
+        connection_name: h.connection_name || '',
+        custom_name: h.custom_name ?? null,
+        manually_suspended: h.manually_suspended ? 1 : 0,
+        status: h.status || 'hanging',
+        exit_code: h.exit_code ?? null,
+        owner_namespace: h.owner_namespace ?? null,
+        created_at: h.created_at,
+        updated_at: h.updated_at,
+        updated_hlc: h.updated_hlc || `${Date.now()}-00000-server`
+      }));
+
     // 11. 按同步范围（细项）裁剪
     //     混合表 settings / appearance_settings 再按 key 分一次组，
     //     其余表整表开或整表关。关闭的子项返回空数组，不参与 total_count。
@@ -2191,7 +2345,8 @@ export const syncV2Service = {
       port_forwards: want('port_forwards') ? portForwards : [],
       appearance_settings: appearanceSettings.filter(s => wantKey('appearance_settings', s.key)),
       terminal_themes: want('terminal_themes') ? terminalThemes : [],
-      favorite_paths: want('favorite_paths') ? favoritePaths : []
+      favorite_paths: want('favorite_paths') ? favoritePaths : [],
+      remote_hosted_sessions: want('remote_hosted_sessions') ? remoteHostedSessions : []
     };
 
     const totalCount = Object.values(scoped).reduce((sum, list) => sum + list.length, 0);
@@ -2214,7 +2369,8 @@ export const syncV2Service = {
         port_forwards: scoped.port_forwards,
         appearance_settings: scoped.appearance_settings,
         terminal_themes: scoped.terminal_themes,
-        favorite_paths: scoped.favorite_paths
+        favorite_paths: scoped.favorite_paths,
+        remote_hosted_sessions: scoped.remote_hosted_sessions
       },
       tombstones,
       server_time: serverTime

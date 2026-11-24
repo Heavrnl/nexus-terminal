@@ -1,0 +1,125 @@
+name: Build Remote Session Agent (nexus-mux)
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            ext: ''
+            needs_musl_tools: true
+          - os: linux
+            arch: aarch64
+            target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            ext: ''
+            needs_musl_tools: true
+          - os: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+            runner: macos-14
+            ext: ''
+            needs_musl_tools: false
+          - os: darwin
+            arch: x86_64
+            target: x86_64-apple-darwin
+            runner: macos-14
+            ext: ''
+            needs_musl_tools: false
+          - os: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            ext: '.exe'
+            needs_musl_tools: false
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 安装 musl 静态编译工具链（仅 Linux）
+        if: matrix.needs_musl_tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: 配置 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 启用 Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'packages/remote-agent -> target'
+          key: nexus-mux-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: 运行单元测试（原生可运行目标）
+        if: matrix.os != 'darwin' || matrix.arch == 'arm64'
+        working-directory: packages/remote-agent
+        run: cargo test --target ${{ matrix.target }}
+
+      - name: 编译精简 Release 二进制
+        working-directory: packages/remote-agent
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: 归档平台产物
+        shell: bash
+        run: |
+          mkdir -p agent-out
+          # 将 macOS arm64 标准化为 aarch64 便于与 uname -m / manifest 对齐
+          NORM_ARCH="${{ matrix.arch }}"
+          if [ "$NORM_ARCH" = "arm64" ]; then NORM_ARCH="aarch64"; fi
+          cp "packages/remote-agent/target/${{ matrix.target }}/release/nexus-mux${{ matrix.ext }}" \
+             "agent-out/nexus-mux-${{ matrix.os }}-${NORM_ARCH}${{ matrix.ext }}"
+
+      - name: 上传单平台原始产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-mux-raw-${{ matrix.os }}-${{ matrix.arch }}
+          path: agent-out/*
+          retention-days: 1
+
+  bundle:
+    name: Bundle nexus-mux manifest
+    needs: compile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+
+      - name: 下载全部平台原始二进制
+        uses: actions/download-artifact@v4
+        with:
+          path: raw-agents
+          pattern: nexus-mux-raw-*
+          merge-multiple: true
+
+      - name: 压缩并生成 manifest.json
+        run: node packages/remote-agent/scripts/build-agent.mjs --collect-from raw-agents
+
+      - name: 上传全平台压缩包（供 Docker 与桌面端内置）
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-mux-bundle
+          path: packages/remote-agent/dist/*
+          retention-days: 7

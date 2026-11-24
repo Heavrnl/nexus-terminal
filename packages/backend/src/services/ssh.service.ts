@@ -49,11 +49,13 @@ export interface JumpHostDetail {
 
 export interface DecryptedConnectionDetails {
     id: number;
+    uuid?: string;
     name: string;
     host: string;
     port: number;
     username: string;
     auth_method: 'password' | 'key';
+    session_hosting_mode?: 'auto' | 'legacy';
     password?: string; // Decrypted
     privateKey?: string; // Decrypted
     passphrase?: string; // Decrypted
@@ -85,16 +87,23 @@ export const getConnectionDetails = async (connectionId: number): Promise<Decryp
         throw new Error(`连接配置 ID ${connectionId} 未找到。`);
     }
 
-    const typedRawConnInfo = rawConnInfo as typeof rawConnInfo & { jump_chain?: string | null; proxy_type?: 'proxy' | 'jump' | null };
+    const typedRawConnInfo = rawConnInfo as typeof rawConnInfo & {
+        uuid?: string | null;
+        jump_chain?: string | null;
+        proxy_type?: 'proxy' | 'jump' | null;
+        session_hosting_mode?: string | null;
+    };
 
     try {
         const fullConnInfo: DecryptedConnectionDetails = {
             id: typedRawConnInfo.id,
+            uuid: typedRawConnInfo.uuid || undefined,
             name: typedRawConnInfo.name ?? (() => { throw new Error(`Connection ID ${connectionId} has null name.`); })(),
             host: typedRawConnInfo.host ?? (() => { throw new Error(`Connection ID ${connectionId} has null host.`); })(),
             port: typedRawConnInfo.port ?? (() => { throw new Error(`Connection ID ${connectionId} has null port.`); })(),
             username: typedRawConnInfo.username ?? (() => { throw new Error(`Connection ID ${connectionId} has null username.`); })(),
             auth_method: typedRawConnInfo.auth_method ?? (() => { throw new Error(`Connection ID ${connectionId} has null auth_method.`); })(),
+            session_hosting_mode: typedRawConnInfo.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
             password: undefined,
             privateKey: undefined,
             passphrase: undefined,

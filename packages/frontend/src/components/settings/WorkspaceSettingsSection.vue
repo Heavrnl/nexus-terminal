@@ -211,6 +211,107 @@
       </div>
     </div>
 
+    <!-- 1.5 目标机自托管会话与跨端同步 (Remote Session Hosting & Workspace Sync) -->
+    <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
+      <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between gap-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-base shrink-0">
+            <i class="fas fa-server"></i>
+          </div>
+          <div>
+            <h3 class="text-base sm:text-lg font-semibold text-foreground leading-snug">
+              {{ $t('settings.remoteHosting.groupTitle', '目标机自托管会话与跨端接力') }}
+            </h3>
+          </div>
+        </div>
+        <div v-if="remoteAgentStatus" class="flex items-center gap-2 text-xs text-text-secondary">
+          <span
+            class="px-2 py-0.5 rounded-full border font-medium"
+            :class="remoteAgentStatus.availableTargets.length > 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/25' : 'bg-amber-500/10 text-amber-500 border-amber-500/25'"
+          >
+            {{
+              remoteAgentStatus.availableTargets.length > 0
+                ? $t('settings.remoteHosting.bundledTargets', { count: remoteAgentStatus.availableTargets.length })
+                : $t('settings.remoteHosting.noBundledBinaries', '未内置代理二进制（将自动降级）')
+            }}
+          </span>
+        </div>
+      </div>
+      <div class="divide-y divide-border/40">
+        <!-- 总开关：启用目标机自托管会话 -->
+        <SettingToggle
+          setting-key="remoteSessionHostingEnabled"
+          title-key="settings.remoteHosting.enableTitle"
+          title-fallback="目标服务器自托管 SSH 会话"
+          desc-key="settings.remoteHosting.enableDesc"
+          desc-fallback="由目标主机本地轻量代理（nexus-mux）直接托管 PTY 与终端屏幕状态，支持 Web 端、移动端与桌面端实时同步无缝接管，后端重启或网络抖动均不断线。"
+          success-key="settings.remoteHosting.success.saved"
+          error-key="settings.remoteHosting.error.saveFailed"
+        />
+
+        <!-- 自动部署开关 -->
+        <SettingToggle
+          setting-key="remoteSessionAutoDeploy"
+          title-key="settings.remoteHosting.autoDeployTitle"
+          title-fallback="首次连接自动静默部署代理"
+          desc-key="settings.remoteHosting.autoDeployDesc"
+          desc-fallback="通过当前 SSH 通道推送并校验对应架构的轻量代理，无需开放额外端口或访问公网；不支持的架构或只读环境将自动静默降级为传统 SSH 模式。"
+          success-key="settings.remoteHosting.success.saved"
+          error-key="settings.remoteHosting.error.saveFailed"
+        />
+
+        <!-- 活跃脱离会话空闲回收时长 -->
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="flex items-center gap-1.5">
+              <label for="remoteSessionDetachedIdleHoursInput" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                {{ $t('settings.remoteHosting.idleHoursTitle', '脱离托管会话空闲自动回收') }}
+              </label>
+              <HelpTooltip :text="$t('settings.remoteHosting.idleHoursHint', '设置脱离客户端后无任何输出活动的目标机托管会话自动回收时长（小时）。0 表示永不自动强杀运行中会话。')" />
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="relative flex items-center">
+              <input
+                type="number"
+                id="remoteSessionDetachedIdleHoursInput"
+                v-model.number="remoteSessionDetachedIdleHoursLocal"
+                min="0"
+                max="8760"
+                step="1"
+                placeholder="0"
+                @change="handleUpdateRemoteSessionDetachedIdleHours"
+                @keydown.enter.prevent="handleUpdateRemoteSessionDetachedIdleHours"
+                class="w-28 sm:w-32 h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <span class="text-sm text-text-secondary ml-2 shrink-0">{{ $t('settings.remoteHosting.hoursUnit', '小时 (0=不限)') }}</span>
+            </div>
+            <span v-if="!remoteSessionDetachedIdleHoursSuccess && remoteSessionDetachedIdleHoursMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
+              {{ remoteSessionDetachedIdleHoursMessage }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 桌面端工作区云端实时同步开关与当前模式（仅桌面客户端展示） -->
+        <template v-if="isDesktop">
+          <SettingToggle
+            setting-key="desktopWorkspaceSyncEnabled"
+            title-key="settings.remoteHosting.desktopWorkspaceSyncTitle"
+            title-fallback="桌面端接入云端工作区实时同步"
+            desc-key="settings.remoteHosting.desktopWorkspaceSyncDesc"
+            desc-fallback="配置云端同步后，桌面端将与 Web 端共享实时工作区与互斥接管租约，并接力目标机托管会话；关闭或未配置云端时仍保留桌面本地工作区自动恢复。"
+            success-key="settings.remoteHosting.success.saved"
+            error-key="settings.remoteHosting.error.saveFailed"
+          />
+          <div class="px-6 py-3.5 bg-muted/15 flex items-center justify-between gap-3 text-xs text-text-secondary">
+            <span>{{ $t('settings.remoteHosting.currentSyncModeLabel', '当前工作区同步模式') }}</span>
+            <span class="font-medium text-foreground">{{ desktopSyncModeLabel }}</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- 2. 文件管理与代码编辑 (File Manager & Editor) -->
     <div class="bg-background border border-border rounded-xl shadow-sm overflow-hidden">
       <div class="px-6 py-4.5 border-b border-border/80 bg-header/30 flex items-center justify-between">
@@ -566,10 +667,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useSettingsStore } from '../../stores/settings.store';
+import { useWorkspaceSyncStore } from '../../stores/workspaceSync.store';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
+import apiClient from '../../utils/apiClient';
 import { useWorkspaceSettings } from '../../composables/settings/useWorkspaceSettings';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
 import { useStringSettingControl } from '../../composables/settings/useSettingControl';
@@ -597,6 +700,10 @@ const {
   terminalScrollbackLimitMessage,
   terminalScrollbackLimitSuccess,
   handleUpdateTerminalScrollbackLimit,
+  remoteSessionDetachedIdleHoursLocal,
+  remoteSessionDetachedIdleHoursMessage,
+  remoteSessionDetachedIdleHoursSuccess,
+  handleUpdateRemoteSessionDetachedIdleHours,
   terminalRightClickBehaviorLocal,
   terminalRightClickBehaviorLoading,
   terminalRightClickBehaviorMessage,
@@ -644,6 +751,37 @@ const handleSelectMarkdownDefaultViewModeMobile = async (mode: 'preview' | 'spli
 // --- 桌面客户端：打开文件的方式（内置编辑器 / 系统默认程序） ---
 // Web 与移动端没有"外部程序"这一概念，这一块只在桌面客户端渲染。
 const isDesktop = computed(() => isDesktopApp());
+const workspaceSyncStore = useWorkspaceSyncStore();
+const { runtimeMode: workspaceRuntimeMode } = storeToRefs(workspaceSyncStore);
+
+const remoteAgentStatus = ref<{
+  availableTargets: Array<{ os: string; arch: string; version: string }>;
+} | null>(null);
+
+const desktopSyncModeLabel = computed(() => {
+  switch (workspaceRuntimeMode.value) {
+    case 'desktop_cloud_synced':
+      return t('settings.remoteHosting.modeCloudSynced', '云端实时同步（已连通）');
+    case 'desktop_cloud_offline':
+      return t('settings.remoteHosting.modeCloudOffline', '云端离线降级（本地缓存）');
+    default:
+      return t('settings.remoteHosting.modeLocalOnly', '纯本地工作区恢复');
+  }
+});
+
+onMounted(async () => {
+  try {
+    const res = await apiClient.get('/connections/remote-agent/status');
+    if (res.data?.success && res.data?.data) {
+      remoteAgentStatus.value = res.data.data;
+    }
+  } catch {
+    // 忽略状态加载失败
+  }
+  if (isDesktop.value) {
+    void workspaceSyncStore.fetchRuntimeMode();
+  }
+});
 
 const fileOpenModeOptions = computed(() => [
   { value: 'builtin' as const, label: t('settings.workspace.fileOpenModeBuiltin', '内置编辑器'), icon: 'fas fa-window-maximize' },

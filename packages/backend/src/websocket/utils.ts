@@ -5,6 +5,8 @@ import { clientStates, sftpService, statusMonitorService } from './state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+import { remoteHostedSessionRepository } from '../remote-agent/remote-hosted-session.repository';
+import { getOrCreateOwnerNamespace } from '../remote-agent/owner-namespace.service';
 
 /** 单会话在线态环形输出缓冲上限（1MB） */
 export const MAX_RECENT_OUTPUT_BYTES = 1024 * 1024;
@@ -149,7 +151,56 @@ export const cleanupClientConnection = async (sessionId: string | undefined, exp
         let frozenInitialBuffer: string | undefined = undefined;
         let handoverDeltaBuffer: string | undefined = undefined;
 
-        if (state.isExplicitlyClosed || state.isHeadless) {
+        if (state.hostingMode === 'remote-agent') {
+            // 目标机自托管模式（nexus-mux）：
+            // - 显式关闭：发 KILL 彻底终止目标机主终端与全部分屏 PTY 进程树，并移除持久化记录；
+            // - 断网 / 刷新 / 被接管 / 手动挂起：仅发 DETACH 释放本端 SSH 隧道，目标机进程继续保活！
+            const remoteId = state.remoteSessionId;
+            if (state.isExplicitlyClosed) {
+                console.log(`WebSocket: 会话 ${sessionId} (remote-agent: ${remoteId}) 显式关闭，向目标机发送 KILL 终止进程树...`);
+                try {
+                    state.muxMainHandle?.kill();
+                    if (state.paneStreams) {
+                        for (const p of state.paneStreams.values()) {
+                            try { p.muxHandle?.kill(); } catch {}
+                        }
+                        state.paneStreams.clear();
+                    }
+                    state.muxTransport?.destroy();
+                } catch {}
+                if (remoteId) {
+                    remoteHostedSessionRepository.deleteByRemoteSessionId(remoteId).catch(() => {});
+                }
+            } else {
+                console.log(`WebSocket: 会话 ${sessionId} (remote-agent: ${remoteId}) 非显式断开，优雅 DETACH 保留目标机存活会话...`);
+                if (state.isMarkedForSuspend && remoteId && !state.isSuspendedByService) {
+                    try {
+                        const { ownerNamespace } = await getOrCreateOwnerNamespace();
+                        await remoteHostedSessionRepository.upsert({
+                            remoteSessionId: remoteId,
+                            connectionUuid: state.connectionUuid ?? null,
+                            connectionId: state.dbConnectionId,
+                            connectionName: state.connectionName || '未知连接',
+                            manuallySuspended: true,
+                            status: 'hanging',
+                            ownerNamespace,
+                        });
+                    } catch (err) {
+                        console.warn(`[cleanupClientConnection] 持久化目标机挂起记录失败:`, err);
+                    }
+                }
+                try {
+                    state.muxTransport?.detachAllAndClose();
+                } catch {}
+                state.paneStreams?.clear();
+            }
+            state.muxMainHandle = undefined;
+            state.muxTransport = undefined;
+            try {
+                state.sshClient?.end?.();
+            } catch {}
+            state.sshClient = undefined as any;
+        } else if (state.isExplicitlyClosed || state.isHeadless) {
             console.log(
                 state.isHeadless
                     ? `WebSocket: 会话 ${sessionId} 是无终端会话，断开后直接释放底层 SSH 资源（不转入挂起）。`

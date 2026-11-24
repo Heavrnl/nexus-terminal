@@ -99,6 +99,27 @@ export const settingsService = {
   },
 
   /**
+   * 读取目标服务器自托管（nexus-mux）相关全局配置
+   */
+  async getRemoteSessionHostingConfig(): Promise<{
+    enabled: boolean;
+    autoDeploy: boolean;
+    detachedIdleHours: number;
+  }> {
+    const [enabledRaw, autoDeployRaw, idleRaw] = await Promise.all([
+      settingsRepository.getSetting('remoteSessionHostingEnabled'),
+      settingsRepository.getSetting('remoteSessionAutoDeploy'),
+      settingsRepository.getSetting('remoteSessionDetachedIdleHours'),
+    ]);
+    const idleParsed = Number.parseInt(idleRaw || '0', 10);
+    return {
+      enabled: enabledRaw === null ? true : enabledRaw !== 'false',
+      autoDeploy: autoDeployRaw === null ? true : autoDeployRaw !== 'false',
+      detachedIdleHours: Number.isFinite(idleParsed) && idleParsed > 0 ? idleParsed : 0,
+    };
+  },
+
+  /**
    * 获取 IP 白名单设置
    * @returns 返回包含启用状态和白名单列表的对象
    */

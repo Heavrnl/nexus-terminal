@@ -11,6 +11,8 @@ const toTabInfo = (session: SessionState): SessionTabInfoWithStatus => ({
   status: session.remoteStatus ? session.remoteStatus.value : session.wsManager.connectionStatus.value,
   isMarkedForSuspend: session.isMarkedForSuspend,
   kind: session.kind,
+  hostingMode: session.hostingMode,
+  isUnreachablePlaceholder: session.isUnreachablePlaceholder,
 });
 
 export const sessionTabs = computed(() => {

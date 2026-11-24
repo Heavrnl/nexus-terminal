@@ -339,7 +339,11 @@
       "removeJumpHostTitle": "このジャンプホストを削除",
       "addJumpHost": "ジャンプホストを追加",
       "noAvailableSshConnectionsForJump": "ジャンプホストとして使用できるSSH接続がありません。先にSSH接続を作成してください。",
-      "folders": "フォルダ"
+      "folders": "フォルダ",
+      "sessionHostingMode": "SSH セッション常駐モード",
+      "sessionHostingModeAuto": "自動（ターゲットホスト常駐）",
+      "sessionHostingModeLegacy": "従来の直接接続のみ",
+      "sessionHostingModeHint": "自動モードではグローバル設定に従い、ターゲット側の軽量エージェント（nexus-mux）でセッションを常駐させます。非対応環境では自動的に従来モードへフォールバックします。"
     },
     "noConnections": "接続がありません。'新しい接続を追加'をクリックして作成してください。",
     "noUntaggedConnections": "タグなしの接続はありません。",
@@ -767,7 +771,9 @@
       "wsError": "WebSocket 接続エラー",
       "wsClosed": "WebSocket が閉じられました (コード: {code})",
       "wsClosedWillRetry": "WebSocket が閉じられました (コード: {code})、再試行中...",
-      "markedForSuspendNoReconnect": "セッションはサスペンド予約済みのため、自動再接続しません"
+      "markedForSuspendNoReconnect": "セッションはサスペンド予約済みのため、自動再接続しません",
+      "detachedByOtherClient": "セッションは他のデバイスまたはタブに引き継がれました",
+      "unreachablePlaceholderBadge": "オフライン保持（右クリックで再試行）"
     },
     "terminal": {
       "reconnectingMsg": "再接続を試行中...",
@@ -778,7 +784,9 @@
       "unknownSshError": "不明なSSHエラー",
       "genericErrorMsg": "エラー: {message}",
       "infoPrefix": "[情報]",
-      "errorPrefix": "[エラー]"
+      "errorPrefix": "[エラー]",
+      "unreachablePlaceholderMsg": "[オフライン保持] 接続先ホストに到達できません ({message})。直前の画面は保持されており、タブを右クリックして再接続できます。",
+      "detachedByOtherClientMsg": "[切り離し] このホスト常駐セッションは他のデバイスまたはタブに引き継がれました。プロセスはサーバー上で継続実行中です。"
     }
   },
   "layout": {
@@ -1729,6 +1737,33 @@
         "noReleases": "リリースバージョンが見つかりません",
         "rateLimit": "GitHub API レート制限。後でもう一度お試しください"
       }
+    },
+    "remoteHosting": {
+      "groupTitle": "ターゲット常駐セッションとクロスデバイス引き継ぎ",
+      "bundledTargets": "{count} 個のプラットフォーム用エージェントを同梱",
+      "noBundledBinaries": "エージェントバイナリ未同梱（自動フォールバック）",
+      "enableTitle": "ターゲットサーバーでの SSH セッション常駐",
+      "enableDesc": "ターゲットホスト上の軽量エージェント（nexus-mux）で PTY と画面状態を独立保持し、Web・モバイル・デスクトップ間でシームレスにセッションを引き継げます。",
+      "autoDeployTitle": "初回接続時にエージェントを自動配置",
+      "autoDeployDesc": "既存の SSH 通信路経由で対応バイナリを転送・SHA256 検証します。追加ポートや外部ネット接続は不要で、非対応時は自動フォールバックします。",
+      "idleHoursTitle": "切り離し済みセッションの自動回収時間",
+      "idleHoursHint": "クライアントから切り離された後、出力のない稼働中セッションを自動回収する時間（時間単位）。0 は自動終了しない設定です。",
+      "hoursUnit": "時間 (0=無制限)",
+      "desktopWorkspaceSyncTitle": "デスクトップのクラウドワークスペース同期",
+      "desktopWorkspaceSyncDesc": "クラウド同期が設定されている場合、デスクトップと Web でリアルタイムワークスペースと引き継ぎリースを共有します。未設定時はローカル復元として動作します。",
+      "currentSyncModeLabel": "現在のワークスペース同期モード",
+      "modeCloudSynced": "クラウドリアルタイム同期（接続済み）",
+      "modeCloudOffline": "クラウドオフライン待機（ローカルキャッシュ）",
+      "modeLocalOnly": "ローカルワークスペース復元のみ",
+      "success": {
+        "saved": "設定を保存しました",
+        "idleHoursSaved": "自動回収時間を保存しました。"
+      },
+      "error": {
+        "saveFailed": "設定の保存に失敗しました",
+        "invalidIdleHours": "0 から 8760 までの整数を入力してください（0 は自動回収なし）。",
+        "idleHoursSaveFailed": "自動回収時間の保存に失敗しました。"
+      }
     }
   },
   "tabs": {
@@ -2302,7 +2337,14 @@
     "reclaimButton": "現在のページで続行",
     "reclaiming": "引き継ぎ中...",
     "backToHome": "ホームに戻る",
-    "safetyNote": "クラウドセッションは安全に維持され、シームレスにローミング可能です"
+    "safetyNote": "クラウドセッションは安全に維持され、シームレスにローミング可能です",
+    "offlineTooltip": "クラウドに一時接続できないためローカルキャッシュで動作中（復旧後に自動同期）",
+    "desktopLocalTooltip": "デスクトップのローカルワークスペース復元が有効です（クラウド同期設定後にクロスデバイス同期へ自動昇格）",
+    "offlineConflictTitle": "オフライン中にクラウドワークスペースが更新されました",
+    "offlineConflictDesc": "クラウドへの接続が復旧しましたが、オフライン中に他のデバイスによってワークスペースが更新されています。対応方法を選択してください：",
+    "offlineConflictCloudTime": "クラウド最終更新：{time}",
+    "offlineConflictPullCloud": "クラウドの最新ワークスペースを取得（推奨）",
+    "offlineConflictPushLocal": "現在のデスクトップ状態でクラウドを上書きして引き継ぐ"
   },
   "portForward": {
     "title": "ポート転送",
@@ -2323,6 +2365,36 @@
       "local": "ローカル (-L)",
       "dynamic": "動的 SOCKS (-D)",
       "remote": "リモート (-R)"
+    }
+  },
+  "remoteAgent": {
+    "badge": {
+      "remoteHosted": "ホスト常駐",
+      "remoteHostedTooltip": "ターゲット上の nexus-mux により独立常駐されており、Web・デスクトップ双方から引き継ぎ可能です"
+    },
+    "uninstall": {
+      "button": "エージェントをアンインストール",
+      "confirmTitle": "ターゲットホストのエージェントを削除",
+      "confirmMessage": "このホスト上の nexus-mux デーモンを停止し、バイナリおよびランタイムファイルを削除します（バックグラウンド常駐中のセッションも終了します）。続行しますか？",
+      "success": "ターゲットホストのエージェントを削除しました",
+      "failed": "エージェントの削除に失敗しました：{error}"
+    },
+    "scan": {
+      "button": "ホストをスキャン",
+      "buttonTooltip": "ターゲットホスト上に稼働中または残留している常駐セッションをスキャン",
+      "modalTitle": "ターゲット常駐セッションのスキャン",
+      "selectHostPlaceholder": "スキャンする SSH ホストを選択...",
+      "startScan": "スキャン開始",
+      "scanning": "スキャン中...",
+      "includeAllNamespaces": "同一 OS ユーザー配下の全常駐セッションを含める（別アカウント・残留確認）",
+      "emptyResult": "このホスト上で稼働中または保持期間内の常駐セッションは見つかりませんでした。",
+      "statusRunning": "実行中",
+      "statusExited": "終了済み",
+      "attachedBadge": "接続中",
+      "claimAction": "引き継ぐ",
+      "killAction": "終了",
+      "killSuccess": "ターゲット常駐セッションを終了しました",
+      "killFailed": "ターゲット常駐セッションの終了に失敗しました：{error}"
     }
   }
 }

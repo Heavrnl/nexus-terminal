@@ -43,6 +43,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
 
   // 表单数据模型
   const initialFormData = {
+    id: undefined as number | undefined,
     type: 'SSH' as 'SSH' | 'RDP' | 'VNC',
     name: '',
     host: '',
@@ -72,6 +73,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     sudo_password: '',
     /** 只读：后端是否已存了 sudo 密码 */
     has_sudo_password: false,
+    /** 目标机自托管策略：auto 跟随全局设置，legacy 强制传统 SSH 模式 */
+    session_hosting_mode: 'auto' as 'auto' | 'legacy',
   };
   const formData = reactive({ ...initialFormData });
 
@@ -134,6 +137,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   watch(connectionToEdit, (newVal) => {
       formError.value = null; // 清除错误
       if (newVal) {
+          formData.id = newVal.id;
           formData.type = newVal.type as 'SSH' | 'RDP' | 'VNC';
           formData.name = newVal.name;
           formData.host = newVal.host;
@@ -186,6 +190,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           formData.sftp_sudo_enabled = !!newVal.sftp_sudo_enabled;
           formData.sudo_password = '';
           formData.has_sudo_password = !!newVal.has_sudo_password;
+          formData.session_hosting_mode = newVal.session_hosting_mode === 'legacy' ? 'legacy' : 'auto';
      } else {
          Object.assign(formData, initialFormData);
          formData.folder_ids = [];
@@ -201,6 +206,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.sftp_sudo_enabled = true;
          formData.sudo_password = '';
          formData.has_sudo_password = false;
+         formData.session_hosting_mode = 'auto';
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');
          advancedConnectionMode.value = 'proxy'; 
     }
@@ -686,6 +692,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     ...(formData.type === 'SSH' ? {
                         startup_command: (formData.startup_command || '').trim(),
                         sftp_sudo_enabled: formData.sftp_sudo_enabled,
+                        session_hosting_mode: formData.session_hosting_mode || 'auto',
                         ...(formData.sudo_password ? { sudo_password: formData.sudo_password } : {}),
                     } : {}),
                 };
@@ -774,6 +781,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         ...(formData.type === 'SSH' ? {
             startup_command: (formData.startup_command || '').trim(),
             sftp_sudo_enabled: formData.sftp_sudo_enabled,
+            session_hosting_mode: formData.session_hosting_mode || 'auto',
             ...(formData.sudo_password ? { sudo_password: formData.sudo_password } : {}),
         } : {}),
     };

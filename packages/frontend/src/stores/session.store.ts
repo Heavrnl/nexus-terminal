@@ -49,7 +49,12 @@ export const useSessionStore = defineStore('session', () => {
     connectionId: number | string,
     existingSessionId?: string,
     shouldActivate: boolean = true,
-    options?: { headless?: boolean }
+    options?: {
+      headless?: boolean;
+      remoteSessionId?: string;
+      remotePaneSessionIds?: Record<string, string>;
+      attachOnly?: boolean;
+    }
   ) =>
     sessionActions.openNewSession(
       connectionId,

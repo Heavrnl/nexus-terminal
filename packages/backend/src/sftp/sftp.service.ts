@@ -92,6 +92,11 @@ export class SftpService {
             return;
         }
 
+        // 并发防护：若异步初始化期间会话已被清理或 WS 已关闭，静默退出避免空指针异常
+        if (!state.sshClient || state.ws.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
         // 2. 开了 sudo 提权就先试 `sudo sftp-server`。
         //    提权是加分项：失败一定退回普通 SFTP，并把原因带给前端 ——
         //    否则用户只是密码填错，整个文件管理器就都用不了了。
@@ -99,6 +104,10 @@ export class SftpService {
         if (sudoEnabled) {
             try {
                 const sudoSftp = await openSudoSftp(state.sshClient, { password: sudoPassword });
+                if (!state.sshClient || state.ws.readyState !== WebSocket.OPEN) {
+                    try { sudoSftp.end(); } catch {}
+                    return;
+                }
                 console.log(`[SFTP] 会话 ${sessionId} 已通过 sudo 提权打开 SFTP（读写权限等同 root）。`);
                 state.activeFileProtocol = 'sftp';
                 state.sftp = sudoSftp;
@@ -111,13 +120,20 @@ export class SftpService {
                 return;
             } catch (sudoErr: any) {
                 sudoFallback = sudoErr?.message || '未知原因';
+                if (!state.sshClient || state.ws.readyState !== WebSocket.OPEN) {
+                    return;
+                }
                 console.warn(`[SFTP] 会话 ${sessionId} sudo 提权失败：${sudoFallback}。退回普通 SFTP。`);
             }
         }
 
         // 3. 若配置为 'auto' 或 'sftp'：尝试原生 SFTP 协商
         return new Promise<void>((resolve, reject) => {
-            state.sshClient!.sftp((err, sftpInstance) => {
+            if (!state.sshClient || state.ws.readyState !== WebSocket.OPEN) {
+                resolve();
+                return;
+            }
+            state.sshClient.sftp((err, sftpInstance) => {
                 if (err) {
                     // 若是 auto 模式，捕获到 SFTP 子系统请求失败（如小米路由器等无 openssh-sftp-server 服务），秒级平滑降级为 SCP 驱动！
                     if (protocolConfig === 'auto') {

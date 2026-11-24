@@ -82,6 +82,10 @@ interface SettingsState {
   markdownDefaultViewModeMobile?: string; // 'preview' | 'split' | 'edit'
   rememberLastRoute?: string; // 'true' or 'false' - 记住上次停留页面
   terminalSwitchPaneShortcut?: string; // 终端多窗格焦点切换快捷键 (默认 'Alt+`')
+  remoteSessionHostingEnabled?: string; // 'true' or 'false' - 启用目标机自托管 SSH 会话
+  remoteSessionAutoDeploy?: string; // 'true' or 'false' - 自动向目标机静默部署 nexus-mux
+  remoteSessionDetachedIdleHours?: string; // 活跃脱离托管会话空闲回收小时数（'0' 表示永不自动强杀）
+  desktopWorkspaceSyncEnabled?: string; // 'true' or 'false' - 桌面端是否接入云端工作区实时同步
   [key: string]: string | undefined;
 }
 

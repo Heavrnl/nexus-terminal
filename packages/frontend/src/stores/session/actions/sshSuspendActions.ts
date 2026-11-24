@@ -252,7 +252,9 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
   }
 
   const originalConnectionId = parseInt(sessionToResumeInfo.connectionId, 10);
-  if (isNaN(originalConnectionId)) {
+  const isRemoteHostedResume =
+    sessionToResumeInfo.hostingMode === 'remote-agent' && !!sessionToResumeInfo.remoteSessionId;
+  if (isNaN(originalConnectionId) && !sessionToResumeInfo.connectionUuid && !sessionToResumeInfo.connectionName) {
     console.error(`[${t('term.sshSuspend')}] 恢复操作失败：无效的原始连接 ID ${sessionToResumeInfo.connectionId}`);
     uiNotificationsStore.addNotification({ type: 'error', message: t('sshSuspend.notifications.resumeErrorConnectionConfigNotFound', { id: sessionToResumeInfo.connectionId }) });
     return null;
@@ -261,17 +263,20 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
   const newFrontendSessionId = uuidv4(); // 为恢复的会话生成新的前端 ID
 
   try {
-    // +++ 先从 connectionsStore 获取完整的 ConnectionInfo (支持多维匹配：ID -> UUID -> 名称) +++
-    if (!connectionsStore.connections || connectionsStore.connections.length === 0) {
+    // +++ 先从 connectionsStore 获取完整的 ConnectionInfo (支持多维匹配：UUID -> ID -> 名称，确保跨端匹配准确) +++
+    // 目标机托管会话跨端同步后本地自增 connectionId 可能因全量覆盖而改变，恢复前刷新一次最新连接列表避免撞上过期本地 ID
+    if (isRemoteHostedResume || !connectionsStore.connections || connectionsStore.connections.length === 0) {
       try {
         await connectionsStore.fetchConnections();
       } catch (fetchErr) {
         console.warn(`[${t('term.sshSuspend')}] 预加载连接列表失败:`, fetchErr);
       }
     }
-    let connectionInfo = connectionsStore.connections.find(c => c.id === originalConnectionId);
-    if (!connectionInfo && (sessionToResumeInfo as any).connectionUuid) {
-      connectionInfo = connectionsStore.connections.find(c => c.uuid === (sessionToResumeInfo as any).connectionUuid);
+    let connectionInfo = sessionToResumeInfo.connectionUuid
+      ? connectionsStore.connections.find(c => c.uuid && c.uuid === sessionToResumeInfo.connectionUuid)
+      : undefined;
+    if (!connectionInfo && !isNaN(originalConnectionId)) {
+      connectionInfo = connectionsStore.connections.find(c => c.id === originalConnectionId);
     }
     if (!connectionInfo && sessionToResumeInfo.connectionName) {
       connectionInfo = connectionsStore.connections.find(
@@ -279,11 +284,42 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
       );
     }
     if (!connectionInfo) {
-      console.error(`[${t('term.sshSuspend')}] 恢复操作失败：在 Connection Store 中未找到原始连接配置 (ID: ${originalConnectionId}, 名称: ${sessionToResumeInfo.connectionName})。`);
-      uiNotificationsStore.addNotification({ type: 'error', message: t('sshSuspend.notifications.resumeErrorConnectionConfigNotFound', { id: String(originalConnectionId) }) });
+      console.error(`[${t('term.sshSuspend')}] 恢复操作失败：在 Connection Store 中未找到原始连接配置 (ID: ${originalConnectionId}, UUID: ${sessionToResumeInfo.connectionUuid}, 名称: ${sessionToResumeInfo.connectionName})。`);
+      uiNotificationsStore.addNotification({ type: 'error', message: t('sshSuspend.notifications.resumeErrorConnectionConfigNotFound', { id: String(sessionToResumeInfo.connectionName || originalConnectionId) }) });
       return null;
     }
     console.log(`[${t('term.sshSuspend')}] 已成功匹配原始连接配置 (本地ID: ${connectionInfo.id}, 原始ID: ${originalConnectionId}, 名称: ${connectionInfo.name})，准备使用它恢复会话 ${suspendSessionId}。`);
+
+    // 目标机自托管模式（remote-agent）：直接带着 remoteSessionId 连接目标机接管活会话，
+    // 无需走传统后端内存挂起池（支持 Web 端与桌面端跨端无缝接管同一挂起会话）
+    if (isRemoteHostedResume && sessionToResumeInfo.remoteSessionId) {
+      const openedId = openNewSession(
+        connectionInfo,
+        { connectionsStore, t },
+        undefined,
+        shouldActivate,
+        { remoteSessionId: sessionToResumeInfo.remoteSessionId }
+      );
+      if (!openedId) {
+        uiNotificationsStore.addNotification({
+          type: 'error',
+          message: t('sshSuspend.notifications.resumeErrorGeneric', { error: '无法打开目标机托管会话' }),
+        });
+        return null;
+      }
+      const resumedIdx = suspendedSshSessions.value.findIndex(s => s.suspendSessionId === suspendSessionId);
+      if (resumedIdx !== -1) {
+        suspendedSshSessions.value.splice(resumedIdx, 1);
+      }
+      if (shouldActivate) {
+        const displayName = sessionToResumeInfo.customSuspendName || sessionToResumeInfo.connectionName;
+        uiNotificationsStore.addNotification({
+          type: 'success',
+          message: t('sshSuspend.notifications.resumeSuccess', { name: displayName }),
+        });
+      }
+      return openedId;
+    }
     
     // 1. 调用 openNewSession 创建前端会话状态、WebSocket 连接等，传入完整的 connectionInfo
     openNewSession(

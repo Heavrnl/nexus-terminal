@@ -18,6 +18,8 @@
     "desktop:build": "npm run --prefix packages/desktop desktop:build",
     "desktop:build:quick": "npm run --prefix packages/desktop desktop:build:quick",
     "desktop:sync": "npm run --prefix packages/desktop desktop:sync",
+    "agent:build": "node packages/remote-agent/scripts/build-agent.mjs --host-only",
+    "agent:test": "cargo test --manifest-path packages/remote-agent/Cargo.toml",
     "settings:gen": "node tools/gen-settings-schema.mjs",
     "settings:check": "node tools/gen-settings-schema.mjs --check",
     "i18n:check": "node tools/check-i18n.mjs",

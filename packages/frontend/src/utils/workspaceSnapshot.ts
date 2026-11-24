@@ -121,3 +121,45 @@ export function stripPrimaryPaneBuffer(
   }
   return Object.keys(next).length > 0 ? next : undefined;
 }
+
+/**
+ * 把「按运行时 paneId 索引的分屏目标机托管会话 ID」规整为跨刷新稳定的先序序号键（`pane#1` / `pane#2`）。
+ *
+ * 规整规则：
+ * 1. 剔除主终端（主终端由 `remoteSessionId` 单独承载）；
+ * 2. 若 key 已经是 `pane#N` 且不是主终端的序号，原样保留（用于离线占位或副终端尚未挂载时的透传保护）；
+ * 3. 若运行时 paneId 在 `paneOrder` 中找到索引 `idx`，统一改写为 `pane#${idx}`；
+ * 4. 空字典返回 `undefined`，避免污染快照 JSON。
+ */
+export function normalizeRemotePaneSessionIds(
+  paneSessionIds: Record<string, string> | null | undefined,
+  paneOrder: string[] | null | undefined,
+  primaryPaneId?: string | null
+): Record<string, string> | undefined {
+  if (!paneSessionIds) return undefined;
+  const order = Array.isArray(paneOrder) ? paneOrder : [];
+  const primaryIndex = primaryPaneId ? order.indexOf(primaryPaneId) : -1;
+  const primaryStableKey = primaryIndex >= 0 ? `pane#${primaryIndex}` : null;
+  const normalized: Record<string, string> = {};
+
+  for (const [rawKey, remoteId] of Object.entries(paneSessionIds)) {
+    const trimmedId = typeof remoteId === 'string' ? remoteId.trim() : '';
+    if (!trimmedId) continue;
+    if (primaryPaneId && rawKey === primaryPaneId) continue;
+    if (primaryStableKey && rawKey === primaryStableKey) continue;
+
+    if (rawKey.startsWith('pane#')) {
+      // 只有还没有运行时新值覆盖同一序号时才回填旧稳定键
+      if (!normalized[rawKey]) {
+        normalized[rawKey] = trimmedId;
+      }
+      continue;
+    }
+
+    const idx = order.indexOf(rawKey);
+    const stableKey = idx >= 0 ? `pane#${idx}` : rawKey;
+    normalized[stableKey] = trimmedId;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}

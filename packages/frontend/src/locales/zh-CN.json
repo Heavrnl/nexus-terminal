@@ -511,7 +511,11 @@
       "addJumpHost": "添加跳板机",
       "noAvailableSshConnectionsForJump": "没有可用的 SSH 主机作为跳板机。请先创建一些 SSH 主机。",
       "errorDelete": "删除主机失败：{error}",
-      "folders": "所属文件夹"
+      "folders": "所属文件夹",
+      "sessionHostingMode": "SSH 会话托管模式",
+      "sessionHostingModeAuto": "自动（目标机托管）",
+      "sessionHostingModeLegacy": "仅传统直连模式",
+      "sessionHostingModeHint": "自动模式下遵循全局设置：优先由目标机轻量代理托管会话以支持跨端无缝接管；不支持时自动静默降级。"
     },
     "test": {
       "success": "已用系统默认程序打开（保存后自动同步回远程）",
@@ -593,7 +597,9 @@
       "wsError": "WebSocket 连接出错",
       "wsClosed": "WebSocket 已关闭 (代码: {code})",
       "wsClosedWillRetry": "WebSocket 已关闭 (代码: {code})，正在重试...",
-      "markedForSuspendNoReconnect": "会话已标记为挂起保活，暂不自动重连"
+      "markedForSuspendNoReconnect": "会话已标记为挂起保活，暂不自动重连",
+      "detachedByOtherClient": "会话已在其它设备或标签接管",
+      "unreachablePlaceholderBadge": "离线占位（可右键重试）"
     },
     "terminal": {
       "reconnectingMsg": "正在尝试重新连接...",
@@ -605,7 +611,9 @@
       "genericErrorMsg": "发生错误: {message}",
       "infoPrefix": "[提示]",
       "errorPrefix": "[错误]",
-      "unknownGenericError": "发生未知错误"
+      "unknownGenericError": "发生未知错误",
+      "unreachablePlaceholderMsg": "[离线占位] 目标主机当前网络不可达 ({message})，已保留上次工作区画面，可右键标签重试连接。",
+      "detachedByOtherClientMsg": "[已脱离] 该目标机托管会话已被其它设备或标签页接管，后台进程保持运行。"
     }
   },
   "fileEditor": {
@@ -1551,6 +1559,33 @@
       "disabledTip": "当前已关闭记忆，下次打开将默认进入仪表盘首页",
       "enabledSuccess": "已开启页面记忆，下次打开将直达上次页面",
       "disabledSuccess": "已关闭页面记忆，下次打开将默认进入仪表盘首页"
+    },
+    "remoteHosting": {
+      "groupTitle": "目标机自托管会话与跨端接力",
+      "bundledTargets": "已内置 {count} 个平台代理",
+      "noBundledBinaries": "未内置代理二进制（将自动降级）",
+      "enableTitle": "目标服务器自托管 SSH 会话",
+      "enableDesc": "由目标主机本地轻量代理（nexus-mux）直接托管 PTY 与终端屏幕状态，支持 Web 端、移动端与桌面端实时同步无缝接管，后端重启或网络抖动均不断线。",
+      "autoDeployTitle": "首次连接自动静默部署代理",
+      "autoDeployDesc": "通过当前 SSH 通道推送并校验对应架构的轻量代理，无需开放额外端口或访问公网；不支持的架构或只读环境将自动静默降级为传统 SSH 模式。",
+      "idleHoursTitle": "脱离托管会话空闲自动回收",
+      "idleHoursHint": "设置脱离客户端后无任何输出活动的目标机托管会话自动回收时长（小时）。0 表示永不自动强杀运行中会话。",
+      "hoursUnit": "小时 (0=不限)",
+      "desktopWorkspaceSyncTitle": "桌面端接入云端工作区实时同步",
+      "desktopWorkspaceSyncDesc": "配置云端同步后，桌面端将与 Web 端共享实时工作区与互斥接管租约，并接力目标机托管会话；关闭或未配置云端时仍保留桌面本地工作区自动恢复。",
+      "currentSyncModeLabel": "当前工作区同步模式",
+      "modeCloudSynced": "云端实时同步（已连通）",
+      "modeCloudOffline": "云端离线降级（本地缓存）",
+      "modeLocalOnly": "纯本地工作区恢复",
+      "success": {
+        "saved": "设置已保存",
+        "idleHoursSaved": "空闲回收时长已保存。"
+      },
+      "error": {
+        "saveFailed": "保存设置失败",
+        "invalidIdleHours": "请输入 0 到 8760 之间的整数（0 表示永不自动回收）。",
+        "idleHoursSaveFailed": "保存空闲回收时长失败。"
+      }
     }
   },
   "notificationController": {
@@ -2431,7 +2466,14 @@
     "reclaiming": "正在接管工作区...",
     "reloading": "正在重新连接...",
     "backToHome": "返回首页",
-    "safetyNote": "云端实时会话已安全保护，工作区无缝漫游中"
+    "safetyNote": "云端实时会话已安全保护，工作区无缝漫游中",
+    "offlineTooltip": "云端服务暂时不可达，已切换为本地离线缓存（恢复连通后自动同步）",
+    "desktopLocalTooltip": "桌面端本地工作区恢复已开启（配置云端同步后自动升级为跨端实时同步）",
+    "offlineConflictTitle": "云端工作区在离线期间已被更新",
+    "offlineConflictDesc": "桌面端已恢复与云端服务的连接，但检测到您在离线期间已有其他设备接管并修改了云端工作区。请选择同步处理方式：",
+    "offlineConflictCloudTime": "云端最后更新时间：{time}",
+    "offlineConflictPullCloud": "拉取云端最新工作区（推荐）",
+    "offlineConflictPushLocal": "以当前桌面工作区覆盖并接管云端"
   },
   "portForward": {
     "title": "端口转发",
@@ -2452,6 +2494,36 @@
       "local": "本地转发 (-L)",
       "dynamic": "动态 SOCKS (-D)",
       "remote": "远程转发 (-R)"
+    }
+  },
+  "remoteAgent": {
+    "badge": {
+      "remoteHosted": "目标机托管",
+      "remoteHostedTooltip": "由目标主机本地 nexus-mux 代理独立托管，Web 端与桌面端均可无缝接管"
+    },
+    "uninstall": {
+      "button": "卸载目标机代理",
+      "confirmTitle": "卸载目标机托管代理",
+      "confirmMessage": "将停止该主机上的 nexus-mux 守护进程并清理其二进制与运行时文件（正在该主机后台保活的托管会话也会随之结束）。确认继续吗？",
+      "success": "已成功卸载并清理目标机托管代理",
+      "failed": "卸载目标机代理失败：{error}"
+    },
+    "scan": {
+      "button": "扫描目标机",
+      "buttonTooltip": "扫描目标主机上存活或遗留的托管会话",
+      "modalTitle": "扫描目标机托管会话",
+      "selectHostPlaceholder": "请选择要扫描的 SSH 主机...",
+      "startScan": "开始扫描",
+      "scanning": "扫描中...",
+      "includeAllNamespaces": "包含同系统用户下的全部托管会话（排查其他账号/历史孤儿会话）",
+      "emptyResult": "该目标机当前没有发现运行中或保留期内的托管会话。",
+      "statusRunning": "运行中",
+      "statusExited": "已退出",
+      "attachedBadge": "已附着",
+      "claimAction": "接管",
+      "killAction": "终止",
+      "killSuccess": "已终止目标机托管会话",
+      "killFailed": "终止目标机托管会话失败：{error}"
     }
   }
 }

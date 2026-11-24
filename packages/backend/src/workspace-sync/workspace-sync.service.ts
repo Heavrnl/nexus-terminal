@@ -3,6 +3,9 @@ import * as workspaceSyncRepo from './workspace-sync.repository';
 import { clientStates } from '../websocket/state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
+import { getOrCreateOwnerNamespace } from '../remote-agent/owner-namespace.service';
+import { remoteHostedSessionRepository } from '../remote-agent/remote-hosted-session.repository';
+import { broadcastWorkspaceTakeover } from '../sync/sync.ws-broadcaster';
 import {
     chooseSuspendLogBuffer,
     evaluateLeaseWrite,
@@ -18,6 +21,11 @@ export interface WorkspaceSyncStatePayload {
         sessionId: string;
         connectionId: string | number;
         connectionName: string;
+        connectionUuid?: string;
+        hostingMode?: 'remote-agent' | 'legacy';
+        remoteSessionId?: string;
+        remotePaneSessionIds?: Record<string, string>;
+        unreachableOnLastRestore?: boolean;
         isSuspended?: boolean;
         suspendSessionId?: string;
         commandInputContent?: string;
@@ -165,21 +173,24 @@ export class WorkspaceSyncService {
         state: WorkspaceSyncStatePayload | null;
         activeClientId: string | null;
         updatedAt: number | null;
+        workspaceOwnerId: string;
     }> {
+        const { workspaceOwnerId } = await getOrCreateOwnerNamespace();
         const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
         if (!record || !record.state) {
-            return { state: null, activeClientId: null, updatedAt: null };
+            return { state: null, activeClientId: null, updatedAt: null, workspaceOwnerId };
         }
         try {
             const parsedState = JSON.parse(record.state);
             return {
                 state: parsedState,
                 activeClientId: record.activeClientId,
-                updatedAt: record.updatedAt
+                updatedAt: record.updatedAt,
+                workspaceOwnerId,
             };
         } catch (e) {
             console.error(`[WorkspaceSyncService] 解析用户 ${userId} 工作区 JSON 失败:`, e);
-            return { state: null, activeClientId: record.activeClientId, updatedAt: record.updatedAt };
+            return { state: null, activeClientId: record.activeClientId, updatedAt: record.updatedAt, workspaceOwnerId };
         }
     }
 
@@ -209,9 +220,34 @@ export class WorkspaceSyncService {
         for (const [sessionId, state] of clientStates.entries()) {
             const wsClientId = (state.ws as any)?.syncClientId;
             // 只接管「另一个**参与工作区同步**的客户端」的会话：
-            // 没绑过 clientId 的 ws（桌面端、旧客户端、ws 抢在 store 初始化前连上的窗口期）
+            // 没绑过 clientId 的 ws（旧客户端、ws 抢在 store 初始化前连上的窗口期）
             // 不属于这个工作区，把它们挂走就是"挂起池里冒出一个我没打开过的连接"。
             const isForeignClient = isForeignWorkspaceClient(wsClientId, currentClientId);
+
+            // 目标机自托管模式（nexus-mux）：新端直接按快照里的 remoteSessionId 接管目标机存活 PTY，
+            // 旧端只需优雅 DETACH 并释放 SSH 隧道（不进入云端内存挂起池，零资源冗余）！
+            if (
+                state.ws?.userId === userId &&
+                isForeignClient &&
+                !state.isHeadless &&
+                state.hostingMode === 'remote-agent' &&
+                state.muxTransport
+            ) {
+                console.log(
+                    `[WorkspaceSyncService] 发现旧客户端 (${wsClientId || 'unknown'}) 的目标机托管会话 ${sessionId} (${state.remoteSessionId})，执行优雅 DETACH 移交接管权...`
+                );
+                try { state.outputCoalescer?.dispose(true); } catch {}
+                state.outputCoalescer = undefined;
+                try { state.muxTransport.detachAllAndClose(); } catch {}
+                state.muxMainHandle = undefined;
+                state.muxTransport = undefined;
+                state.paneStreams?.clear();
+                try { state.sshClient?.end?.(); } catch {}
+                state.sshClient = undefined as any;
+                state.isSuspendedByService = true;
+                continue;
+            }
+
             // 匹配同一用户、非当前声明接管客户端、且具有活跃 SSH 连接的会话
             //
             // 无终端会话（前端文件管理器绑定主机的私有通道）不参与移交：
@@ -505,6 +541,10 @@ export class WorkspaceSyncService {
      * 向同一用户的其他客户端推送接管踢出通知
      */
     public notifyOtherClientsTakeover(userId: number, activeClientId: string): void {
+        // 1. 广播给通过 /ws/sync 连接的跨设备桌面端 Sidecar
+        broadcastWorkspaceTakeover(activeClientId);
+
+        // 2. 广播给直连当前后端的浏览器 WebSocket
         const sockets = this.userSockets.get(userId);
         if (!sockets) return;
 
@@ -574,6 +614,19 @@ export class WorkspaceSyncService {
                 state.isMarkedForSuspend = false;
                 state.closeReason = 'client_explicit_destroy';
                 try {
+                    if (state.hostingMode === 'remote-agent') {
+                        state.muxMainHandle?.kill();
+                        if (state.paneStreams) {
+                            for (const p of state.paneStreams.values()) {
+                                try { p.muxHandle?.kill(); } catch {}
+                            }
+                            state.paneStreams.clear();
+                        }
+                        state.muxTransport?.destroy();
+                        if (state.remoteSessionId) {
+                            remoteHostedSessionRepository.deleteByRemoteSessionId(state.remoteSessionId).catch(() => {});
+                        }
+                    }
                     state.sshShellStream?.destroy?.();
                     state.sshShellStream?.end?.();
                     state.sshClient?.destroy?.();
@@ -581,6 +634,8 @@ export class WorkspaceSyncService {
                 } catch (e) {
                     console.warn(`[WorkspaceSyncService] 切断 SSH 连接发生非致命错误:`, e);
                 }
+                state.muxMainHandle = undefined;
+                state.muxTransport = undefined;
                 state.sshClient = undefined as any;
                 state.sshShellStream = undefined;
                 clientStates.delete(targetSessionId);
@@ -633,6 +688,35 @@ export class WorkspaceSyncService {
 
             return { success: true, accepted: true, activeClientId: leaseOwner, remainingSessionsCount };
         });
+    }
+
+    /**
+     * 桌面端 Sidecar 收到云端 `/ws/sync` 跨端接管广播时调用：
+     * 对本机所有目标机托管（remote-agent）会话执行优雅 DETACH（不杀目标机进程），把独占接管权平滑让给新端。
+     */
+    public detachLocalManagedSessionsForTakeover(newActiveClientId: string): number {
+        let detachedCount = 0;
+        for (const [sessionId, state] of clientStates.entries()) {
+            const wsClientId = (state.ws as any)?.syncClientId;
+            if (wsClientId && wsClientId === newActiveClientId) continue;
+            if (state.isHeadless) continue;
+            if (state.hostingMode === 'remote-agent' && state.muxTransport) {
+                console.log(
+                    `[WorkspaceSyncService] 本机桌面端被 ${newActiveClientId} 接管，优雅 DETACH 目标机托管会话 ${sessionId} (${state.remoteSessionId})`
+                );
+                try { state.outputCoalescer?.dispose(true); } catch {}
+                state.outputCoalescer = undefined;
+                try { state.muxTransport.detachAllAndClose(); } catch {}
+                state.muxMainHandle = undefined;
+                state.muxTransport = undefined;
+                state.paneStreams?.clear();
+                try { state.sshClient?.end?.(); } catch {}
+                state.sshClient = undefined as any;
+                state.isSuspendedByService = true;
+                detachedCount++;
+            }
+        }
+        return detachedCount;
     }
 }
 

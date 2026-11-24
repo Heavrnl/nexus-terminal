@@ -14,6 +14,14 @@ export interface SyncedSessionInfo {
   connectionUuid?: string;
   commandInputContent?: string;
   suspendSessionId?: string;
+  /** 目标机自托管模式标识（remote-agent / legacy） */
+  hostingMode?: 'remote-agent' | 'legacy';
+  /** 主终端对应的目标机托管会话 ID（nexus-mux session_id），跨端直接接管用 */
+  remoteSessionId?: string;
+  /** 分屏副终端对应的目标机托管会话 ID（按 pane#1 / pane#2 稳定序号索引） */
+  remotePaneSessionIds?: Record<string, string>;
+  /** 上次恢复时因网络不可达处于离线占位态（保留快照元信息绝不抹除） */
+  unreachableOnLastRestore?: boolean;
   terminalBuffer?: string;
   /** 多终端分屏各 paneId 独立序列化 buffer */
   terminalPanesBuffer?: Record<string, string>;
@@ -24,6 +32,19 @@ export interface SyncedSessionInfo {
   /** 每个会话自己独立的编辑器标签页（当 shareFileEditorTabs=false 时） */
   editorTabs?: SyncedFileTabInfo[];
   activeEditorTabId?: string | null;
+}
+
+export type WorkspaceSyncRuntimeMode =
+  | 'web_cloud'
+  | 'desktop_cloud_synced'
+  | 'desktop_cloud_offline'
+  | 'desktop_local_only';
+
+export interface WorkspaceOfflineConflictPayload {
+  cloudActiveClientId: string | null;
+  cloudUpdatedAt: number;
+  localClientId: string | null;
+  hasOfflineDirtyChanges: boolean;
 }
 
 export interface SyncedFileTabInfo {

@@ -39,8 +39,13 @@ env:
   IMAGE: heavrnl/nexus-terminal
 
 jobs:
+  remote-agent:
+    name: Build nexus-mux multi-platform binaries
+    uses: ./.github/workflows/build-remote-agent.yml
+
   build:
     name: Build ${{ matrix.arch }}
+    needs: remote-agent
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +62,12 @@ jobs:
     steps:
       - name: 检出仓库源码
         uses: actions/checkout@v4
+
+      - name: 下载多平台 nexus-mux 托管代理产物
+        uses: actions/download-artifact@v4
+        with:
+          name: nexus-mux-bundle
+          path: packages/remote-agent/dist
 
       - name: 准备构建期 .env
         run: '[ -f .env ] || cp .env.example .env'

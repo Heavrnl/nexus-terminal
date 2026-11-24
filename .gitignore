@@ -43,6 +43,7 @@ node_modules/
 jspm_packages/
 scripts/
 !packages/desktop/scripts/
+!packages/remote-agent/scripts/
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -180,6 +181,9 @@ packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/binaries/
 packages/desktop/src-tauri/resources/
 packages/desktop/src-tauri/gen/
+packages/remote-agent/target/
+packages/remote-agent/dist/*
+!packages/remote-agent/dist/.gitkeep
 packages/backend/public/
 packages/backend/.env
 packages/backend/src/sync/__test_e2e_sync.ts

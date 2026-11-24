@@ -107,6 +107,8 @@ startup_command TEXT NOT NULL DEFAULT '',
 -- 默认开启：失败会自动退回普通 SFTP，所以默认开是安全的（拿不到 root 只是没加成）
 sftp_sudo_enabled INTEGER NOT NULL DEFAULT 1,
 encrypted_sudo_password TEXT NULL,
+-- 会话托管模式：auto=跟随全局自动使用目标机 nexus-mux 托管（失败降级传统模式），legacy=禁用目标机代理强制传统模式
+session_hosting_mode TEXT NOT NULL DEFAULT 'auto',
 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     last_connected_at INTEGER NULL,
@@ -322,6 +324,25 @@ CREATE TABLE IF NOT EXISTS file_color_highlights (
     updated_hlc TEXT NULL,
     FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
     UNIQUE(connection_id, path)
+);
+`;
+
+export const createRemoteHostedSessionsTableSQL = `
+CREATE TABLE IF NOT EXISTS remote_hosted_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    remote_session_id TEXT UNIQUE NOT NULL,
+    connection_uuid TEXT NULL,
+    connection_id INTEGER NULL,
+    connection_name TEXT NOT NULL DEFAULT '',
+    custom_name TEXT NULL,
+    manually_suspended INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'hanging',
+    exit_code INTEGER NULL,
+    owner_namespace TEXT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_hlc TEXT NOT NULL DEFAULT ''
 );
 `;
 

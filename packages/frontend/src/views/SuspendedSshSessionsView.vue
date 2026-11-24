@@ -1,7 +1,7 @@
 <template>
   <div class="suspended-ssh-sessions-view p-2 flex flex-col h-full" style="container-type: inline-size; container-name: suspended-sessions-view-pane;">
-    <div class="view-header mb-2">
-      <div class="relative w-full">
+    <div class="view-header mb-2 flex items-center gap-1.5">
+      <div class="relative flex-1 min-w-0">
         <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           <i class="fas fa-search text-text-secondary"></i>
         </span>
@@ -14,6 +14,15 @@
         />
         <span class="sss-hint-count">{{ filteredSessions.length }}</span>
       </div>
+      <button
+        type="button"
+        @click="openScanModal"
+        :title="$t('remoteAgent.scan.buttonTooltip', '扫描目标主机上存活或遗留的托管会话')"
+        class="shrink-0 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-border/70 bg-background hover:bg-muted/60 text-foreground inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+      >
+        <i class="fas fa-satellite-dish text-primary text-xs"></i>
+        <span class="hidden sm:inline">{{ $t('remoteAgent.scan.button', '扫描目标机') }}</span>
+      </button>
     </div>
 
     <div class="session-list-container flex-grow overflow-y-auto">
@@ -60,6 +69,15 @@
                   @keydown.enter.prevent="finishEditingName()"
                   @keydown.esc.prevent="cancelEditingName()"
                 />
+                <!-- 目标机自托管徽标：区分于传统后端内存挂起 -->
+                <span
+                  v-if="session.hostingMode === 'remote-agent'"
+                  class="sss-badge sss-badge--remote"
+                  :title="$t('remoteAgent.badge.remoteHostedTooltip', '由目标主机本地 nexus-mux 代理独立托管，Web 端与桌面端均可无缝接管')"
+                >
+                  <i class="fas fa-server"></i>
+                  <span>{{ $t('remoteAgent.badge.remoteHosted', '目标机托管') }}</span>
+                </span>
                 <!-- 挂起模式徽标：明确告诉用户"这不是断开，是挂起" -->
                 <span
                   v-if="session.manuallySuspended"
@@ -74,6 +92,12 @@
                   :class="session.backendSshStatus === 'hanging' ? 'sss-badge--live' : 'sss-badge--dead'"
                 >
                   {{ session.backendSshStatus === 'hanging' ? $t('suspendedSshSessions.status.hanging') : $t('suspendedSshSessions.status.disconnected') }}
+                </span>
+                <span
+                  v-if="session.exitCode !== undefined && session.exitCode !== null"
+                  class="sss-badge sss-badge--exit"
+                >
+                  exit {{ session.exitCode }}
                 </span>
               </div>
               <div class="text-sm text-muted-color">
@@ -111,7 +135,7 @@
                   <span class="button-session-text">{{ $t('suspendedSshSessions.action.remove') }}</span>
                 </button>
                <button
-                 v-if="session.backendSshStatus === 'disconnected_by_backend' || session.backendSshStatus === 'hanging'"
+                 v-if="session.hostingMode !== 'remote-agent' && (session.backendSshStatus === 'disconnected_by_backend' || session.backendSshStatus === 'hanging')"
                  @click="exportLog(session)"
                  :title="$t('suspendedSshSessions.action.exportLog')"
                  class="responsive-button-padding py-1.5 text-sm font-medium rounded-md text-button-text bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150 inline-flex items-center"
@@ -125,6 +149,122 @@
         </li>
       </ul>
     </div>
+
+    <!-- 扫描目标机托管会话弹窗 -->
+    <Teleport to="body">
+      <div
+        v-if="showScanModal"
+        class="fixed inset-0 z-[9990] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4"
+        @click.self="closeScanModal"
+      >
+        <div
+          class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col overflow-hidden"
+          style="background-color: var(--app-bg-color);"
+        >
+          <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/60">
+            <div class="flex items-center gap-2">
+              <i class="fas fa-satellite-dish text-primary"></i>
+              <h3 class="text-sm sm:text-base font-semibold">
+                {{ $t('remoteAgent.scan.modalTitle', '扫描目标机托管会话') }}
+              </h3>
+            </div>
+            <button
+              type="button"
+              @click="closeScanModal"
+              class="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-muted/50 cursor-pointer"
+            >
+              <i class="fas fa-times text-xs"></i>
+            </button>
+          </div>
+
+          <div class="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1 min-h-0">
+            <div class="flex flex-col sm:flex-row gap-2">
+              <select
+                v-model="selectedScanConnectionId"
+                class="flex-1 h-9 px-3 text-sm border border-border rounded-lg bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option :value="null" disabled>
+                  {{ $t('remoteAgent.scan.selectHostPlaceholder', '请选择要扫描的 SSH 主机...') }}
+                </option>
+                <option v-for="conn in sshConnections" :key="conn.id" :value="conn.id">
+                  {{ conn.name || conn.host }} ({{ conn.username }}@{{ conn.host }}:{{ conn.port }})
+                </option>
+              </select>
+              <button
+                type="button"
+                :disabled="!selectedScanConnectionId || isScanning"
+                @click="runRemoteScan"
+                class="h-9 px-4 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs sm:text-sm font-medium inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <i :class="isScanning ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
+                <span>{{ isScanning ? $t('remoteAgent.scan.scanning', '扫描中...') : $t('remoteAgent.scan.startScan', '开始扫描') }}</span>
+              </button>
+            </div>
+
+            <label class="inline-flex items-center gap-2 text-xs text-text-secondary cursor-pointer select-none">
+              <input type="checkbox" v-model="scanIncludeAllNamespaces" class="rounded border-border" />
+              <span>{{ $t('remoteAgent.scan.includeAllNamespaces', '包含同系统用户下的全部托管会话（排查其他账号/历史孤儿会话）') }}</span>
+            </label>
+
+            <div v-if="scanError" class="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-500">
+              {{ scanError }}
+            </div>
+
+            <div v-else-if="scanCompleted && scannedSessions.length === 0" class="text-center py-6 text-xs text-text-secondary">
+              {{ $t('remoteAgent.scan.emptyResult', '该目标机当前没有发现运行中或保留期内的托管会话。') }}
+            </div>
+
+            <ul v-else-if="scannedSessions.length > 0" class="space-y-2 list-none p-0 m-0">
+              <li
+                v-for="item in scannedSessions"
+                :key="item.sessionId"
+                class="p-3 rounded-xl border border-border/70 bg-muted/15 flex items-center justify-between gap-3"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="font-semibold text-sm truncate">{{ item.title || item.sessionId }}</span>
+                    <span
+                      class="sss-badge"
+                      :class="item.status === 'running' ? 'sss-badge--live' : 'sss-badge--dead'"
+                    >
+                      {{ item.status === 'running' ? $t('remoteAgent.scan.statusRunning', '运行中') : $t('remoteAgent.scan.statusExited', '已退出') }}
+                    </span>
+                    <span v-if="item.attached" class="sss-badge sss-badge--paused">
+                      {{ $t('remoteAgent.scan.attachedBadge', '已附着') }}
+                    </span>
+                    <span v-if="item.exitCode !== undefined && item.exitCode !== null" class="sss-badge sss-badge--exit">
+                      exit {{ item.exitCode }}
+                    </span>
+                  </div>
+                  <div class="text-[11px] text-text-secondary mt-1 font-mono truncate">
+                    ID: {{ item.sessionId }} · {{ item.cols }}×{{ item.rows }}
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    @click="claimScannedSession(item)"
+                    class="px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-medium cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <i class="fas fa-plug text-[10px]"></i>
+                    <span>{{ $t('remoteAgent.scan.claimAction', '接管') }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="killingScannedId === item.sessionId"
+                    @click="killScannedSession(item)"
+                    class="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    <i :class="killingScannedId === item.sessionId ? 'fas fa-spinner fa-spin text-[10px]' : 'fas fa-trash-alt text-[10px]'"></i>
+                    <span>{{ $t('remoteAgent.scan.killAction', '终止') }}</span>
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -134,13 +274,120 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '../stores/session.store';
 import { useConnectionsStore } from '../stores/connections.store'; // +++ 导入 Connections Store +++
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import apiClient from '../utils/apiClient';
 import type { SuspendedSshSession } from '../types/ssh-suspend.types';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents'; // +++ 导入事件发射器 +++
 
 const { t } = useI18n();
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射器 +++
 const sessionStore = useSessionStore();
+const connectionsStore = useConnectionsStore();
+const uiNotificationsStore = useUiNotificationsStore();
 const { suspendedSshSessions: storeSuspendedSshSessions, isLoadingSuspendedSessions: isLoading, suspendedSshSessionsLoaded } = storeToRefs(sessionStore);
+
+// --- 扫描目标机托管会话状态 ---
+interface ScannedRemoteSession {
+  remoteSessionId: string;
+  sessionId: string;
+  ownerNamespace: string;
+  title?: string;
+  exited: boolean;
+  status: 'running' | 'exited';
+  exitCode?: number | null;
+  attached: boolean;
+  cols: number;
+  rows: number;
+  createdAt?: number;
+  lastActiveAt?: number;
+}
+const showScanModal = ref(false);
+const selectedScanConnectionId = ref<number | null>(null);
+const scanIncludeAllNamespaces = ref(false);
+const isScanning = ref(false);
+const scanCompleted = ref(false);
+const scanError = ref<string | null>(null);
+const scannedSessions = ref<ScannedRemoteSession[]>([]);
+const killingScannedId = ref<string | null>(null);
+
+const sshConnections = computed(() =>
+  connectionsStore.connections.filter((c) => c.type === 'SSH')
+);
+
+const openScanModal = async () => {
+  showScanModal.value = true;
+  scanError.value = null;
+  if (connectionsStore.connections.length === 0) {
+    try {
+      await connectionsStore.fetchConnections();
+    } catch {}
+  }
+  if (!selectedScanConnectionId.value && sshConnections.value.length > 0) {
+    selectedScanConnectionId.value = sshConnections.value[0].id;
+  }
+};
+
+const closeScanModal = () => {
+  showScanModal.value = false;
+};
+
+const runRemoteScan = async () => {
+  if (!selectedScanConnectionId.value || isScanning.value) return;
+  isScanning.value = true;
+  scanError.value = null;
+  scanCompleted.value = false;
+  try {
+    const res = await apiClient.post(`/connections/${selectedScanConnectionId.value}/remote-agent/scan`, {
+      includeAllNamespaces: scanIncludeAllNamespaces.value,
+    });
+    const rawList = Array.isArray(res.data?.data?.sessions) ? res.data.data.sessions : [];
+    scannedSessions.value = rawList.map((item: any) => {
+      const sid = String(item.remoteSessionId || item.sessionId || '');
+      const exited = typeof item.exited === 'boolean' ? item.exited : item.status === 'exited';
+      return {
+        ...item,
+        remoteSessionId: sid,
+        sessionId: sid,
+        exited,
+        status: exited ? 'exited' : 'running',
+      };
+    });
+    scanCompleted.value = true;
+  } catch (err: any) {
+    scanError.value = err?.response?.data?.message || err?.message || t('errors.unknown', '未知错误');
+    scannedSessions.value = [];
+  } finally {
+    isScanning.value = false;
+  }
+};
+
+const claimScannedSession = (item: ScannedRemoteSession) => {
+  if (!selectedScanConnectionId.value) return;
+  sessionStore.openNewSession(selectedScanConnectionId.value, undefined, true, {
+    remoteSessionId: item.sessionId,
+  });
+  showScanModal.value = false;
+  emitWorkspaceEvent('suspendedSession:actionCompleted');
+};
+
+const killScannedSession = async (item: ScannedRemoteSession) => {
+  if (!selectedScanConnectionId.value || killingScannedId.value) return;
+  killingScannedId.value = item.sessionId;
+  try {
+    await apiClient.delete(
+      `/connections/${selectedScanConnectionId.value}/remote-agent/sessions/${encodeURIComponent(item.sessionId)}`,
+      { data: { forceAnyNamespace: scanIncludeAllNamespaces.value } }
+    );
+    scannedSessions.value = scannedSessions.value.filter((s) => s.sessionId !== item.sessionId);
+    uiNotificationsStore.showSuccess(t('remoteAgent.scan.killSuccess', '已终止目标机托管会话'));
+    void sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || t('errors.unknown', '未知错误');
+    uiNotificationsStore.showError(t('remoteAgent.scan.killFailed', { error: msg }));
+  } finally {
+    killingScannedId.value = null;
+  }
+};
 
 const searchTerm = ref('');
 
@@ -390,6 +637,21 @@ onUnmounted(() => {
   color: color-mix(in oklab, #2563eb 76%, var(--text-color));
   background-color: color-mix(in oklab, #2563eb 14%, transparent);
   border-color: color-mix(in oklab, #2563eb 36%, transparent);
+}
+
+/* 「目标机托管」：由目标主机本地 nexus-mux 托管的跨端会话，用紫色系区分 */
+.sss-badge--remote {
+  color: color-mix(in oklab, #7c3aed 78%, var(--text-color));
+  background-color: color-mix(in oklab, #7c3aed 14%, transparent);
+  border-color: color-mix(in oklab, #7c3aed 36%, transparent);
+}
+
+/* 进程退出码徽标 */
+.sss-badge--exit {
+  color: var(--text-color);
+  background-color: color-mix(in oklab, var(--text-color) 10%, transparent);
+  border-color: color-mix(in oklab, var(--text-color) 20%, transparent);
+  font-family: monospace;
 }
 
 .sss-item--paused {

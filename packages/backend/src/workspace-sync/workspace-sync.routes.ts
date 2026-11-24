@@ -47,6 +47,7 @@ const isAuthenticatedOrSyncApiKey = async (req: express.Request, res: express.Re
   return isAuthenticated(req, res, next);
 };
 
+router.get('/mode', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.getRuntimeMode(req, res));
 router.get('/', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.getState(req, res));
 router.post('/claim', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.claimLease(req, res));
 router.post('/save', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.saveState(req, res));

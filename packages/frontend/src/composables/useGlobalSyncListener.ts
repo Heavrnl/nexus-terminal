@@ -107,6 +107,47 @@ function connect() {
         if (msg.type === 'sync:completed' || msg.type === 'sync:invalidated') {
           console.log('[GlobalSyncListener] 收到本地/云端实时同步完成信号，即刻无感刷新所有工作区面板！', msg);
           scheduleStoreRefresh();
+        } else if (msg.type === 'workspace:takeover_kickout') {
+          // 跨端接管踢出通知（桌面端由本地 Sidecar 从云端同步 WS 转发而来）
+          const p = msg.payload || msg;
+          const activeClientId = String(p.activeClientId || '');
+          workspaceEmitter.emit('workspace:takeoverKickout', { activeClientId });
+          import('../stores/workspaceSync.store')
+            .then(({ useWorkspaceSyncStore }) => {
+              useWorkspaceSyncStore().handleTakeoverKickout(activeClientId);
+            })
+            .catch(() => {});
+        } else if (msg.type === 'workspace:offline_conflict') {
+          const p = msg.payload || msg;
+          import('../stores/workspaceSync.store')
+            .then(({ useWorkspaceSyncStore }) => {
+              useWorkspaceSyncStore().handleOfflineConflict({
+                cloudActiveClientId: p.cloudActiveClientId ?? null,
+                cloudUpdatedAt: Number(p.cloudUpdatedAt || 0),
+                localClientId: p.localClientId ?? null,
+                hasOfflineDirtyChanges: Boolean(p.hasOfflineDirtyChanges),
+              });
+            })
+            .catch(() => {});
+        } else if (msg.type === 'workspace:cloud_reconnected') {
+          const p = msg.payload || msg;
+          import('../stores/workspaceSync.store')
+            .then(({ useWorkspaceSyncStore }) => {
+              void useWorkspaceSyncStore().handleCloudReconnected({
+                shouldFlushSave: Boolean(p.shouldFlushSave),
+              });
+            })
+            .catch(() => {});
+        } else if (msg.type === 'workspace:mode_changed') {
+          const p = msg.payload || msg;
+          import('../stores/workspaceSync.store')
+            .then(({ useWorkspaceSyncStore }) => {
+              useWorkspaceSyncStore().handleModeChanged({
+                mode: p.mode,
+                offlineMode: p.offlineMode,
+              });
+            })
+            .catch(() => {});
         } else if (msg.type === 'frontend:connected') {
           console.log('[GlobalSyncListener] 后端确认事件通道就绪:', msg.message);
         } else {

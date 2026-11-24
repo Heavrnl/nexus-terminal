@@ -212,6 +212,7 @@ notes: input.notes ?? null, // Add notes field
         // 默认开启：调用方没显式传就按 1 存（提权失败会自动降级，所以默认开是安全的）
         sftp_sudo_enabled: input.sftp_sudo_enabled === undefined ? 1 : (input.sftp_sudo_enabled ? 1 : 0),
         encrypted_sudo_password: input.sudo_password ? encrypt(input.sudo_password) : null,
+        session_hosting_mode: input.session_hosting_mode === 'legacy' ? 'legacy' : 'auto',
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
     const finalConnectionData = { ...connectionData };
@@ -299,6 +300,9 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     if (input.ssh_key_id !== undefined) dataToUpdate.ssh_key_id = input.ssh_key_id;
     if (input.background_color !== undefined) dataToUpdate.background_color = input.background_color;
     if (input.file_protocol !== undefined) dataToUpdate.file_protocol = input.file_protocol;
+    if (input.session_hosting_mode !== undefined) {
+        dataToUpdate.session_hosting_mode = input.session_hosting_mode === 'legacy' ? 'legacy' : 'auto';
+    }
     if (input.startup_command !== undefined) dataToUpdate.startup_command = (input.startup_command ?? '').trim();
     if (input.sftp_sudo_enabled !== undefined) dataToUpdate.sftp_sudo_enabled = input.sftp_sudo_enabled ? 1 : 0;
     // sudo 密码：不传 / 空串 = 保留原值（前端不回显密码，编辑时留空就是"不改"）。

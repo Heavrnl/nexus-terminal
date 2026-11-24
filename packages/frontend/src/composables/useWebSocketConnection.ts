@@ -24,7 +24,15 @@ export function createWebSocketConnectionManager(
     sessionId: string,
     dbConnectionId: string,
     t: ReturnType<typeof useI18n>['t'],
-    options?: { isResumeFlow?: boolean; isHeadless?: boolean; getIsMarkedForSuspend?: () => boolean }
+    options?: {
+        isResumeFlow?: boolean;
+        isHeadless?: boolean;
+        getIsMarkedForSuspend?: () => boolean;
+        /** 若指定则首次 ssh:connect 时直接请求目标机托管代理接管对应远端会话 */
+        initialRemoteSessionId?: string;
+        /** 仅尝试接管已有远端会话，找不到时不自动新建 */
+        attachOnly?: boolean;
+    }
 ) {
     // --- Instance State ---
     // 每个实例拥有独立的 WebSocket 对象、状态和消息处理器
@@ -43,6 +51,31 @@ export function createWebSocketConnectionManager(
     const connectionStatus = ref<WsConnectionStatus>('disconnected'); // 连接状态 (使用导出的类型)
     const statusMessage = ref<string>(''); // 状态描述文本
     const isSftpReady = ref<boolean>(false); // SFTP 是否就绪
+    /** 当前会话托管模式（remote-agent 表示由目标机 nexus-mux 托管） */
+    const hostingMode = ref<'remote-agent' | 'legacy' | undefined>(
+        options?.initialRemoteSessionId ? 'remote-agent' : undefined
+    );
+    /** 目标机托管会话 ID（nexus-mux session_id） */
+    const remoteSessionId = ref<string | undefined>(options?.initialRemoteSessionId);
+    /** 目标机托管通道最近收到的字节流序号（用于断线后零闪烁 delta 续传） */
+    const lastMuxSeq = ref<number>(0);
+    /** 本连接管理器是否曾成功完成过一次 ssh:connected 握手 */
+    let hasConnectedSuccessfullyOnce = false;
+    /** 后台保活降级提示（如无 root 无法开启 systemd linger）只弹一次 */
+    let persistenceWarningNotified = false;
+    /** 一次性透传给下一次 ssh:connect 的目标机托管参数 */
+    let pendingRemoteConnectOpts: {
+        remoteSessionId?: string;
+        replay?: 'full' | 'delta';
+        lastSeq?: number;
+        attachOnly?: boolean;
+    } | null = options?.initialRemoteSessionId
+        ? {
+              remoteSessionId: options.initialRemoteSessionId,
+              replay: 'full',
+              attachOnly: options.attachOnly === true,
+          }
+        : null;
     /** sudo 提权失败只提示一次（每次重连都会重新发 sftp_ready，不该刷屏） */
     let sudoFallbackNotified = false;
     const messageHandlers = new Map<string, Set<MessageHandler>>(); // 此实例的消息处理器注册表
@@ -87,10 +120,17 @@ export function createWebSocketConnectionManager(
         }
     };
 
-    /** 发起一次全新 SSH 连接（正常首次连接、手动重连、接回失败时的兜底都走这里） */
-    const requestFreshSshConnection = () => {
+    /** 发起一次 SSH 连接（支持携带目标机托管会话 ID 与增量/全量回放选项） */
+    const requestFreshSshConnection = (remoteOpts?: {
+        remoteSessionId?: string;
+        replay?: 'full' | 'delta';
+        lastSeq?: number;
+        attachOnly?: boolean;
+    }) => {
         clearReattachTimeout();
         awaitingReattach = false;
+        const effectiveRemoteOpts = remoteOpts ?? pendingRemoteConnectOpts ?? undefined;
+        pendingRemoteConnectOpts = null;
         sendMessage({
             type: 'ssh:connect',
             payload: {
@@ -98,6 +138,16 @@ export function createWebSocketConnectionManager(
                 sessionId: instanceSessionId, // 显式传递前端当前会话 ID，保证重连时会话 ID 稳定一致
                 // 无终端会话：后端据此在「接管工作区」时跳过它，不往挂起池里塞
                 headless: options?.isHeadless === true,
+                ...(effectiveRemoteOpts?.remoteSessionId
+                    ? {
+                          remoteSessionId: effectiveRemoteOpts.remoteSessionId,
+                          replay: effectiveRemoteOpts.replay || 'full',
+                          ...(typeof effectiveRemoteOpts.lastSeq === 'number'
+                              ? { lastSeq: effectiveRemoteOpts.lastSeq }
+                              : {}),
+                          ...(effectiveRemoteOpts.attachOnly ? { attachOnly: true } : {}),
+                      }
+                    : {}),
             },
         });
     };
@@ -270,6 +320,18 @@ export function createWebSocketConnectionManager(
             // 用户手动「重新连接」＝明确不要旧会话，别再问后端能不能接回
             awaitingReattach = false;
             clearReattachTimeout();
+            if (hasConnectedSuccessfullyOnce) {
+                // 曾经连上过又被用户手动断开后要求 fresh 重连：开启全新会话，不复用旧远端 ID
+                pendingRemoteConnectOpts = null;
+                remoteSessionId.value = undefined;
+                lastMuxSeq.value = 0;
+            } else if (remoteSessionId.value) {
+                // 离线占位态（此前从未连上成功）点击重试：继续尝试接回快照里记录的目标机活会话
+                pendingRemoteConnectOpts = {
+                    remoteSessionId: remoteSessionId.value,
+                    replay: 'full',
+                };
+            }
         }
         // 本次连接是否仍走「恢复流程」分支（不发 ssh:connect）
         const asResumeFlow = resumeFlowPending;
@@ -347,12 +409,23 @@ export function createWebSocketConnectionManager(
                 }
                 // 状态保持 'connecting' 直到收到 ssh:connected
                 if (!asResumeFlow) {
-                    // 非主动断开后的自动重连：先试着把原会话接回来（会保留 cwd、进程与历史），
-                    // 只有后端说「那条已经没了」才退回新建连接。
+                    // 非主动断开后的自动重连：
+                    // 1) 若当前为目标机托管模式（remote-agent），直接按 remoteSessionId + lastMuxSeq 请求 delta 增量续传，
+                    //    无需经过后端内存挂起池，屏幕零闪烁无缝衔接；
+                    // 2) 传统模式走 SSH_REATTACH_REQUEST 询问后端内存挂起池。
                     if (awaitingReattach) {
-                        requestReattach();
+                        if (hostingMode.value === 'remote-agent' && remoteSessionId.value) {
+                            statusMessage.value = getStatusText('reattaching');
+                            requestFreshSshConnection({
+                                remoteSessionId: remoteSessionId.value,
+                                replay: hasConnectedSuccessfullyOnce ? 'delta' : 'full',
+                                lastSeq: hasConnectedSuccessfullyOnce ? lastMuxSeq.value : undefined,
+                            });
+                        } else {
+                            requestReattach();
+                        }
                     } else {
-                        // 对于普通连接，发送 ssh:connect 并等待 ssh:connected 来更新状态
+                        // 对于普通连接（或首次携带 initialRemoteSessionId 的跨端接管），发送 ssh:connect 并等待 ssh:connected
                         requestFreshSshConnection();
                     }
                 } else {
@@ -388,10 +461,51 @@ export function createWebSocketConnectionManager(
                     if (message.type === 'ssh:connected') {
                         clearReattachTimeout();
                         awaitingReattach = false;
+                        hasConnectedSuccessfullyOnce = true;
+                        const connectedPayload = message.payload as {
+                            hostingMode?: 'remote-agent' | 'legacy';
+                            remoteSessionId?: string;
+                            currentSeq?: number;
+                            persistenceWarning?: string;
+                        } | undefined;
+                        if (connectedPayload?.hostingMode === 'remote-agent' || connectedPayload?.hostingMode === 'legacy') {
+                            hostingMode.value = connectedPayload.hostingMode;
+                        }
+                        if (connectedPayload?.remoteSessionId) {
+                            remoteSessionId.value = connectedPayload.remoteSessionId;
+                        }
+                        if (typeof connectedPayload?.currentSeq === 'number' && connectedPayload.currentSeq >= 0) {
+                            lastMuxSeq.value = connectedPayload.currentSeq;
+                        }
+                        if (connectedPayload?.persistenceWarning && !persistenceWarningNotified) {
+                            persistenceWarningNotified = true;
+                            const warnMsg = String(connectedPayload.persistenceWarning);
+                            import('../stores/uiNotifications.store')
+                                .then(({ useUiNotificationsStore }) => {
+                                    useUiNotificationsStore().showWarning(warnMsg);
+                                })
+                                .catch(() => {});
+                        }
                         if (connectionStatus.value !== 'connected') {
                             connectionStatus.value = 'connected';
                             statusMessage.value = getStatusText('connected');
                         }
+                    } else if (message.type === 'ssh:output') {
+                        if (typeof (message as any).seq === 'number' && (message as any).seq > lastMuxSeq.value) {
+                            lastMuxSeq.value = (message as any).seq;
+                        }
+                    } else if (message.type === 'ssh:detached') {
+                        // 目标机托管会话被另一客户端直接抢占脱离：停止自动重连，避免两端反复互相踢出
+                        intentionalDisconnect = true;
+                        awaitingReattach = false;
+                        clearReattachTimeout();
+                        if (reconnectTimeoutId) {
+                            clearTimeout(reconnectTimeoutId);
+                            reconnectTimeoutId = null;
+                        }
+                        connectionStatus.value = 'disconnected';
+                        statusMessage.value = getStatusText('detachedByOtherClient');
+                        isSftpReady.value = false;
                     } else if (message.type === 'SSH_REATTACH_RESULT') {
                         const reattachResult = message.payload as { sessionId?: string; success?: boolean; reason?: string } | undefined;
                         if (reattachResult?.success) {
@@ -511,8 +625,10 @@ export function createWebSocketConnectionManager(
 
     /**
      * 手动断开此 WebSocket 连接
+     * @param disconnectOptions.explicitClose 为 true 表示用户显式关闭标签页（目标机托管模式应发 KILL 终止进程树）；
+     *   默认 false 表示普通断开/清场/页面卸载（目标机托管模式仅优雅 DETACH 保持远端进程存活）。
      */
-    const disconnect = () => {
+    const disconnect = (disconnectOptions?: { explicitClose?: boolean }) => {
         intentionalDisconnect = true; // 标记为主动断开
         awaitingReattach = false; // 主动断开不接回
         clearReattachTimeout();
@@ -525,11 +641,14 @@ export function createWebSocketConnectionManager(
                  connectionStatus.value = 'disconnected';
                  statusMessage.value = getStatusText('disconnected', { reason: '手动断开' });
             }
-             ws.value.close(1000, '客户端主动断开'); // 使用标准代码和原因
-             ws.value = null;
-             isSftpReady.value = false;
-             // 手动断开时可以考虑清除处理器，取决于是否需要重连逻辑
-             // messageHandlers.clear();
+            const closeReason = disconnectOptions?.explicitClose
+                ? 'EXPLICIT_CLOSE_TERMINATE'
+                : 'DETACH_KEEP_REMOTE';
+            ws.value.close(1000, closeReason); // 使用标准代码和明确意图原因
+            ws.value = null;
+            isSftpReady.value = false;
+            // 手动断开时可以考虑清除处理器，取决于是否需要重连逻辑
+            // messageHandlers.clear();
         }
     };
 
@@ -589,6 +708,9 @@ export function createWebSocketConnectionManager(
         isSftpReady: readonly(isSftpReady),
         connectionStatus: readonly(connectionStatus),
         statusMessage: readonly(statusMessage),
+        hostingMode: readonly(hostingMode),
+        remoteSessionId: readonly(remoteSessionId),
+        lastMuxSeq: readonly(lastMuxSeq),
 
         // 方法
         connect,

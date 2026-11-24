@@ -7,6 +7,9 @@ import ToggleSwitch from '../../common/ToggleSwitch.vue';
 import type { ProxyInfo } from '../../../stores/proxies.store';
 import type { FolderInfo } from '../../../stores/folders.store';
 import type { ConnectionInfo } from '../../../stores/connections.store';
+import apiClient from '../../../utils/apiClient';
+import { useUiNotificationsStore } from '../../../stores/uiNotifications.store';
+import { useConfirmDialog } from '../../../composables/useConfirmDialog';
 
 // 定义 Props
 const props = defineProps({
@@ -24,6 +27,7 @@ const props = defineProps({
       sftp_sudo_enabled?: boolean;
       sudo_password?: string;
       has_sudo_password?: boolean;
+      session_hosting_mode?: 'auto' | 'legacy';
     }>,
     required: true
   },
@@ -48,6 +52,32 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const uiNotificationsStore = useUiNotificationsStore();
+const { showConfirmDialog } = useConfirmDialog();
+const isUninstallingAgent = ref(false);
+
+const handleUninstallRemoteAgent = async () => {
+  if (!props.formData.id || isUninstallingAgent.value) return;
+  const confirmed = await showConfirmDialog({
+    title: t('remoteAgent.uninstall.confirmTitle', '卸载目标机托管代理'),
+    message: t(
+      'remoteAgent.uninstall.confirmMessage',
+      '将停止该主机上的 nexus-mux 守护进程并清理其二进制与运行时文件（正在该主机后台保活的托管会话也会随之结束）。确认继续吗？'
+    ),
+  });
+  if (!confirmed) return;
+
+  isUninstallingAgent.value = true;
+  try {
+    await apiClient.post(`/connections/${props.formData.id}/remote-agent/uninstall`);
+    uiNotificationsStore.showSuccess(t('remoteAgent.uninstall.success', '已成功卸载并清理目标机托管代理'));
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || t('errors.unknown', '未知错误');
+    uiNotificationsStore.showError(t('remoteAgent.uninstall.failed', { error: msg }));
+  } finally {
+    isUninstallingAgent.value = false;
+  }
+};
 
 // 高级选项折叠状态 (移动端默认展开，用户亦可随时折叠)
 const isExpanded = ref(true);
@@ -373,6 +403,50 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
               : t('connections.form.sftpSudoHint', '用上面的密码以 sudo 启动 sftp-server，从而读写 root 路径。留空时要求服务器允许免密 sudo。')
           }}
         </p>
+      </div>
+
+      <!-- 2.7 SSH 会话托管模式与代理清理（仅 SSH） -->
+      <div v-if="props.formData.type === 'SSH'" class="space-y-1.5 pt-1">
+        <label class="block text-xs font-medium text-text-secondary">
+          {{ t('connections.form.sessionHostingMode', 'SSH 会话托管模式') }}
+        </label>
+        <div class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70 bg-input">
+          <button
+            type="button"
+            @click="props.formData.session_hosting_mode = 'auto'"
+            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer min-w-0 px-1.5"
+            :class="(!props.formData.session_hosting_mode || props.formData.session_hosting_mode === 'auto')
+              ? 'bg-primary text-primary-foreground shadow-xs'
+              : 'text-text-secondary hover:text-foreground active:bg-border/30'"
+          >
+            <i class="fas fa-microchip text-[10px] shrink-0"></i>
+            <span class="truncate">{{ t('connections.form.sessionHostingModeAuto', '自动（目标机托管）') }}</span>
+          </button>
+          <button
+            type="button"
+            @click="props.formData.session_hosting_mode = 'legacy'"
+            class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer min-w-0 px-1.5"
+            :class="props.formData.session_hosting_mode === 'legacy'
+              ? 'bg-primary text-primary-foreground shadow-xs'
+              : 'text-text-secondary hover:text-foreground active:bg-border/30'"
+          >
+            <i class="fas fa-terminal text-[10px] shrink-0"></i>
+            <span class="truncate">{{ t('connections.form.sessionHostingModeLegacy', '仅传统直连模式') }}</span>
+          </button>
+        </div>
+        <p class="text-[11px] leading-snug text-text-secondary/80">
+          {{ t('connections.form.sessionHostingModeHint', '自动模式下遵循全局设置：优先由目标机轻量代理托管会话以支持跨端无缝接管；不支持时自动静默降级。') }}
+        </p>
+        <button
+          v-if="props.isEditMode && props.formData.id"
+          type="button"
+          :disabled="isUninstallingAgent"
+          @click="handleUninstallRemoteAgent"
+          class="w-full h-9 rounded-xl border border-red-500/40 text-red-500 hover:bg-red-500/10 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <i :class="isUninstallingAgent ? 'fas fa-spinner fa-spin' : 'fas fa-broom'"></i>
+          <span>{{ t('remoteAgent.uninstall.button', '卸载目标机代理') }}</span>
+        </button>
       </div>
 
       <!-- 3. 备注信息 -->

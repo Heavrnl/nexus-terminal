@@ -117,6 +117,7 @@ export const TABLE_SYNC_ITEM: Record<string, SyncItemKey> = {
   connection_folders: 'connections.hosts',
   port_forwards: 'connections.hosts',
   file_color_highlights: 'connections.hosts',
+  remote_hosted_sessions: 'connections.hosts',
   folders: 'connections.folders',
   ssh_keys: 'connections.keys',
   proxies: 'connections.proxies',

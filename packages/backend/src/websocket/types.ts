@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { Client, ClientChannel, SFTPWrapper } from 'ssh2';
 import type { BackendTerminalEmulator } from './terminal-emulator';
 import type { OutputCoalescer } from './output-coalescer';
+import type { MuxChannelHandle, MuxTransport } from '../remote-agent/mux-transport';
 
 // 扩展 WebSocket 类型以包含会话 ID
 export interface AuthenticatedWebSocket extends WebSocket {
@@ -17,7 +18,20 @@ export interface ClientState { // 导出以便 Service 可以导入
     sshClient: Client;
     sshShellStream?: ClientChannel;
     dbConnectionId: number;
+    connectionUuid?: string; // 跨端唯一主机 UUID
     connectionName?: string; // 连接名称字段
+    /** 当前会话的托管模式：remote-agent=目标机 nexus-mux 自托管，legacy=后端内存托管 */
+    hostingMode?: 'remote-agent' | 'legacy';
+    /** 目标机 nexus-mux 主终端会话唯一 ID */
+    remoteSessionId?: string;
+    /** 目标机二进制帧多路复用传输实例（同一主机主终端与所有分屏复用此条 SSH exec 通道） */
+    muxTransport?: MuxTransport;
+    /** 目标机主终端逻辑通道句柄 */
+    muxMainHandle?: MuxChannelHandle;
+    /** 最近一次从目标机主终端收到的字节序号（用于弱网 delta 续传） */
+    lastMuxSeq?: number;
+    /** 目标机后台持久化风险提示（如 Linux KillUserProcesses=yes 无权限加固 / Windows Job 限制） */
+    persistenceWarning?: string;
     sftp?: SFTPWrapper; //  sftp 实例 (由 SftpService 管理)
     /** 这条 SFTP 通道是不是通过 `sudo sftp-server` 开的（读写等同 root） */
     sudoSftp?: boolean;
@@ -57,14 +71,17 @@ export interface ClientState { // 导出以便 Service 可以导入
     // 多终端分屏独立 Shell 通道映射 (key 为 paneId)
     paneStreams?: Map<string, PaneStreamState>;
     // 暂存连接就绪前收到的分屏打开请求
-    pendingPaneOpens?: Map<string, { cols: number; rows: number; term: string; paneIndex?: number }>;
+    pendingPaneOpens?: Map<string, { cols: number; rows: number; term: string; paneIndex?: number; remotePaneSessionId?: string }>;
 }
 
 export interface PaneStreamState {
     paneId: string;
     /** 该分屏在布局树中的稳定先序序号（刷新重编 paneId 后仍可按序号复用） */
     paneIndex?: number;
-    stream: ClientChannel;
+    stream?: ClientChannel;
+    muxHandle?: MuxChannelHandle;
+    remotePaneSessionId?: string;
+    lastMuxSeq?: number;
     isReady: boolean;
     pendingDimensions?: { cols: number; rows: number };
 }
