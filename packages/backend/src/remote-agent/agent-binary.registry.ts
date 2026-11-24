@@ -39,6 +39,7 @@ export interface ResolvedAgentBinary {
 export function resolveAgentBinariesDir(): string | null {
   const candidates = [
     process.env.NEXUS_AGENT_BINARIES_DIR,
+    path.resolve(__dirname, 'agent-binaries'),
     path.resolve(__dirname, '../../agent-binaries'),
     path.resolve(__dirname, '../agent-binaries'),
     path.resolve(process.cwd(), 'agent-binaries'),

@@ -2,6 +2,10 @@
 node_modules
 **/node_modules
 **/dist
+# 放行多平台目标机托管代理预编译产物（供 Dockerfile 内置进镜像），同时排除 Rust 编译缓存
+!packages/remote-agent/dist
+!packages/remote-agent/dist/**
+packages/remote-agent/target
 **/dist-bundle
 dist-desktop
 data

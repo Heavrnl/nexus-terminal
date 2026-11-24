@@ -19,31 +19,31 @@ jobs:
             target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
             ext: ''
-            needs_musl_tools: true
+            use_alpine_docker: true
           - os: linux
             arch: aarch64
             target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
             ext: ''
-            needs_musl_tools: true
+            use_alpine_docker: true
           - os: darwin
             arch: arm64
             target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             ext: ''
-            needs_musl_tools: false
+            use_alpine_docker: false
           - os: darwin
             arch: x86_64
             target: x86_64-apple-darwin
-            runner: macos-14
+            runner: macos-15
             ext: ''
-            needs_musl_tools: false
+            use_alpine_docker: false
           - os: windows
             arch: x86_64
             target: x86_64-pc-windows-msvc
             runner: windows-latest
             ext: '.exe'
-            needs_musl_tools: false
+            use_alpine_docker: false
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -52,31 +52,71 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@v4
 
-      - name: 安装 musl 静态编译工具链（仅 Linux）
-        if: matrix.needs_musl_tools
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # --- Linux 路径：统一在对应架构官方 rust:1-alpine 容器内原生静态构建与单测，
+      #     彻底消除 Ubuntu 24.04 宿主机 GCC 13 / musl-tools 链接器版本漂移 ---
+      - name: 缓存 Linux Alpine Cargo 依赖
+        if: matrix.use_alpine_docker
+        uses: actions/cache@v4
+        with:
+          path: |
+            .alpine-cargo/registry/index
+            .alpine-cargo/registry/cache
+            .alpine-cargo/git/db
+          key: nexus-mux-alpine-${{ matrix.arch }}-${{ hashFiles('packages/remote-agent/Cargo.lock') }}
+          restore-keys: |
+            nexus-mux-alpine-${{ matrix.arch }}-
 
-      - name: 配置 Rust 工具链
+      - name: 在 Alpine 原生容器内执行单元测试并构建静态 Release 二进制（Linux）
+        if: matrix.use_alpine_docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .alpine-cargo/registry .alpine-cargo/git agent-out
+          HOST_UID="$(id -u)"
+          HOST_GID="$(id -g)"
+          NORM_ARCH="${{ matrix.arch }}"
+          docker run --rm \
+            -v "$PWD/packages/remote-agent:/src" \
+            -v "$PWD/.alpine-cargo/registry:/usr/local/cargo/registry" \
+            -v "$PWD/.alpine-cargo/git:/usr/local/cargo/git" \
+            -v "$PWD/agent-out:/out" \
+            -w /src \
+            rust:1-alpine \
+            sh -euc "
+              apk add --no-cache musl-dev >/dev/null
+              cargo test --target ${{ matrix.target }} --target-dir /tmp/cargo-target
+              cargo build --release --target ${{ matrix.target }} --target-dir /tmp/cargo-target
+              cp /tmp/cargo-target/${{ matrix.target }}/release/nexus-mux /out/nexus-mux-linux-${NORM_ARCH}
+              chown -R ${HOST_UID}:${HOST_GID} /out /usr/local/cargo/registry /usr/local/cargo/git
+            "
+          ls -lh "agent-out/nexus-mux-linux-${NORM_ARCH}"
+
+      # --- macOS & Windows 路径：直接使用 Runner 原生工具链编译 ---
+      - name: 配置 Rust 工具链（macOS / Windows）
+        if: ${{ !matrix.use_alpine_docker }}
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: 启用 Rust 编译缓存
+      - name: 启用 Rust 编译缓存（macOS / Windows）
+        if: ${{ !matrix.use_alpine_docker }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'packages/remote-agent -> target'
           key: nexus-mux-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: 运行单元测试（原生可运行目标）
-        if: matrix.os != 'darwin' || matrix.arch == 'arm64'
+      - name: 运行单元测试（macOS arm64 / Windows）
+        if: ${{ !matrix.use_alpine_docker && (matrix.os != 'darwin' || matrix.arch == 'arm64') }}
         working-directory: packages/remote-agent
         run: cargo test --target ${{ matrix.target }}
 
-      - name: 编译精简 Release 二进制
+      - name: 编译精简 Release 二进制（macOS / Windows）
+        if: ${{ !matrix.use_alpine_docker }}
         working-directory: packages/remote-agent
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: 归档平台产物
+      - name: 归档平台产物（macOS / Windows）
+        if: ${{ !matrix.use_alpine_docker }}
         shell: bash
         run: |
           mkdir -p agent-out
@@ -85,6 +125,7 @@ jobs:
           if [ "$NORM_ARCH" = "arm64" ]; then NORM_ARCH="aarch64"; fi
           cp "packages/remote-agent/target/${{ matrix.target }}/release/nexus-mux${{ matrix.ext }}" \
              "agent-out/nexus-mux-${{ matrix.os }}-${NORM_ARCH}${{ matrix.ext }}"
+          ls -lh "agent-out/nexus-mux-${{ matrix.os }}-${NORM_ARCH}${{ matrix.ext }}"
 
       - name: 上传单平台原始产物
         uses: actions/upload-artifact@v4
