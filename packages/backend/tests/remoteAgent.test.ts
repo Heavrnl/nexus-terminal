@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
 import {
   decodeServerDataPayload,
   encodeFrame,
@@ -279,4 +281,95 @@ test('Node.js 协议层与真实编译的 Rust nexus-mux 二进制端到端跨�
   } finally {
     b1.proc.kill();
   }
+});
+
+test('AgentDeployer: 发起连接在 SFTP 卡住时被主动断开，必须即时解阻且绝不毒化后续并发与重连', async () => {
+  const require = createRequire(import.meta.url);
+  const tsNode = require('ts-node');
+  tsNode.register({
+    transpileOnly: true,
+    project: path.resolve(import.meta.dirname, '..', 'tsconfig.json'),
+  });
+  const { agentDeployerService } = require('../src/remote-agent/agent-deployer.service.ts');
+
+  const hostCacheKey = `163.61.31.188:39346:root-test-${Date.now()}`;
+  agentDeployerService.invalidateHostCache(hostCacheKey);
+
+  // 构造一个在 sftp.realpath 永不回调的“假死” SSH 客户端（模拟高丢包线路且中途被关标签页）
+  const hangingClient = new EventEmitter() as any;
+  hangingClient.sftp = (cb: (err: Error | null, sftp: any) => void) => {
+    const fakeSftp = new EventEmitter() as any;
+    fakeSftp.realpath = () => {
+      // 故意永不回调，模拟 ssh2 在底层断连时漏掉回调
+    };
+    fakeSftp.end = () => {};
+    cb(null, fakeSftp);
+  };
+  hangingClient.exec = () => {};
+
+  // 构造一个健康的第二条 SSH 客户端（已装好相同版本，直接探测就绪）
+  const healthyClient = new EventEmitter() as any;
+  healthyClient.sftp = (cb: (err: Error | null, sftp: any) => void) => {
+    const fakeSftp = new EventEmitter() as any;
+    fakeSftp.realpath = (_p: string, rcb: (err: Error | null, abs?: string) => void) => {
+      rcb(null, '/root');
+    };
+    fakeSftp.end = () => {};
+    cb(null, fakeSftp);
+  };
+  healthyClient.exec = (_cmd: string, cb: (err: Error | null, stream: any) => void) => {
+    const stream = new EventEmitter() as any;
+    stream.stderr = new EventEmitter();
+    stream.close = () => {};
+    cb(null, stream);
+    setImmediate(() => {
+      stream.emit(
+        'data',
+        Buffer.from(
+          [
+            'NX_OS=Linux',
+            'NX_ARCH=x86_64',
+            'NX_USER=root',
+            'NX_ROOT=1',
+            'NX_SUDO=0',
+            'NX_HASH=sha256sum',
+            'NX_GZIP=1',
+            'NX_DIR=/root/.nexus-terminal/bin',
+            'NX_BIN=/root/.nexus-terminal/bin/nexus-mux',
+            'NX_VER=nexus-mux 0.1.0 (protocol=1 os=linux arch=x86_64)',
+            'NX_LINGER=0',
+          ].join('\n')
+        )
+      );
+      stream.emit('close', 0);
+    });
+  };
+
+  // 1. 连接 A 先发起并卡在 sftp.realpath，连接 B 并发进入合流
+  const pA = agentDeployerService.ensureAgentReady(hangingClient, {
+    hostCacheKey,
+    autoDeploy: true,
+  });
+  const pB = agentDeployerService.ensureAgentReady(healthyClient, {
+    hostCacheKey,
+    autoDeploy: true,
+  });
+
+  // 2. 50ms 后模拟用户关闭连接 A 的标签页（触发 sshClient close）
+  setTimeout(() => {
+    hangingClient.emit('close');
+  }, 50);
+
+  const [resA, resB] = await Promise.all([pA, pB]);
+  assert.equal(resA.ready, false, '已断开的连接 A 应立即失败解除阻塞');
+  assert.equal(resB.ready, true, '活跃的连接 B 不应被断开的连接 A 连坐，应自动接力探测就绪');
+  assert.equal(resB.binaryPath, '/root/.nexus-terminal/bin/nexus-mux');
+
+  // 3. 再次重连应直接命中成功缓存而非残留僵尸 inflight
+  const resC = await agentDeployerService.ensureAgentReady(healthyClient, {
+    hostCacheKey,
+    autoDeploy: true,
+  });
+  assert.equal(resC.ready, true);
+  agentDeployerService.invalidateHostCache(hostCacheKey);
 });

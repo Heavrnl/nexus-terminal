@@ -36,6 +36,8 @@ export interface TargetProbeResult {
   hasPasswordlessSudo: boolean;
   /** 仅 Unix：系统是否有 sha256sum / shasum 用于上传后校验 */
   hashTool: 'sha256sum' | 'shasum' | 'openssl' | null;
+  /** 仅 Unix：目标机是否具备 gzip/gunzip，可用压缩包直传大幅提速跨国慢线路 */
+  hasGzip?: boolean;
 }
 
 /** 根据 SFTP realpath('.') 判断大类平台（Unix 以 / 开头且非 /C:/ 形式；Windows 为 C:\ 或 /C:/） */
@@ -95,6 +97,7 @@ export const UNIX_PROBE_SCRIPT = [
   'SUDO=0; if command -v sudo >/dev/null 2>&1; then sudo -n true >/dev/null 2>&1 && SUDO=1; fi',
   'HASH_TOOL=""',
   'for ht in sha256sum shasum openssl; do if command -v "$ht" >/dev/null 2>&1; then HASH_TOOL="$ht"; break; fi; done',
+  'HAS_GZIP=0; if command -v gzip >/dev/null 2>&1; then HAS_GZIP=1; fi',
   'INSTALL_DIR=""',
   'for cand in "$HOME/.nexus-terminal/bin" "${XDG_DATA_HOME:-$HOME/.local/share}/nexus-terminal/bin" "/tmp/.nexus-terminal-${USER_NAME:-$(id -u 2>/dev/null)}/bin"; do',
   '  [ -z "$cand" ] && continue',
@@ -120,7 +123,7 @@ export const UNIX_PROBE_SCRIPT = [
   '    if [ -n "$USER_NAME" ] && [ ! -f "/var/lib/systemd/linger/$USER_NAME" ]; then NEEDS_LINGER=1; fi',
   '  fi',
   'fi',
-  'printf "NX_OS=%s\\nNX_ARCH=%s\\nNX_USER=%s\\nNX_ROOT=%s\\nNX_SUDO=%s\\nNX_HASH=%s\\nNX_DIR=%s\\nNX_BIN=%s\\nNX_VER=%s\\nNX_LINGER=%s\\n" "$OS" "$ARCH" "$USER_NAME" "$IS_ROOT" "$SUDO" "$HASH_TOOL" "$INSTALL_DIR" "$BIN_PATH" "$VER" "$NEEDS_LINGER"',
+  'printf "NX_OS=%s\\nNX_ARCH=%s\\nNX_USER=%s\\nNX_ROOT=%s\\nNX_SUDO=%s\\nNX_HASH=%s\\nNX_GZIP=%s\\nNX_DIR=%s\\nNX_BIN=%s\\nNX_VER=%s\\nNX_LINGER=%s\\n" "$OS" "$ARCH" "$USER_NAME" "$IS_ROOT" "$SUDO" "$HASH_TOOL" "$HAS_GZIP" "$INSTALL_DIR" "$BIN_PATH" "$VER" "$NEEDS_LINGER"',
 ].join('\n');
 
 /**
@@ -172,6 +175,7 @@ export function parseUnixProbeOutput(stdout: string): TargetProbeResult {
     isRoot: extractField(stdout, 'NX_ROOT') === '1',
     hasPasswordlessSudo: extractField(stdout, 'NX_SUDO') === '1',
     hashTool,
+    hasGzip: extractField(stdout, 'NX_GZIP') === '1',
   };
 }
 

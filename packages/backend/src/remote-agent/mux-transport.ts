@@ -188,8 +188,40 @@ export class MuxTransport extends EventEmitter {
   /** 通过已建立的 SSH Client 打开 `nexus-mux stdio` 通道并完成 HELLO 握手 */
   public static async connect(sshClient: Client, opts: ConnectMuxOptions): Promise<MuxTransport> {
     const cmd = buildMuxStdioCommand(opts.platformFamily, opts.binaryPath);
+    const execTimeoutMs = opts.handshakeTimeoutMs ?? 8000;
     const stream = await new Promise<ClientChannel>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        sshClient.off?.('close', onDisconnect);
+        sshClient.off?.('end', onDisconnect);
+        sshClient.off?.('error', onDisconnect);
+      };
+      const onDisconnect = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error('打开 nexus-mux stdio 通道期间底层 SSH 连接已断开'));
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(`打开 nexus-mux stdio 通道超时 (${execTimeoutMs}ms)`));
+      }, execTimeoutMs);
+      timer.unref?.();
+
+      sshClient.once?.('close', onDisconnect);
+      sshClient.once?.('end', onDisconnect);
+      sshClient.once?.('error', onDisconnect);
+
       sshClient.exec(cmd, (err, ch) => {
+        if (settled) {
+          try { ch?.close?.(); } catch {}
+          return;
+        }
+        settled = true;
+        cleanup();
         if (err) return reject(err);
         resolve(ch);
       });

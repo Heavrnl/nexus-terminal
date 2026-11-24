@@ -1,5 +1,7 @@
 import { Client, SFTPWrapper } from 'ssh2';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { agentBinaryRegistry, AgentArch, AgentOs, ResolvedAgentBinary } from './agent-binary.registry';
 import {
   buildEnableLingerCommand,
@@ -36,15 +38,96 @@ export interface EnsureAgentOptions {
   autoDeploy: boolean;
   /** 是否跳过成功缓存强制重新探测 */
   forceReprobe?: boolean;
+  /**
+   * 前台最多等待多少毫秒（用于首次慢速上传时不阻塞用户进入终端）。
+   * 超过该时长将先返回 ready=false 让调用方立刻打开传统 Shell，同时后台静默完成剩余部署并写入缓存。
+   */
+  foregroundWaitMs?: number;
 }
 
-const EXEC_TIMEOUT_MS = 12_000;
+const EXEC_TIMEOUT_MS = 10_000;
+const SFTP_OP_TIMEOUT_MS = 8_000;
 const DEPLOY_TIMEOUT_MS = 35_000;
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 分钟内同主机复用探测结果，避免重复 exec 探测
+const ENSURE_TOTAL_TIMEOUT_MS = 45_000;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 内存缓存 10 分钟
+const DISK_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 磁盘持久化缓存 7 天（重启桌面端也可 0 探测秒连）
 
 interface CachedDeployEntry {
   result: AgentDeployResult;
   expiresAt: number;
+}
+
+interface PersistedHostCacheRecord {
+  platformFamily: 'unix' | 'windows';
+  os: AgentOs;
+  arch: AgentArch;
+  binaryPath: string;
+  version: string;
+  persistenceWarning?: string;
+  updatedAt: number;
+}
+
+class SshDisconnectedError extends Error {
+  constructor(message = '底层 SSH 连接已断开') {
+    super(message);
+    this.name = 'SshDisconnectedError';
+  }
+}
+
+/** 绑定底层 sshClient 断开监听与超时定时器，确保任意 SSH/SFTP 操作在断链或卡死时必能及时 settle */
+function runWithSshGuard<T>(
+  sshClient: Client,
+  timeoutMs: number,
+  timeoutMessage: string,
+  executor: (
+    resolve: (value: T) => void,
+    reject: (err: Error) => void,
+    isSettled: () => boolean
+  ) => void
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      sshClient.off?.('close', onDisconnect);
+      sshClient.off?.('end', onDisconnect);
+      sshClient.off?.('error', onDisconnect);
+    };
+
+    const safeResolve = (value: T) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const safeReject = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const onDisconnect = () => {
+      safeReject(new SshDisconnectedError());
+    };
+
+    const timer = setTimeout(() => {
+      safeReject(new Error(timeoutMessage));
+    }, timeoutMs);
+    timer.unref?.();
+
+    sshClient.once?.('close', onDisconnect);
+    sshClient.once?.('end', onDisconnect);
+    sshClient.once?.('error', onDisconnect);
+
+    try {
+      executor(safeResolve, safeReject, () => settled);
+    } catch (err: any) {
+      safeReject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
 }
 
 function execSshCommand(
@@ -52,163 +135,199 @@ function execSshCommand(
   cmd: string,
   timeoutMs = EXEC_TIMEOUT_MS
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`远程命令执行超时 (${timeoutMs}ms)`));
-    }, timeoutMs);
-    timer.unref?.();
-
-    sshClient.exec(cmd, (err, stream) => {
-      if (err) {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
-        return;
-      }
-      stream.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString('utf8');
-      });
-      stream.stderr?.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString('utf8');
-      });
-      stream.on('close', (code: number | null) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve({ stdout, stderr, code });
-        }
-      });
-      stream.on('error', (streamErr: Error) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(streamErr);
-        }
-      });
-    });
-  });
-}
-
-function openTempSftp(sshClient: Client, timeoutMs = 8000): Promise<SFTPWrapper> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        reject(new Error('打开临时 SFTP 通道超时'));
-      }
-    }, timeoutMs);
-    timer.unref?.();
-
-    sshClient.sftp((err, sftp) => {
-      if (settled) {
-        try { sftp?.end(); } catch {}
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      if (err) return reject(err);
-      resolve(sftp);
-    });
-  });
-}
-
-function sftpRealpath(sftp: SFTPWrapper, p: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    sftp.realpath(p, (err, abs) => {
-      if (err) return reject(err);
-      resolve(abs);
-    });
-  });
-}
-
-function sftpWriteBuffer(sftp: SFTPWrapper, remotePath: string, data: Buffer, mode?: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const ws = sftp.createWriteStream(remotePath, {
-      flags: 'w',
-      ...(mode !== undefined ? { mode } : {}),
-    });
-    let done = false;
-    const finish = (err?: Error) => {
-      if (done) return;
-      done = true;
-      if (err) reject(err);
-      else resolve();
-    };
-    ws.on('error', (e: Error) => finish(e));
-    ws.on('close', () => finish());
-    ws.end(data);
-  });
-}
-
-function sftpRename(sftp: SFTPWrapper, oldPath: string, newPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    sftp.rename(oldPath, newPath, (err) => {
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-}
-
-function sftpUnlink(sftp: SFTPWrapper, p: string): Promise<void> {
-  return new Promise((resolve) => {
-    sftp.unlink(p, () => resolve());
-  });
-}
-
-/** 通过 SSH exec stdin 流式写入 Unix 目标文件（当目标机禁用了 SFTP 子系统时的兜底方案） */
-function execUploadUnixBinary(sshClient: Client, tempPath: string, data: Buffer): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const cmd = `cat > ${shellQuoteUnix(tempPath)} && chmod 700 ${shellQuoteUnix(tempPath)}`;
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        reject(new Error('通过 SSH exec 上传代理二进制超时'));
-      }
-    }, DEPLOY_TIMEOUT_MS);
-    timer.unref?.();
-
-    sshClient.exec(cmd, (err, stream) => {
-      if (err) {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
-        return;
-      }
+  return runWithSshGuard(
+    sshClient,
+    timeoutMs,
+    `远程命令执行超时 (${timeoutMs}ms)`,
+    (resolve, reject, isSettled) => {
+      let stdout = '';
       let stderr = '';
-      stream.stderr?.on('data', (c: Buffer) => { stderr += c.toString('utf8'); });
-      stream.on('close', (code: number | null) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (code === 0) resolve();
-        else reject(new Error(`SSH exec 写入失败 (code=${code}): ${stderr.trim()}`));
-      });
-      stream.on('error', (e: Error) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(e);
+      sshClient.exec(cmd, (err, stream) => {
+        if (err) return reject(err);
+        if (isSettled()) {
+          try { stream?.close?.(); } catch {}
+          return;
         }
+        stream.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString('utf8');
+        });
+        stream.stderr?.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString('utf8');
+        });
+        stream.on('close', (code: number | null) => {
+          resolve({ stdout, stderr, code });
+        });
+        stream.on('error', (streamErr: Error) => {
+          reject(streamErr);
+        });
       });
-      stream.end(data);
-    });
-  });
+    }
+  );
+}
+
+function openTempSftp(sshClient: Client, timeoutMs = SFTP_OP_TIMEOUT_MS): Promise<SFTPWrapper> {
+  return runWithSshGuard(
+    sshClient,
+    timeoutMs,
+    `打开临时 SFTP 通道超时 (${timeoutMs}ms)`,
+    (resolve, reject, isSettled) => {
+      sshClient.sftp((err, sftp) => {
+        if (isSettled()) {
+          try { sftp?.end(); } catch {}
+          return;
+        }
+        if (err) return reject(err);
+        resolve(sftp);
+      });
+    }
+  );
+}
+
+function sftpRealpath(
+  sshClient: Client,
+  sftp: SFTPWrapper,
+  p: string,
+  timeoutMs = SFTP_OP_TIMEOUT_MS
+): Promise<string> {
+  return runWithSshGuard(
+    sshClient,
+    timeoutMs,
+    `SFTP realpath 超时 (${timeoutMs}ms)`,
+    (resolve, reject) => {
+      const onSftpClose = () => reject(new SshDisconnectedError('临时 SFTP 通道已关闭'));
+      sftp.once?.('close', onSftpClose);
+      sftp.once?.('end', onSftpClose);
+      sftp.realpath(p, (err, abs) => {
+        sftp.off?.('close', onSftpClose);
+        sftp.off?.('end', onSftpClose);
+        if (err) return reject(err);
+        resolve(abs);
+      });
+    }
+  );
+}
+
+function sftpWriteBuffer(
+  sshClient: Client,
+  sftp: SFTPWrapper,
+  remotePath: string,
+  data: Buffer,
+  mode?: number,
+  timeoutMs = DEPLOY_TIMEOUT_MS
+): Promise<void> {
+  return runWithSshGuard(
+    sshClient,
+    timeoutMs,
+    `SFTP 上传代理二进制超时 (${timeoutMs}ms)`,
+    (resolve, reject) => {
+      const ws = sftp.createWriteStream(remotePath, {
+        flags: 'w',
+        ...(mode !== undefined ? { mode } : {}),
+      });
+      const onSftpClose = () => {
+        try { ws.destroy(); } catch {}
+        reject(new SshDisconnectedError('SFTP 写入期间通道提前关闭'));
+      };
+      const cleanSftp = () => {
+        sftp.off?.('close', onSftpClose);
+        sftp.off?.('end', onSftpClose);
+      };
+      sftp.once?.('close', onSftpClose);
+      sftp.once?.('end', onSftpClose);
+      ws.on('error', (e: Error) => {
+        cleanSftp();
+        reject(e);
+      });
+      ws.on('close', () => {
+        cleanSftp();
+        resolve();
+      });
+      ws.on('finish', () => {
+        cleanSftp();
+        resolve();
+      });
+      ws.end(data);
+    }
+  );
+}
+
+function sftpUnlink(sshClient: Client, sftp: SFTPWrapper, p: string, timeoutMs = 4000): Promise<void> {
+  return runWithSshGuard<void>(
+    sshClient,
+    timeoutMs,
+    `SFTP 删除临时文件超时 (${timeoutMs}ms)`,
+    (resolve) => {
+      const onSftpClose = () => resolve();
+      sftp.once?.('close', onSftpClose);
+      sftp.once?.('end', onSftpClose);
+      sftp.unlink(p, () => {
+        sftp.off?.('close', onSftpClose);
+        sftp.off?.('end', onSftpClose);
+        resolve();
+      });
+    }
+  ).catch(() => {});
+}
+
+/** 通过 SSH exec stdin 逐块流式写入 Unix 目标文件（带背压 drain 控制，仅在 SFTP 不可用时兜底） */
+function execUploadUnixBinary(
+  sshClient: Client,
+  tempPath: string,
+  data: Buffer,
+  compressedGzip = false
+): Promise<void> {
+  const cmd = compressedGzip
+    ? `gzip -dc > ${shellQuoteUnix(tempPath)} && chmod 700 ${shellQuoteUnix(tempPath)}`
+    : `cat > ${shellQuoteUnix(tempPath)} && chmod 700 ${shellQuoteUnix(tempPath)}`;
+  return runWithSshGuard(
+    sshClient,
+    DEPLOY_TIMEOUT_MS,
+    `通过 SSH exec 上传代理二进制超时 (${DEPLOY_TIMEOUT_MS}ms)`,
+    (resolve, reject, isSettled) => {
+      sshClient.exec(cmd, (err, stream) => {
+        if (err) return reject(err);
+        if (isSettled()) {
+          try { stream?.close?.(); } catch {}
+          return;
+        }
+        let stderr = '';
+        stream.stderr?.on('data', (c: Buffer) => { stderr += c.toString('utf8'); });
+        stream.on('close', (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(`SSH exec 写入失败 (code=${code}): ${stderr.trim()}`));
+        });
+        stream.on('error', (e: Error) => reject(e));
+
+        // 按 16KB 切块写入并尊重 drain 背压，避免一次性 stream.end(大 Buffer) 触发 ssh2 窗口卡死
+        const CHUNK_SIZE = 16 * 1024;
+        let offset = 0;
+        const pump = () => {
+          if (isSettled()) return;
+          while (offset < data.length) {
+            const end = Math.min(offset + CHUNK_SIZE, data.length);
+            const ok = stream.write(data.subarray(offset, end));
+            offset = end;
+            if (!ok) {
+              stream.once('drain', pump);
+              return;
+            }
+          }
+          stream.end();
+        };
+        pump();
+      });
+    }
+  );
+}
+
+interface InflightDeployEntry {
+  ownerClient: Client;
+  promise: Promise<{ result: AgentDeployResult; disconnected: boolean }>;
 }
 
 class AgentDeployerService {
   private readonly hostCache = new Map<string, CachedDeployEntry>();
-  private readonly inflight = new Map<string, Promise<AgentDeployResult>>();
+  private readonly inflight = new Map<string, InflightDeployEntry>();
 
   public invalidateHostCache(hostCacheKey?: string): void {
     if (hostCacheKey) {
@@ -219,7 +338,8 @@ class AgentDeployerService {
   }
 
   /**
-   * 探测并在需要时自动向目标服务器部署 nexus-mux 二进制（同主机并发调用自动合流，失败安全降级）。
+   * 探测并在需要时自动向目标服务器部署 nexus-mux 二进制（同主机并发调用自动合流；
+   * 若发起连接中途断开则立即释放合流槽，其他存活连接自动接力，绝不毒化后续重连）。
    */
   public async ensureAgentReady(
     sshClient: Client,
@@ -232,26 +352,107 @@ class AgentDeployerService {
         return cached.result;
       }
       const existingFlight = this.inflight.get(options.hostCacheKey);
-      if (existingFlight) {
-        return existingFlight;
+      if (existingFlight && existingFlight.ownerClient !== sshClient) {
+        const joined = await existingFlight.promise;
+        // 若前一条发起连接是因为自身被关闭/断线而失败，当前活跃连接不连坐，直接接力重跑一次
+        if (!joined.disconnected && joined.result.ready) {
+          return joined.result;
+        }
+        if (!joined.disconnected) {
+          return joined.result;
+        }
       }
     }
 
-    const task = this.doEnsureAgentReady(sshClient, options)
-      .then((res) => {
-        // 成功结果缓存 10 分钟；失败结果短暂缓存 60 秒避免连续重试拖慢连接
-        this.hostCache.set(options.hostCacheKey, {
-          result: res,
-          expiresAt: Date.now() + (res.ready ? CACHE_TTL_MS : 60_000),
-        });
-        return res;
-      })
-      .finally(() => {
-        this.inflight.delete(options.hostCacheKey);
-      });
+    const wrappedPromise = this.runGuardedEnsure(sshClient, options);
+    const entry: InflightDeployEntry = {
+      ownerClient: sshClient,
+      promise: wrappedPromise,
+    };
+    this.inflight.set(options.hostCacheKey, entry);
 
-    this.inflight.set(options.hostCacheKey, task);
-    return task;
+    try {
+      const outcome = await wrappedPromise;
+      // 仅对真实探测/部署结果做缓存；若因用户中途关闭标签页导致底层连接断开，不写入失败冷却缓存
+      if (!outcome.disconnected) {
+        this.hostCache.set(options.hostCacheKey, {
+          result: outcome.result,
+          expiresAt: Date.now() + (outcome.result.ready ? CACHE_TTL_MS : 60_000),
+        });
+      }
+      return outcome.result;
+    } finally {
+      if (this.inflight.get(options.hostCacheKey) === entry) {
+        this.inflight.delete(options.hostCacheKey);
+      }
+    }
+  }
+
+  /** 为整次 ensure 过程附加硬性总超时与断链守卫，杜绝任何漏网 Promise 永久挂起 */
+  private async runGuardedEnsure(
+    sshClient: Client,
+    options: EnsureAgentOptions
+  ): Promise<{ result: AgentDeployResult; disconnected: boolean }> {
+    let settled = false;
+    let totalTimer: NodeJS.Timeout | null = null;
+    const onDisconnectRef: { fn?: () => void } = {};
+
+    const abortGuard = new Promise<{ result: AgentDeployResult; disconnected: boolean }>((resolve) => {
+      const onDisconnect = () => {
+        if (settled) return;
+        settled = true;
+        resolve({
+          disconnected: true,
+          result: {
+            ready: false,
+            fallbackReason: '探测或部署期间底层 SSH 连接已断开',
+          },
+        });
+      };
+      onDisconnectRef.fn = onDisconnect;
+      sshClient.once?.('close', onDisconnect);
+      sshClient.once?.('end', onDisconnect);
+      sshClient.once?.('error', onDisconnect);
+
+      totalTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve({
+          disconnected: false,
+          result: {
+            ready: false,
+            fallbackReason: `目标机托管代理探测/部署总耗时超过 ${ENSURE_TOTAL_TIMEOUT_MS / 1000}s，已自动降级传统 SSH 模式`,
+          },
+        });
+      }, ENSURE_TOTAL_TIMEOUT_MS);
+      totalTimer.unref?.();
+    });
+
+    const work = this.doEnsureAgentReady(sshClient, options)
+      .then((res) => ({
+        result: res,
+        disconnected: false,
+      }))
+      .catch((err: any) => ({
+        disconnected: err instanceof SshDisconnectedError,
+        result: {
+          ready: false,
+          fallbackReason: `目标机托管代理初始化异常: ${err?.message || err}`,
+        },
+      }));
+
+    try {
+      const out = await Promise.race([work, abortGuard]);
+      settled = true;
+      return out;
+    } finally {
+      if (totalTimer) clearTimeout(totalTimer);
+      if (onDisconnectRef.fn) {
+        sshClient.off?.('close', onDisconnectRef.fn);
+        sshClient.off?.('end', onDisconnectRef.fn);
+        sshClient.off?.('error', onDisconnectRef.fn);
+      }
+    }
   }
 
   /** 探测目标机 OS/架构/安装目录/版本/linger 风险 */
@@ -261,7 +462,7 @@ class AgentDeployerService {
     let tempSftp: SFTPWrapper | null = null;
     try {
       tempSftp = await openTempSftp(sshClient, 6000);
-      const home = await sftpRealpath(tempSftp, '.');
+      const home = await sftpRealpath(sshClient, tempSftp, '.', 6000);
       family = inferPlatformFamilyFromSftpHome(home);
     } catch {
       family = 'unknown';
@@ -475,35 +676,57 @@ class AgentDeployerService {
   ): Promise<void> {
     const suffix = crypto.randomBytes(4).toString('hex');
     const binaryPath = probe.binaryPath!;
-    const tempFsPath =
-      probe.platformFamily === 'windows'
-        ? `${binaryPath}.${suffix}.tmp`
-        : `${binaryPath}.${suffix}.tmp`;
+    const tempFsPath = `${binaryPath}.${suffix}.tmp`;
     const expectedSha256 = binary.entry.rawSha256.toLowerCase();
 
-    let uploadedViaSftp = false;
-    let sftp: SFTPWrapper | null = null;
-    try {
-      sftp = await openTempSftp(sshClient, 8000);
-      const tempSftpPath = toSftpPath(probe.platformFamily as 'unix' | 'windows', tempFsPath);
-      await sftpWriteBuffer(
-        sftp,
-        tempSftpPath,
-        binary.rawBuffer,
-        probe.platformFamily === 'unix' ? 0o700 : undefined
-      );
-      uploadedViaSftp = true;
-    } catch (sftpErr: any) {
-      if (probe.platformFamily === 'windows') {
-        throw new Error(`Windows SFTP 上传代理失败: ${sftpErr?.message || sftpErr}`);
+    // Unix 且目标机存在 gzip 时，优先直接传输 ~420KB 的 .gz 压缩包并远端解压，显著提升跨国高延迟线路成功率
+    let gzipBuffer: Buffer | null = null;
+    if (probe.platformFamily === 'unix' && probe.hasGzip && binary.gzipPath) {
+      try {
+        gzipBuffer = fs.readFileSync(binary.gzipPath);
+      } catch {
+        gzipBuffer = null;
       }
-      console.warn(`[AgentDeployer] SFTP 上传失败，尝试 Unix SSH exec 管道上传:`, sftpErr?.message || sftpErr);
-    } finally {
-      try { sftp?.end(); } catch {}
     }
 
-    if (!uploadedViaSftp && probe.platformFamily === 'unix') {
-      await execUploadUnixBinary(sshClient, tempFsPath, binary.rawBuffer);
+    let uploaded = false;
+    if (gzipBuffer) {
+      try {
+        await execUploadUnixBinary(sshClient, tempFsPath, gzipBuffer, true);
+        uploaded = true;
+      } catch (gzErr: any) {
+        console.warn(`[AgentDeployer] Unix gzip 压缩流直传失败，回退 SFTP/原始流上传:`, gzErr?.message || gzErr);
+        await this.cleanupTempFile(sshClient, probe, tempFsPath);
+      }
+    }
+
+    if (!uploaded) {
+      let uploadedViaSftp = false;
+      let sftp: SFTPWrapper | null = null;
+      try {
+        sftp = await openTempSftp(sshClient, 8000);
+        const tempSftpPath = toSftpPath(probe.platformFamily as 'unix' | 'windows', tempFsPath);
+        await sftpWriteBuffer(
+          sshClient,
+          sftp,
+          tempSftpPath,
+          binary.rawBuffer,
+          probe.platformFamily === 'unix' ? 0o700 : undefined,
+          DEPLOY_TIMEOUT_MS
+        );
+        uploadedViaSftp = true;
+      } catch (sftpErr: any) {
+        if (probe.platformFamily === 'windows') {
+          throw new Error(`Windows SFTP 上传代理失败: ${sftpErr?.message || sftpErr}`);
+        }
+        console.warn(`[AgentDeployer] SFTP 上传失败，尝试 Unix SSH exec 管道上传:`, sftpErr?.message || sftpErr);
+      } finally {
+        try { sftp?.end(); } catch {}
+      }
+
+      if (!uploadedViaSftp && probe.platformFamily === 'unix') {
+        await execUploadUnixBinary(sshClient, tempFsPath, binary.rawBuffer, false);
+      }
     }
 
     // 校验目标机落地文件的 SHA256
@@ -547,7 +770,7 @@ class AgentDeployerService {
   private async cleanupTempFile(sshClient: Client, probe: TargetProbeResult, tempFsPath: string): Promise<void> {
     try {
       const sftp = await openTempSftp(sshClient, 4000);
-      await sftpUnlink(sftp, toSftpPath(probe.platformFamily as 'unix' | 'windows', tempFsPath));
+      await sftpUnlink(sshClient, sftp, toSftpPath(probe.platformFamily as 'unix' | 'windows', tempFsPath), 4000);
       sftp.end();
     } catch {
       // ignore

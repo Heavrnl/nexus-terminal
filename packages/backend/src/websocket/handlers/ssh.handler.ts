@@ -110,6 +110,11 @@ export async function handleSshConnect(
                         autoDeploy: hostingCfg.autoDeploy,
                     });
 
+                    // 若客户端在探测/部署期间已主动关闭，立即中止，避免继续拉起多余通道
+                    if (ws.readyState !== WebSocket.OPEN || clientStates.get(newSessionId) !== newState) {
+                        return;
+                    }
+
                     if (deployRes.ready && deployRes.platformFamily && deployRes.binaryPath) {
                         const { ownerNamespace } = await getOrCreateOwnerNamespace();
                         const syncClientId = String((ws as any).syncClientId || newSessionId);
@@ -352,6 +357,10 @@ export async function handleSshConnect(
                 newState.remoteSessionId = undefined;
                 newState.hostingMode = 'legacy';
             }
+        }
+
+        if (ws.readyState !== WebSocket.OPEN || clientStates.get(newSessionId) !== newState) {
+            return;
         }
 
         if (!connectedViaRemoteAgent) {
