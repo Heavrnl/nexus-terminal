@@ -8,10 +8,9 @@ use crate::protocol::{
     HostedSessionSummary, MSG_ATTACHED, MSG_DATA, MSG_DETACHED, MSG_EXITED, MSG_SNAPSHOT,
     SNAPSHOT_CHUNK_BYTES, SNAPSHOT_FLAG_IS_DELTA, SNAPSHOT_FLAG_LAST_CHUNK,
 };
-use crate::sys;
+use crate::sys::{self, PtyKiller, PtyResizer, PtySpawnSpec};
 use crate::vt_buffer::VtRingBuffer;
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -93,10 +92,9 @@ struct SessionInner {
 pub struct ManagedSession {
     pub remote_session_id: String,
     inner: Arc<Mutex<SessionInner>>,
-    pty_master: Mutex<Box<dyn MasterPty + Send>>,
+    pty_resizer: Mutex<Box<dyn PtyResizer + Send>>,
     pty_writer: Mutex<Box<dyn Write + Send>>,
-    child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    child_pid: Option<u32>,
+    pty_killer: Mutex<Box<dyn PtyKiller + Send + Sync>>,
 }
 
 pub struct SpawnSessionParams {
@@ -117,16 +115,6 @@ impl ManagedSession {
         let cols = params.cols.clamp(2, 1000);
         let rows = params.rows.clamp(1, 500);
 
-        let pty_system = native_pty_system();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("创建 PTY 失败: {}", e)))?;
-
         let (shell_prog, default_args) = match params
             .shell
             .as_deref()
@@ -137,42 +125,28 @@ impl ManagedSession {
             None => sys::resolve_default_shell(),
         };
 
-        let mut cmd = CommandBuilder::new(&shell_prog);
-        for arg in default_args {
-            cmd.arg(arg);
-        }
-        cmd.env(
-            "TERM",
-            if params.term.trim().is_empty() {
-                "xterm-256color"
-            } else {
-                params.term.trim()
-            },
-        );
-        cmd.env("COLORTERM", "truecolor");
-        cmd.env("NEXUS_MUX_SESSION", &params.remote_session_id);
-        if let Some(cwd) = params.cwd.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            cmd.cwd(cwd);
-        }
+        let term = if params.term.trim().is_empty() {
+            "xterm-256color"
+        } else {
+            params.term.trim()
+        };
+        let cwd = params.cwd.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
-        let mut child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("启动 Shell 失败 ({}): {}", shell_prog, e)))?;
+        let spawned = sys::spawn_pty(&PtySpawnSpec {
+            program: &shell_prog,
+            args: &default_args,
+            term,
+            session_id: &params.remote_session_id,
+            cwd,
+            cols,
+            rows,
+        })?;
 
-        // Unix 必须在 spawn 后立即释放 slave fd，否则子进程退出后 master reader 不会收到 EOF
-        drop(pair.slave);
-
-        let child_pid = child.process_id();
-        let child_killer = child.clone_killer();
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("克隆 PTY 读取端失败: {}", e)))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("获取 PTY 写入端失败: {}", e)))?;
+        let mut reader = spawned.reader;
+        let writer = spawned.writer;
+        let mut waiter = spawned.waiter;
+        let pty_resizer = spawned.resizer;
+        let pty_killer = spawned.killer;
 
         let now = now_unix_secs();
         let inner = Arc::new(Mutex::new(SessionInner {
@@ -194,6 +168,7 @@ impl ManagedSession {
         let reader_inner = inner.clone();
         std::thread::Builder::new()
             .name(format!("pty-read-{}", &params.remote_session_id[..params.remote_session_id.len().min(8)]))
+            .stack_size(2 * 1024 * 1024)
             .spawn(move || {
                 let mut buf = [0u8; 16 * 1024];
                 loop {
@@ -237,11 +212,9 @@ impl ManagedSession {
         let waiter_inner = inner.clone();
         std::thread::Builder::new()
             .name(format!("pty-wait-{}", &params.remote_session_id[..params.remote_session_id.len().min(8)]))
+            .stack_size(512 * 1024)
             .spawn(move || {
-                let exit_code = match child.wait() {
-                    Ok(status) => Some(status.exit_code() as i32),
-                    Err(_) => None,
-                };
+                let exit_code = waiter.wait();
                 let mut guard = match waiter_inner.lock() {
                     Ok(g) => g,
                     Err(poisoned) => poisoned.into_inner(),
@@ -268,10 +241,9 @@ impl ManagedSession {
         Ok(Arc::new(Self {
             remote_session_id: params.remote_session_id,
             inner,
-            pty_master: Mutex::new(pair.master),
+            pty_resizer: Mutex::new(pty_resizer),
             pty_writer: Mutex::new(writer),
-            child_killer: Mutex::new(child_killer),
-            child_pid,
+            pty_killer: Mutex::new(pty_killer),
         }))
     }
 
@@ -300,13 +272,8 @@ impl ManagedSession {
             !guard.exited && guard.vt.dimensions() != (safe_cols, safe_rows)
         };
         if should_resize {
-            if let Ok(master) = self.pty_master.lock() {
-                let _ = master.resize(PtySize {
-                    rows: safe_rows,
-                    cols: safe_cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                });
+            if let Ok(resizer) = self.pty_resizer.lock() {
+                let _ = resizer.resize(safe_cols, safe_rows);
             }
         }
 
@@ -452,14 +419,9 @@ impl ManagedSession {
             guard.vt.resize(safe_cols, safe_rows);
             guard.last_active_at = now_unix_secs();
         }
-        let master = self.pty_master.lock().unwrap_or_else(|e| e.into_inner());
-        master
-            .resize(PtySize {
-                rows: safe_rows,
-                cols: safe_cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+        let resizer = self.pty_resizer.lock().unwrap_or_else(|e| e.into_inner());
+        resizer
+            .resize(safe_cols, safe_rows)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("调整 PTY 尺寸失败: {}", e)))
     }
 
@@ -511,8 +473,8 @@ impl ManagedSession {
             }
         }
 
-        if let Ok(mut killer) = self.child_killer.lock() {
-            sys::kill_process_tree(self.child_pid, &mut **killer);
+        if let Ok(mut killer) = self.pty_killer.lock() {
+            killer.kill_tree();
         }
     }
 

@@ -324,16 +324,103 @@ pub fn resolve_default_shell() -> (String, Vec<String>) {
     (cmd, Vec::new())
 }
 
-pub fn kill_process_tree(pid: Option<u32>, killer: &mut dyn portable_pty::ChildKiller) {
-    let _ = killer.kill();
-    if let Some(p) = pid {
-        // 使用 taskkill /T /F 确保杀掉 ConPTY 下的整棵子进程树
-        let _ = Command::new("taskkill.exe")
-            .args(["/PID", &p.to_string(), "/T", "/F"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+struct WinPtyResizer {
+    master: Box<dyn portable_pty::MasterPty + Send>,
+}
+
+impl super::PtyResizer for WinPtyResizer {
+    fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
+        self.master
+            .resize(portable_pty::PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("调整 ConPTY 尺寸失败: {}", e)))
     }
+}
+
+struct WinPtyWaiter {
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+impl super::PtyWaiter for WinPtyWaiter {
+    fn wait(&mut self) -> Option<i32> {
+        match self.child.wait() {
+            Ok(status) => Some(status.exit_code() as i32),
+            Err(_) => None,
+        }
+    }
+}
+
+struct WinPtyKiller {
+    pid: Option<u32>,
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
+}
+
+impl super::PtyKiller for WinPtyKiller {
+    fn kill_tree(&mut self) {
+        let _ = self.killer.kill();
+        if let Some(p) = self.pid {
+            // 使用 taskkill /T /F 确保杀掉 ConPTY 下的整棵子进程树
+            let _ = Command::new("taskkill.exe")
+                .args(["/PID", &p.to_string(), "/T", "/F"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+    }
+}
+
+pub fn spawn_pty(spec: &super::PtySpawnSpec<'_>) -> io::Result<super::SpawnedPty> {
+    let pty_system = portable_pty::native_pty_system();
+    let pair = pty_system
+        .openpty(portable_pty::PtySize {
+            rows: spec.rows,
+            cols: spec.cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("创建 ConPTY 失败: {}", e)))?;
+
+    let mut cmd = portable_pty::CommandBuilder::new(spec.program);
+    for arg in spec.args {
+        cmd.arg(arg);
+    }
+    cmd.env("TERM", spec.term);
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("NEXUS_MUX_SESSION", spec.session_id);
+    if let Some(cwd) = spec.cwd {
+        cmd.cwd(cwd);
+    }
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("启动 Shell 失败 ({}): {}", spec.program, e)))?;
+    drop(pair.slave);
+
+    let pid = child.process_id();
+    let killer = child.clone_killer();
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("克隆 ConPTY 读取端失败: {}", e)))?;
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("获取 ConPTY 写入端失败: {}", e)))?;
+
+    Ok(super::SpawnedPty {
+        resizer: Box::new(WinPtyResizer {
+            master: pair.master,
+        }),
+        reader,
+        writer,
+        waiter: Box::new(WinPtyWaiter { child }),
+        killer: Box::new(WinPtyKiller { pid, killer }),
+    })
 }

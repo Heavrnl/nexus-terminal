@@ -11,16 +11,51 @@ pub mod windows;
 #[cfg(unix)]
 pub use unix::{
     cleanup_ipc_endpoint, connect_ipc, default_ipc_endpoint, detect_persistence_warning,
-    ensure_daemon_running, kill_process_tree, prepare_daemon_process, resolve_default_shell,
-    IpcListener, IpcStream,
+    ensure_daemon_running, prepare_daemon_process, resolve_default_shell, spawn_pty, IpcListener,
+    IpcStream,
 };
 
 #[cfg(windows)]
 pub use windows::{
     cleanup_ipc_endpoint, connect_ipc, default_ipc_endpoint, detect_persistence_warning,
-    ensure_daemon_running, kill_process_tree, prepare_daemon_process, resolve_default_shell,
-    IpcListener, IpcStream,
+    ensure_daemon_running, prepare_daemon_process, resolve_default_shell, spawn_pty, IpcListener,
+    IpcStream,
 };
+
+/// 跨平台 PTY 启动参数
+pub struct PtySpawnSpec<'a> {
+    pub program: &'a str,
+    pub args: &'a [String],
+    pub term: &'a str,
+    pub session_id: &'a str,
+    pub cwd: Option<&'a str>,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// 跨平台 PTY 窗口尺寸调节句柄
+pub trait PtyResizer {
+    fn resize(&self, cols: u16, rows: u16) -> io::Result<()>;
+}
+
+/// 跨平台 PTY 子进程退出等待句柄
+pub trait PtyWaiter {
+    fn wait(&mut self) -> Option<i32>;
+}
+
+/// 跨平台 PTY 进程树强杀句柄
+pub trait PtyKiller {
+    fn kill_tree(&mut self);
+}
+
+/// 跨平台已启动 PTY 句柄集合（读写、调窗、退出监听与强杀完全解耦）
+pub struct SpawnedPty {
+    pub resizer: Box<dyn PtyResizer + Send>,
+    pub reader: Box<dyn io::Read + Send>,
+    pub writer: Box<dyn io::Write + Send>,
+    pub waiter: Box<dyn PtyWaiter + Send>,
+    pub killer: Box<dyn PtyKiller + Send + Sync>,
+}
 
 /// 计算短 SHA256 十六进制指纹，用于隔离不同用户/端点路径
 #[allow(dead_code)]

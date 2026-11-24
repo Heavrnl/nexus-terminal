@@ -4,12 +4,15 @@
 //! - KillUserProcesses 风险探测
 //! - 进程组级 SIGTERM -> SIGKILL 清理
 
-use std::fs::{self, OpenOptions};
-use std::io;
+use super::{PtyKiller, PtyResizer, PtySpawnSpec, PtyWaiter, SpawnedPty};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::ptr;
 use std::time::Duration;
 use tokio::net::{UnixListener, UnixStream};
 
@@ -265,23 +268,182 @@ pub fn resolve_default_shell() -> (String, Vec<String>) {
     ("/bin/sh".to_string(), Vec::new())
 }
 
-/// 优雅终止并兜底强杀 PTY 子进程组
-pub fn kill_process_tree(pid: Option<u32>, killer: &mut dyn portable_pty::ChildKiller) {
-    if let Some(p) = pid {
-        let pgid = p as libc::pid_t;
-        unsafe {
-            // 先向整个进程组发 SIGTERM
-            let _ = libc::kill(-pgid, libc::SIGTERM);
+/// 给指定文件描述符设置 FD_CLOEXEC，保证子进程 execve 时自动关闭、无需在 fork 后遍历 /dev/fd
+fn set_cloexec(fd: RawFd) -> io::Result<()> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+struct UnixPtyResizer {
+    master: File,
+}
+
+impl PtyResizer for UnixPtyResizer {
+    fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
+        let ws = libc::winsize {
+            ws_row: rows,
+            ws_col: cols,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ as _, &ws) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+struct UnixPtyReader {
+    master: File,
+}
+
+impl Read for UnixPtyReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.master.read(buf) {
+            // Linux 下当所有 slave fd 关闭后，读取 master PTY 会返回 EIO，语义等价于 EOF
+            Err(err) if err.raw_os_error() == Some(libc::EIO) => Ok(0),
+            other => other,
         }
     }
-    let _ = killer.kill();
-    if let Some(p) = pid {
-        let pgid = p as libc::pid_t;
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(500));
-            unsafe {
-                let _ = libc::kill(-pgid, libc::SIGKILL);
+}
+
+struct UnixPtyWaiter {
+    child: Child,
+}
+
+impl PtyWaiter for UnixPtyWaiter {
+    fn wait(&mut self) -> Option<i32> {
+        match self.child.wait() {
+            Ok(status) => status
+                .code()
+                .or_else(|| status.signal().map(|sig| 128 + sig)),
+            Err(_) => None,
+        }
+    }
+}
+
+struct UnixPtyKiller {
+    pid: u32,
+}
+
+impl PtyKiller for UnixPtyKiller {
+    fn kill_tree(&mut self) {
+        let pid = self.pid as libc::pid_t;
+        if pid <= 0 {
+            return;
+        }
+        unsafe {
+            // 先向子进程所在的新会话进程组发 SIGTERM，同时兜底向主 PID 发 SIGTERM
+            let _ = libc::kill(-pid, libc::SIGTERM);
+            let _ = libc::kill(pid, libc::SIGTERM);
+        }
+        let _ = std::thread::Builder::new()
+            .name("pty-kill-grace".into())
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(500));
+                unsafe {
+                    let _ = libc::kill(-pid, libc::SIGKILL);
+                    let _ = libc::kill(pid, libc::SIGKILL);
+                }
+            });
+    }
+}
+
+/// 纯 POSIX async-signal-safe PTY 启动实现：
+/// pre_exec 回调内严格只执行信号恢复、setsid 与 TIOCSCTTY 系统调用，零堆分配、零目录枚举，
+/// 彻底规避多线程进程在 musl libc 下 fork 后调用 malloc/opendir 引发的 SIGSEGV 与死锁。
+pub fn spawn_pty(spec: &PtySpawnSpec<'_>) -> io::Result<SpawnedPty> {
+    let mut master_fd: RawFd = -1;
+    let mut slave_fd: RawFd = -1;
+    let mut ws = libc::winsize {
+        ws_row: spec.rows,
+        ws_col: spec.cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+
+    if unsafe { libc::openpty(&mut master_fd, &mut slave_fd, ptr::null_mut(), ptr::null_mut(), &mut ws) } != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("创建 PTY 失败 (openpty): {}", io::Error::last_os_error()),
+        ));
+    }
+
+    // 立即移交 File 所有权，保证后续任何错误路径都不会泄漏 fd
+    let master_file = unsafe { File::from_raw_fd(master_fd) };
+    let slave_file = unsafe { File::from_raw_fd(slave_fd) };
+    set_cloexec(master_file.as_raw_fd())?;
+    set_cloexec(slave_file.as_raw_fd())?;
+
+    let stdin_file = slave_file.try_clone()?;
+    let stdout_file = slave_file.try_clone()?;
+    let stderr_file = slave_file.try_clone()?;
+
+    let mut cmd = Command::new(spec.program);
+    cmd.args(spec.args);
+    cmd.env("TERM", spec.term);
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("NEXUS_MUX_SESSION", spec.session_id);
+    if let Some(cwd) = spec.cwd {
+        cmd.current_dir(cwd);
+    }
+    cmd.stdin(Stdio::from(stdin_file))
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
+
+    unsafe {
+        cmd.pre_exec(|| {
+            // 仅调用 POSIX async-signal-safe 系统调用：恢复默认信号处理、创建新会话、绑定控制终端
+            for signo in [
+                libc::SIGCHLD,
+                libc::SIGHUP,
+                libc::SIGINT,
+                libc::SIGQUIT,
+                libc::SIGTERM,
+                libc::SIGALRM,
+            ] {
+                libc::signal(signo, libc::SIG_DFL);
             }
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
         });
     }
+
+    let child = cmd.spawn().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("启动 Shell 失败 ({}): {}", spec.program, e),
+        )
+    })?;
+
+    // 必须在 spawn 后立刻释放父进程侧的 slave fd，否则子进程退出后读取 master 不会收到 EOF
+    drop(slave_file);
+
+    let pid = child.id();
+    let reader_file = master_file.try_clone()?;
+    let writer_file = master_file.try_clone()?;
+
+    Ok(SpawnedPty {
+        resizer: Box::new(UnixPtyResizer {
+            master: master_file,
+        }),
+        reader: Box::new(UnixPtyReader {
+            master: reader_file,
+        }),
+        writer: Box::new(writer_file),
+        waiter: Box::new(UnixPtyWaiter { child }),
+        killer: Box::new(UnixPtyKiller { pid }),
+    })
 }

@@ -61,7 +61,7 @@
       "uuid": "^11.1.1",
       "vite-plugin-monaco-editor": "^1.1.0",
       "vue": "^3.5.45",
-      "vue-chartjs": "^5.3.6",
+      "vue-chartjs": "^5.3.7",
       "vue-i18n": "^11.4.23",
       "vue-recaptcha-v3": "^2.0.1",
       "vue-router": "^4.5.0",

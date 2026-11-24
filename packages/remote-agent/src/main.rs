@@ -15,8 +15,20 @@ use std::env;
 use std::io;
 use std::process;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    // 显式指定 2MB 工作线程栈大小，避免 musl 静态二进制默认 128KB 线程栈在深调用链下溢出
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(2 * 1024 * 1024)
+        .build()
+        .unwrap_or_else(|err| {
+            eprintln!("[nexus-mux] 初始化异步运行时失败: {}", err);
+            process::exit(1);
+        });
+    runtime.block_on(async_main());
+}
+
+async fn async_main() {
     let args: Vec<String> = env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("stdio");
 

@@ -27,14 +27,8 @@ jobs:
             ext: ''
             use_alpine_docker: true
           - os: darwin
-            arch: arm64
-            target: aarch64-apple-darwin
-            runner: macos-15
-            ext: ''
-            use_alpine_docker: false
-          - os: darwin
-            arch: x86_64
-            target: x86_64-apple-darwin
+            arch: universal
+            target: aarch64-apple-darwin,x86_64-apple-darwin
             runner: macos-15
             ext: ''
             use_alpine_docker: false
@@ -105,27 +99,44 @@ jobs:
           workspaces: 'packages/remote-agent -> target'
           key: nexus-mux-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: 运行单元测试（macOS arm64 / Windows）
-        if: ${{ !matrix.use_alpine_docker && (matrix.os != 'darwin' || matrix.arch == 'arm64') }}
+      # --- macOS 路径：在单台 macos-15 上一次构建 arm64 + x86_64 双架构，减半 macOS Runner 配额占用 ---
+      - name: 运行单元测试并编译双架构 Release 二进制（macOS）
+        if: ${{ matrix.os == 'darwin' }}
         working-directory: packages/remote-agent
-        run: cargo test --target ${{ matrix.target }}
-
-      - name: 编译精简 Release 二进制（macOS / Windows）
-        if: ${{ !matrix.use_alpine_docker }}
-        working-directory: packages/remote-agent
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: 归档平台产物（macOS / Windows）
-        if: ${{ !matrix.use_alpine_docker }}
         shell: bash
         run: |
+          set -euo pipefail
+          cargo test --target aarch64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+      - name: 归档双架构平台产物（macOS）
+        if: ${{ matrix.os == 'darwin' }}
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p agent-out
-          # 将 macOS arm64 标准化为 aarch64 便于与 uname -m / manifest 对齐
-          NORM_ARCH="${{ matrix.arch }}"
-          if [ "$NORM_ARCH" = "arm64" ]; then NORM_ARCH="aarch64"; fi
+          cp packages/remote-agent/target/aarch64-apple-darwin/release/nexus-mux agent-out/nexus-mux-darwin-aarch64
+          cp packages/remote-agent/target/x86_64-apple-darwin/release/nexus-mux agent-out/nexus-mux-darwin-x86_64
+          ls -lh agent-out/
+
+      # --- Windows 路径 ---
+      - name: 运行单元测试并编译精简 Release 二进制（Windows）
+        if: ${{ matrix.os == 'windows' }}
+        working-directory: packages/remote-agent
+        run: |
+          cargo test --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: 归档平台产物（Windows）
+        if: ${{ matrix.os == 'windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p agent-out
           cp "packages/remote-agent/target/${{ matrix.target }}/release/nexus-mux${{ matrix.ext }}" \
-             "agent-out/nexus-mux-${{ matrix.os }}-${NORM_ARCH}${{ matrix.ext }}"
-          ls -lh "agent-out/nexus-mux-${{ matrix.os }}-${NORM_ARCH}${{ matrix.ext }}"
+             "agent-out/nexus-mux-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          ls -lh "agent-out/nexus-mux-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
       - name: 上传单平台原始产物
         uses: actions/upload-artifact@v4
