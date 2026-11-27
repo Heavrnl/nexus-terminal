@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue';
 import BatchEditConnectionForm from '../components/BatchEditConnectionForm.vue';
 import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
@@ -18,6 +18,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, ja } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
 import AppSelect from '../components/common/AppSelect.vue';
+import { getFolderMoveMenuPosition } from '../utils/folderMoveMenuPosition';
 
 const { t, locale } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
@@ -84,9 +85,11 @@ const handleSaveFolderColor = async (folderId: number, color: string | null) => 
 const draggedConnectionId = ref<number | null>(null);
 const dragOverFolderId = ref<ActiveFolderType | null>(null);
 
-// 卡片上单项“移至文件夹”快捷菜单
-const activeMoveMenuConnId = ref<number | null>(null);
-const batchMoveMenuOpen = ref(false);
+// 单项及批量移至文件夹共用一个脱离卡片/工具栏的浮层。
+const activeMoveMenu = ref<number | 'batch' | null>(null);
+const moveMenuAnchor = shallowRef<HTMLElement | null>(null);
+const moveMenuRef = ref<HTMLElement | null>(null);
+const moveMenuStyle = ref<Record<string, string>>({});
 
 const showAddEditConnectionForm = ref(false);
 const connectionToEdit = ref<ConnectionInfo | null>(null);
@@ -226,7 +229,79 @@ const filteredAndSortedConnections = computed(() => {
   });
 });
 
+const closeMoveMenu = () => {
+  activeMoveMenu.value = null;
+  moveMenuAnchor.value = null;
+};
+
+const updateMoveMenuPosition = () => {
+  if (activeMoveMenu.value === null) return;
+  const anchor = moveMenuAnchor.value;
+  if (!anchor?.isConnected) {
+    closeMoveMenu();
+    return;
+  }
+
+  const rect = anchor.getBoundingClientRect();
+  if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= window.innerHeight ||
+      rect.right <= 0 || rect.left >= window.innerWidth) {
+    closeMoveMenu();
+    return;
+  }
+
+  const menu = moveMenuRef.value;
+  const contentHeight = menu ? menu.scrollHeight + menu.offsetHeight - menu.clientHeight : 320;
+  moveMenuStyle.value = getFolderMoveMenuPosition(
+    rect, window.innerWidth, window.innerHeight, contentHeight, activeMoveMenu.value !== 'batch',
+  );
+};
+
+const toggleMoveMenu = async (event: MouseEvent, target: number | 'batch') => {
+  if (activeMoveMenu.value === target) {
+    closeMoveMenu();
+    return;
+  }
+  moveMenuAnchor.value = event.currentTarget as HTMLElement;
+  activeMoveMenu.value = target;
+  updateMoveMenuPosition();
+  await nextTick();
+  updateMoveMenuPosition();
+};
+
+const handleGlobalClick = (event: MouseEvent) => {
+  if (activeMoveMenu.value === null || !(event.target instanceof Node)) return;
+  if (moveMenuAnchor.value?.contains(event.target) || moveMenuRef.value?.contains(event.target)) return;
+  closeMoveMenu();
+};
+
+const handleMoveMenuScroll = (event: Event) => {
+  // 菜单内可正常滚动；外层滚动时关闭，避免触发器被滚动容器裁切后浮层悬空。
+  if (event.target instanceof Node && moveMenuRef.value?.contains(event.target)) return;
+  closeMoveMenu();
+};
+
+const handleMoveMenuKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || activeMoveMenu.value === null) return;
+  const anchor = moveMenuAnchor.value;
+  closeMoveMenu();
+  event.preventDefault();
+  event.stopPropagation();
+  anchor?.focus({ preventScroll: true });
+};
+
+watch(filteredAndSortedConnections, closeMoveMenu);
+watch(isBatchEditMode, closeMoveMenu);
+watch(() => selectedConnectionIdsForBatch.value.size, (count) => {
+  if (count === 0 && activeMoveMenu.value === 'batch') closeMoveMenu();
+});
+watch(() => folders.value.length, updateMoveMenuPosition, { flush: 'post' });
+
 onMounted(async () => {
+  document.addEventListener('click', handleGlobalClick, true);
+  document.addEventListener('keydown', handleMoveMenuKeydown, true);
+  window.addEventListener('resize', updateMoveMenuPosition);
+  window.addEventListener('scroll', handleMoveMenuScroll, true);
+
   if (connections.value.length === 0) {
     try {
       await connectionsStore.fetchConnections();
@@ -240,14 +315,14 @@ onMounted(async () => {
     console.error('加载文件夹列表失败:', error);
   }
 
-  // 点击外部关闭移至文件夹菜单
-  document.addEventListener('click', handleGlobalClick);
 });
 
-const handleGlobalClick = () => {
-  activeMoveMenuConnId.value = null;
-  batchMoveMenuOpen.value = false;
-};
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleGlobalClick, true);
+  document.removeEventListener('keydown', handleMoveMenuKeydown, true);
+  window.removeEventListener('resize', updateMoveMenuPosition);
+  window.removeEventListener('scroll', handleMoveMenuScroll, true);
+});
 
 const connectTo = (connection: ConnectionInfo) => {
   sessionStore.handleConnectRequest(connection);
@@ -419,7 +494,7 @@ const handleDropOnFolder = async (target: ActiveFolderType, e: DragEvent) => {
 };
 
 const handleMoveSingleConnection = async (connId: number, targetFolderId: number | null) => {
-  activeMoveMenuConnId.value = null;
+  closeMoveMenu();
   const ok = await connectionsStore.moveConnectionToFolder(connId, targetFolderId);
   if (ok) {
     const targetName = targetFolderId ? getFolderName(targetFolderId) : t('folders.uncategorized', '未分类');
@@ -428,7 +503,7 @@ const handleMoveSingleConnection = async (connId: number, targetFolderId: number
 };
 
 const handleBatchMoveToFolder = async (targetFolderId: number | null) => {
-  batchMoveMenuOpen.value = false;
+  closeMoveMenu();
   if (selectedConnectionIdsForBatch.value.size === 0) return;
   const ids = Array.from(selectedConnectionIdsForBatch.value);
   const ok = await connectionsStore.batchMoveConnectionsToFolder(ids, targetFolderId);
@@ -437,6 +512,12 @@ const handleBatchMoveToFolder = async (targetFolderId: number | null) => {
     uiNotificationsStore.showSuccess(t('folders.batchMoveSuccess', { count: ids.length, name: targetName }, `已将 ${ids.length} 个连接移动至 ${targetName}`));
     selectedConnectionIdsForBatch.value.clear();
   }
+};
+
+const selectMoveFolder = (folderId: number | null) => {
+  const target = activeMoveMenu.value;
+  if (target === 'batch') return handleBatchMoveToFolder(folderId);
+  if (target !== null) return handleMoveSingleConnection(target, folderId);
 };
 
 // --- 表单与批处理 ---
@@ -1010,7 +1091,9 @@ const handleConnectAllFilteredConnections = async () => {
             <!-- Batch Move to Folder Dropdown -->
             <div class="relative">
               <button
-                @click.stop="batchMoveMenuOpen = !batchMoveMenuOpen"
+                type="button"
+                @click.stop="toggleMoveMenu($event, 'batch')"
+                :aria-expanded="activeMoveMenu === 'batch'"
                 :disabled="selectedConnectionIdsForBatch.size === 0"
                 class="px-2.5 py-1 text-xs bg-input border border-border rounded-lg text-foreground hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
               >
@@ -1019,29 +1102,6 @@ const handleConnectAllFilteredConnections = async () => {
                 <i class="fas fa-chevron-down text-xs"></i>
               </button>
 
-              <div
-                v-if="batchMoveMenuOpen"
-                class="absolute right-0 mt-1 z-50 w-48 bg-popover border border-border rounded-xl shadow-xl p-1 text-xs"
-                @click.stop
-              >
-                <button
-                  @click="handleBatchMoveToFolder(null)"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-text-secondary hover:text-foreground flex items-center gap-2"
-                >
-                  <i class="fas fa-inbox text-xs"></i>
-                  <span>{{ t('folders.uncategorized', '未分类') }}</span>
-                </button>
-                <div v-if="folders.length > 0" class="h-px bg-border/40 my-1"></div>
-                <button
-                  v-for="f in folders"
-                  :key="f.id"
-                  @click="handleBatchMoveToFolder(f.id)"
-                  class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-foreground flex items-center gap-2"
-                >
-                  <i class="fas fa-folder text-amber-400 text-xs"></i>
-                  <span class="truncate">{{ f.name }}</span>
-                </button>
-              </div>
             </div>
 
             <!-- Batch Edit -->
@@ -1181,7 +1241,8 @@ const handleConnectAllFilteredConnections = async () => {
                 <div class="relative">
                   <button
                     type="button"
-                    @click.stop="activeMoveMenuConnId = activeMoveMenuConnId === conn.id ? null : conn.id"
+                    @click.stop="toggleMoveMenu($event, conn.id)"
+                    :aria-expanded="activeMoveMenu === conn.id"
                     class="h-7 px-2 text-xs rounded-md text-text-secondary hover:text-foreground hover:bg-muted flex items-center gap-1 border border-border/50"
                     :title="t('folders.moveToFolder', '移至文件夹')"
                   >
@@ -1189,35 +1250,6 @@ const handleConnectAllFilteredConnections = async () => {
                     <i class="fas fa-caret-down text-[10px]"></i>
                   </button>
 
-                  <!-- Move to Folder Popup Menu -->
-                  <div
-                    v-if="activeMoveMenuConnId === conn.id"
-                    class="absolute left-0 bottom-full mb-1 z-50 w-44 bg-popover border border-border rounded-xl shadow-xl p-1 text-xs"
-                    @click.stop
-                  >
-                    <div class="px-2 py-1 text-[10px] text-text-secondary font-semibold uppercase tracking-wider">
-                      {{ t('folders.moveToFolder', '移至文件夹') }}
-                    </div>
-                    <button
-                      type="button"
-                      @click="handleMoveSingleConnection(conn.id, null)"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-text-secondary hover:text-foreground flex items-center gap-2"
-                    >
-                      <i class="fas fa-inbox text-xs"></i>
-                      <span>{{ t('folders.uncategorized', '未分类') }}</span>
-                    </button>
-                    <div v-if="folders.length > 0" class="h-px bg-border/40 my-1"></div>
-                    <button
-                      v-for="f in folders"
-                      :key="f.id"
-                      type="button"
-                      @click="handleMoveSingleConnection(conn.id, f.id)"
-                      class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-foreground flex items-center gap-2"
-                    >
-                      <i class="fas fa-folder text-amber-400 text-xs"></i>
-                      <span class="truncate">{{ f.name }}</span>
-                    </button>
-                  </div>
                 </div>
 
                 <!-- Right Action Buttons -->
@@ -1274,6 +1306,40 @@ const handleConnectAllFilteredConnections = async () => {
         </div>
       </main>
     </div>
+
+    <!-- 放在 body 下，避开批量栏动画创建的层叠上下文以及主机列表的 overflow 裁切。 -->
+    <Teleport to="body">
+      <div
+        v-if="activeMoveMenu !== null"
+        ref="moveMenuRef"
+        class="fixed z-[9500] bg-popover text-foreground border border-border rounded-xl shadow-xl p-1 text-xs overflow-y-auto overscroll-contain"
+        :style="moveMenuStyle"
+        @click.stop
+      >
+        <div v-if="activeMoveMenu !== 'batch'" class="px-2 py-1 text-[10px] text-text-secondary font-semibold uppercase tracking-wider">
+          {{ t('folders.moveToFolder', '移至文件夹') }}
+        </div>
+        <button
+          type="button"
+          @click="selectMoveFolder(null)"
+          class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-text-secondary hover:text-foreground flex items-center gap-2"
+        >
+          <i class="fas fa-inbox text-xs"></i>
+          <span>{{ t('folders.uncategorized', '未分类') }}</span>
+        </button>
+        <div v-if="folders.length > 0" class="h-px bg-border/40 my-1"></div>
+        <button
+          v-for="folder in folders"
+          :key="folder.id"
+          type="button"
+          @click="selectMoveFolder(folder.id)"
+          class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-foreground flex items-center gap-2"
+        >
+          <i class="fas fa-folder text-amber-400 text-xs"></i>
+          <span class="truncate">{{ folder.name }}</span>
+        </button>
+      </div>
+    </Teleport>
 
     <!-- Modals -->
     <AddConnectionForm
