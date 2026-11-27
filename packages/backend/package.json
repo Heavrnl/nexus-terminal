@@ -53,7 +53,7 @@
       "@types/bcrypt": "^5.0.2",
       "@types/express": "^5.0.6",
       "@types/express-session": "^1.19.0",
-      "@types/node": "^20.0.0",
+      "@types/node": "^26.6.6",
       "@types/nodemailer": "^6.4.17",
       "@types/qrcode": "^1.5.6",
       "@types/speakeasy": "^2.0.10",
