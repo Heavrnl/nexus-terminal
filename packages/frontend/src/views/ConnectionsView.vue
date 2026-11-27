@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import { ref, shallowRef, computed, onMounted, onDeactivated, onBeforeUnmount, watch, nextTick } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue';
 import BatchEditConnectionForm from '../components/BatchEditConnectionForm.vue';
 import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
@@ -229,9 +229,30 @@ const filteredAndSortedConnections = computed(() => {
   });
 });
 
+let moveMenuListenersAttached = false;
+
+const attachMoveMenuListeners = () => {
+  if (moveMenuListenersAttached) return;
+  moveMenuListenersAttached = true;
+  document.addEventListener('click', handleGlobalClick, true);
+  document.addEventListener('keydown', handleMoveMenuKeydown, true);
+  window.addEventListener('resize', updateMoveMenuPosition);
+  window.addEventListener('scroll', handleMoveMenuScroll, true);
+};
+
+const detachMoveMenuListeners = () => {
+  if (!moveMenuListenersAttached) return;
+  moveMenuListenersAttached = false;
+  document.removeEventListener('click', handleGlobalClick, true);
+  document.removeEventListener('keydown', handleMoveMenuKeydown, true);
+  window.removeEventListener('resize', updateMoveMenuPosition);
+  window.removeEventListener('scroll', handleMoveMenuScroll, true);
+};
+
 const closeMoveMenu = () => {
   activeMoveMenu.value = null;
   moveMenuAnchor.value = null;
+  detachMoveMenuListeners();
 };
 
 const updateMoveMenuPosition = () => {
@@ -263,6 +284,7 @@ const toggleMoveMenu = async (event: MouseEvent, target: number | 'batch') => {
   }
   moveMenuAnchor.value = event.currentTarget as HTMLElement;
   activeMoveMenu.value = target;
+  attachMoveMenuListeners();
   updateMoveMenuPosition();
   await nextTick();
   updateMoveMenuPosition();
@@ -275,6 +297,7 @@ const handleGlobalClick = (event: MouseEvent) => {
 };
 
 const handleMoveMenuScroll = (event: Event) => {
+  if (activeMoveMenu.value === null) return;
   // 菜单内可正常滚动；外层滚动时关闭，避免触发器被滚动容器裁切后浮层悬空。
   if (event.target instanceof Node && moveMenuRef.value?.contains(event.target)) return;
   closeMoveMenu();
@@ -291,17 +314,15 @@ const handleMoveMenuKeydown = (event: KeyboardEvent) => {
 
 watch(filteredAndSortedConnections, closeMoveMenu);
 watch(isBatchEditMode, closeMoveMenu);
+watch([showAddEditConnectionForm, showBatchEditForm], ([addOpen, batchOpen]) => {
+  if (addOpen || batchOpen) closeMoveMenu();
+});
 watch(() => selectedConnectionIdsForBatch.value.size, (count) => {
   if (count === 0 && activeMoveMenu.value === 'batch') closeMoveMenu();
 });
 watch(() => folders.value.length, updateMoveMenuPosition, { flush: 'post' });
 
 onMounted(async () => {
-  document.addEventListener('click', handleGlobalClick, true);
-  document.addEventListener('keydown', handleMoveMenuKeydown, true);
-  window.addEventListener('resize', updateMoveMenuPosition);
-  window.addEventListener('scroll', handleMoveMenuScroll, true);
-
   if (connections.value.length === 0) {
     try {
       await connectionsStore.fetchConnections();
@@ -314,15 +335,11 @@ onMounted(async () => {
   } catch (error) {
     console.error('加载文件夹列表失败:', error);
   }
-
 });
 
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleGlobalClick, true);
-  document.removeEventListener('keydown', handleMoveMenuKeydown, true);
-  window.removeEventListener('resize', updateMoveMenuPosition);
-  window.removeEventListener('scroll', handleMoveMenuScroll, true);
-});
+// ConnectionsView 被 KeepAlive 缓存，离开页面或卸载时关闭浮层并释放全局监听。
+onDeactivated(closeMoveMenu);
+onBeforeUnmount(closeMoveMenu);
 
 const connectTo = (connection: ConnectionInfo) => {
   sessionStore.handleConnectRequest(connection);
